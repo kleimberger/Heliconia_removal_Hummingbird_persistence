@@ -1,0 +1,506 @@
+---
+title: "Estimating flowers per inflorescence (for resource estimation)"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Overall goal**
+
+Estimate resource availability per site and year, in terms of calories available to hummingbirds.
+
+**Problem**
+
+Resource counts need to be in common denominator of *flowers*, not larger counting units (i.e. groups of flowers). But since it can be impractical to count individual flowers during a resource survey, the data currently contain counts with non-flower counting units. To convert these counts to flowers, need to know how many flowers generally occur per inflorescence.
+
+**Goal of this code**
+
+Cobble together data from a variety of sources to come up with a best estimate of number of flowers per inflorescence (for >50 plant species).
+
+The sources available are:
+
+1. Data collected for Birkett undergraduate thesis (2014)
+
+- In the Excel sheet, there is a tab where flowers per inflorescence were recorded (omitting observations of no flowers, have data for ~12 species). This is only dataset specifically collected for the purpose of determining flowers per inflorescence for non-Heliconia plant species.
+    
+2. Notes column from resource count dataset (2016-2018)
+
+- Here there are opportunistic records of # flowers/inflorescence, e.g., "10 flowers, 1 inflor", collected during the resource surveys.
+
+- This dataset could also provide per-tree measurements for some species (e.g., RUBY, PORO).
+    
+3. Nectar sampling of bagged inflorescences (2018)
+
+- We bagged entire inflorescences, then collected the flowers to get nectar measurements. The nectar dataset has one row per flower, so I could summarize how many flowers were sampled per inflorescence.
+
+- Would be most informative for plant species that only ever had one bag per inflorescence and replaced/substantially replenished their flowers on a daily basis
+
+- Not a perfect measure because sometimes flowers were destroyed during collection and did not end up in data, i.e. counts might be biased low. On the other hand, we purposefully sampled plants with flowers, so this might bias counts high.
+
+4. Daily flower counts at cameras (2017-2018)
+
+- We recorded the number of flowers per camera, both the number of flowers present in the frame/visible 'on camera' and in the immediate vicinity ('total').
+
+- Would be most informative for plants that only had one inflorescence on camera.
+
+5. Estimates from an experienced observer
+
+- After compiling data from the sources above, I asked field tech Michael Atencio to estimate flowers-per-inflorescence for any missing plant species.
+
+6. For *Heliconia tortuosa*, the resource count data itself (2018)
+
+- During the last year of study, we collected data on # of bracts and # of flowers for each inflorescence.
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(lubridate)
+```
+
+## Step 1: Import data and functions
+
+Import helper functions
+```{r step1a, message = FALSE}
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+```
+
+Get resource count data
+```{r step1b, message = FALSE}
+resource_data <- read.csv("../../data/export/intermediate/Resource_counts_2016-2018_with_count_units.csv") %>%
+  select(-X) %>%
+  filter(count_estimate_high_low == "high")
+
+#How many species have 'inflorescence' as a counting unit?
+#Aside from unknown species (which I can't estimate calories for anyway) and Heliconia species (which I'll use flowers-per-bract data for)
+species_that_need_data <- resource_data %>%
+  distinct(species_code_for_calories, count_unit) %>%
+  filter(count_unit != "flower") %>%
+  filter(!(grepl("UNKN", species_code_for_calories))) %>%
+  filter(!(grepl("HE", species_code_for_calories)))
+  
+species_that_need_data$count_unit %>% length()
+```
+
+Get other datasets to help estimate flowers-per-inflorescnece
+```{r step1c, message = FALSE}
+path_name <- c("../../data/import/misc_data_for_resource_estimate")
+
+#Data from Birkett undergrad thesis
+birkett_thesis <- read.csv(file.path(path_name, "Birkett_flowers_per_inflorescence.csv"))
+
+#Notes column of resource counts (edite)
+notes_column <- read.csv(file.path(path_name, "Notes_column_flowers_per_inflorescence_20200521.csv"))
+
+#Nectar measurements
+nectar <- read.csv(file.path(path_name, "CR_Nectar_Data_20210914.csv"))
+
+#Flower counts from cameras
+camera_counts_2017 <- read.csv(file.path(path_name, "CR_2017_Camera_Flower_Counts_20220410.csv")) %>%
+  mutate(year = "2017")
+
+camera_counts_2018 <- read.csv(file.path(path_name, "CR_2018_Camera_Flower_Counts_20190910.csv")) %>%
+  mutate(year = "2018")
+
+camera_counts <- camera_counts_2017 %>%
+  bind_rows(camera_counts_2018) %>%
+  select(year, patch, camera_num, date_video, species_code, flowers_total_field, flowers_camera_field) %>%
+  filter(!is.na(camera_num))
+```
+
+## Step 2: Summarize data for Heliconia (2018)
+
+As far as estimating flowers-per-[______], This is the easy part. For *Heliconia tortuosa*, we have information about number of flowers AND number of bracts from the same plant. So for a plant of ___ bracts, what is typical number of flowers open on a given day?
+```{r step2, message = FALSE}
+#Which species do we have both flowers and inflorescence data? Need data about number of flowers AND number of bracts from the same plant
+heto_flowers_bracts <- resource_data %>%
+  filter(species_code == "HETO") %>%
+  filter(!is.na(num_flowers) & !is.na(num_bracts)) 
+
+#Plot: # of flowers for a given # of bracts
+ggplot(aes(x = as.factor(num_bracts), y = num_flowers), data = heto_flowers_bracts) +
+  geom_boxplot(aes(x = as.factor(num_bracts), y = num_flowers)) +
+  xlab("Number of bracts") +
+  ylab("Number of flowers") +
+  theme_bw(base_size = 18)
+
+#Summary
+heto_flowers_per_bract <- heto_flowers_bracts %>%
+  mutate(num_bracts = as.factor(num_bracts)) %>%
+  group_by(num_bracts) %>%
+  calculate_basic_summary_stats(variable = num_flowers) %>%
+  ungroup() %>%
+  mutate_if(is.numeric, ~round(., digits = 1))
+  
+#For >9 bracts, assign 2 flowers (sample size is low for bracts 10-14, and doesn't make sense for median to drop to 0 or 1 like it does)
+#Also need to create row for 14 bracts, which is not present in this dataset but is in other years
+extra_bracts <- data.frame(num_bracts = "14",
+                           flowers_per = "2",
+                           source = "Estimated based on resource count data for similarly sized inflorescence")
+
+#This is the key to convert bracts to flowers based on MEDIAN number of flowers/bract
+heto_flowers_per_bract_key <- heto_flowers_per_bract %>%
+  select(num_bracts, flowers_per = median, num_plants = n) %>%
+  mutate(flowers_per = ifelse(as.integer(num_bracts) > 9, 2, flowers_per),
+         source = ifelse(as.integer(num_bracts) > 9, "Estimated based on resource count data for similarly sized inflorescence", "")) %>%
+  mutate_all(as.character) %>%
+  bind_rows(extra_bracts) %>%
+  mutate(species_code = "HETO")
+
+#For a given number of bracts, how many had zero flowers? For Helene Wagner (Univ of Toronto)
+heto_zero_flowers = heto_flowers_bracts %>%
+  filter(num_flowers == 0) %>%
+  group_by(num_bracts) %>%
+  summarise(num_plants_zero_flowers = n()) %>%
+  ungroup() %>%
+  mutate(num_bracts = as.character(num_bracts))
+  
+#This is the table for the supplemental material
+heto_flowers_per_bract_for_supp <- heto_flowers_per_bract %>%
+  left_join(heto_flowers_per_bract_key) %>%
+  left_join(heto_zero_flowers) %>%
+  select(-species_code) %>%
+  select(num_bracts, num_plants, num_plants_zero_flowers, everything())
+```
+
+## Step 3: Summarize flowers-per-inflorescence data from Birkett undergrad thesis (2014)
+
+Notes
+
+- Only have info about individual plant id (letter assigned) starting on 2015-02-13. Based on these data, multiple inflorescences were at least sometimes counted per plant (i.e. not independent plants). Sample size for this dataset will therefore be # inflorescences, not # plants.
+
+- I'm not sure what the difference is between "new flowers" and "old open flowers". Some rows only have data about "total flowers" (presumably old and new). I decided to include all categories of flowers.
+
+- Decided to remove rows with notes about "All fruiting" or "All budding"? Both of these situations mean no flowers.
+
+- Decided to remove counts of zero flowers per inflorescence, because no flowers will lead to zero calories.
+
+```{r step3, message = FALSE}
+#1. Rename columns
+#2. Convert uncertain flower measurements (i.e., with characters like question marks and slashes) to NA. Also convert "NR" (not recorded) to NA. Do this by converting to numeric, which converts cells with characters into NA
+#3. If total flowers has not been calculated yet, calculate it by adding new and old flowers together\
+#4. Remove rows where plants are done flowering/not flowering
+#5. Remove any other dates with zero flowers present
+#6. Remove AMAP (amapola) that doesn't really have inflorescences, to it doesn't make sense to have flowers per inflor. There is also note saying that 1 flower=1 inflor
+birkett_thesis02 <- birkett_thesis %>%  
+  rename(species_code = Guia.code,
+         species_name = Species,
+         new_flowers = New.open.flowers.infl,
+         old_flowers = Old.open.flowers.infl,
+         total_flowers = Total.open.infl,
+         plant_id = Plant.id,
+         date = Date,
+         patch = Patch,
+         notes = Notes) %>%
+  select(date, species_code, species_name, new_flowers, old_flowers, total_flowers, plant_id, patch, notes) %>%
+  mutate_at(vars(new_flowers, old_flowers, total_flowers), as.character) %>%
+  mutate_at(vars(new_flowers, old_flowers, total_flowers), as.numeric) %>% 
+  mutate(num_flowers = ifelse(is.na(total_flowers) & !is.na(new_flowers) & !is.na(old_flowers), new_flowers + old_flowers, total_flowers)) %>%
+  mutate(date = dmy(date)) %>%
+  filter(!grepl("All fruiting|All budding", notes)) %>%
+  filter(num_flowers != 0) %>%
+  filter(species_code != "AMAP") %>%
+  filter(!is.na(species_code) & species_code != "")
+
+##Create summary of flowers per inflorescence
+flowers_per_inflor_birkett_thesis <- birkett_thesis02 %>%
+  mutate(count_unit = "inflor") %>%
+  group_by(species_code, count_unit) %>%
+  calculate_basic_summary_stats(variable = num_flowers) %>%
+  ungroup() %>%
+  rename(num_inflors_sampled = n) %>%
+  mutate(source = "Birkett inflorescence counts (2014)")
+```
+
+## Step 4: Estimate flowers-per-inflorescence using notes column of resource count data (2016-2018)
+```{r step4, message = FALSE}
+notes_column02 <- notes_column %>%
+  mutate(count_unit = ifelse(!is.na(num_trees), "tree", NA),
+         count_unit = ifelse(!is.na(num_inflors), "inflor", count_unit),
+         count_unit = ifelse(!is.na(num_bracts), "bract", count_unit),
+         flowers_per = ifelse(count_unit == "inflor", num_flowers/num_inflors, NA),
+         flowers_per = ifelse(count_unit == "tree", num_flowers/num_trees, flowers_per),
+         flowers_per = ifelse(count_unit == "bract", num_flowers/num_bracts,flowers_per)) %>%
+  filter(num_flowers != 0)
+  
+#Summarize number of inflorescences sampled
+num_inflors_sampled <- notes_column02 %>%
+  group_by(species_code, count_unit) %>%
+  summarise(num_inflors_sampled = sum(num_inflors, na.rm = TRUE))
+
+#Summarize flowers per inflorescence
+#Here, number of rows = number of plants. It is possible that plants were resampled across years, but not accounting for that here.
+#Also, the per-tree estimates (RUBY and PORO) seem a little low. Will try to find other options.
+flowers_per_inflor_notes_column <- notes_column02 %>%
+  group_by(species_code, count_unit) %>%
+  calculate_basic_summary_stats(variable = flowers_per) %>%
+  ungroup() %>%
+  rename(num_plants_sampled = n) %>%
+  left_join(num_inflors_sampled) %>%
+  arrange(count_unit) %>%
+  mutate(source = "Notes from resource counts (2016-2018)",
+         num_sampling_dates_per_plant = 1) %>%
+  filter(count_unit != "tree")
+```
+
+## Step 5: Estimate flowers-per-inflorescence using nectar data (2018)
+
+From to 2018-04-11 to 2018-04-30, Kara & Marion measured nectar from bagged flowers. Some species only ever had one inflorescence per bag, and we know how many flowers we extracted nectar from on a given day. From this, for a given plant we can calculate flowers per inflorescence per day and then average over days.
+
+Because flowers were collected (removed) each day and not available for counting on subsequent days, values are best interpreted as "how many new flowers are produced per day" and are thus most appropriate for plants producing single day flowers/frequently replaced flowers. Of the flower species sampled, decided these were: BAN-C, BAN-P, SANO, GUMA, GINGY, and GING-P (all only ever had one inflorescence per bag).
+
+This dataset does NOT include flowers that may have been present on a given day but were destroyed during collection from plant (e.g. GING-P), thus not making it to the nectar extraction phase. *For this reason, I decided to exclude GING-P and GINGY, because I found that removing flowers was very difficult and that they were often destroyed in the process.*
+
+This dataset reflects inflorescences that had flowers on a given day (i.e. days with zero flowers are omitted). If I needed to, I could reconstruct whether there were days with zero flowers by looking at the extraction date and the dates that a given bag was in the field on that plan; i.e. if the total number of extraction dates is less than the number of dates out, then those can be assigned zero (unless the baggie was lost or the flower was destroyed). But I decided this was unnecessary as of 5/21/2020.
+
+```{r step5, message = FALSE}
+#1. Rename columns
+#2. Subset to species that only had 1 bag per inflor
+#3. Summarize number of flowers sampled on a given date
+nectar02 <- nectar %>%
+  filter(species == "BAN-C" | species == "BAN-P" | species == "SANO" | species == "GUMA") %>%
+  rename(species_code = species,
+         date = dateExtracted,
+         bag_number = bagNumber) %>%
+  group_by(species_code, bag_number, date) %>%
+  summarise(num_flowers_sampled = n()) %>%
+  ungroup() %>%
+  filter(!is.na(bag_number))
+
+#Summarize # of flowers per inflorescence
+#Approach: calculate flowers/day by getting total # of flowers and dividing by total # of sampling dates
+#First, calculate (1) total number of flowers and (2) total number of dates per ind'l plant
+flowers_per_plant_nectar <- nectar02 %>%
+  group_by(species_code, bag_number)%>%
+  summarise(num_dates_sampled = n(),
+            num_flowers_sampled = sum(num_flowers_sampled)) %>% #Total number of flowers sampled from that plant
+  mutate(flowers_per_day = num_flowers_sampled/num_dates_sampled) %>% #Mean number of flowers per day (i.e. total number of flowers with nectar data div. by num dates with nectar data)
+  ungroup()
+
+#Then average across ind'l plants to level of species
+flowers_per_inflor_nectar <- flowers_per_plant_nectar %>%
+  group_by(species_code) %>%
+  summarise(median = median(flowers_per_day, na.rm = TRUE),
+            mean = mean(flowers_per_day, na.rm = TRUE),
+            sd = sd(flowers_per_day, na.rm = TRUE),
+            min = min(flowers_per_day, na.rm = TRUE),
+            max = max(flowers_per_day, na.rm = TRUE),
+            num_plants_sampled = n(),
+            num_inflors_sampled = n(),
+            num_sampling_dates_per_plant = mean(num_dates_sampled, na.rm = TRUE)) %>% #I.e., on average, each plant was had its flowers counted on this many dates
+  ungroup() %>%
+  mutate(count_unit = "inflor",
+         source ="Nectar sampling (2018)")
+```
+
+## Step 6: Estimate flowers-per-inflorescence using in-field flower counts (2017-2018)
+
+In 2017 and 2018, flowers on camera (and flowers total) were recorded in-field for plants with cameras. For cameras that were only ever positioned on a single inflorescence, we can calculate the number of flowers per inflorescence.
+
+As with the 2018 nectar sampling, the flower counts for a given plant span multiple days. However, unlike nectar sampling, flowers were not collected (unless they were old) and could thus be counted again the next day. Thus, I take the average counts across days, instead of summing and dividing by the number of days. Resulting values can be interpreted as "if I was going to go out and count flowers -- and there were flowers present (i.e. non-zero flowers) - how many would I find?" rather than "how many new flowers are produced per day" (i.e. nectar values are more relevant for single day flowers).
+
+Initially, I only included 2017 in-field flower counts, but added 2018 counts on 9/6/2019. Note that some plants were likely sampled across years, so just remember that sample size ('number of plants') does not account for this.
+
+Species where there may have been only one inflorescence on camera (and only ever occurred naturally, i.e. not in pot). I checked videos to determine whether there was a single inflorescence vs. multiple inflorescences.
+
+- BAN-C
+- MARA-VER
+- CEPU
+- GING-P
+- GINGY
+- OJO: was done flowering toward the end, but decided this was okay.
+- COL-ROSA: 2018 p29 C26 (**single inflor**, though very few flowers ever open)
+- GIN-ROS-AMA: 2017 p48 C09 (**single inflor**), 2018 p137 C03 (**single inflor**), 2018 p58 C18 (**single inflor**)
+- GES-AMA: 2017 p203 C20 (**single inflor**) and C01 (multiple inflor)
+- DASY: 2017 p49 C28 (multiple inflor)
+
+```{r step6, message = FALSE}
+#1. Select species/cameras that only had 1 inflorescence on camera
+#2. Remove counts of zero
+species_with_1_inflor_per_camera <- c("BAN-C", "MARA-VER", "CEPU", "GING-P", "GINGY", "OJO", "COL-ROSA", "GIN-ROS-AMA")
+
+camera_counts02 <- camera_counts %>%
+  filter(species_code %in% species_with_1_inflor_per_camera | (species_code == "GES-AMA" & camera_num=="20")) %>%
+  filter(flowers_total_field != "0")
+
+#Summarize # of flowers per inflorescence
+#Approach: calculate flowers/day by getting total # of flowers and dividing by total # of sampling dates
+  
+#First, calculate (1) total number of flowers and (2) total number of dates per ind'l plant
+flowers_per_plant_camera_counts <- camera_counts02 %>%
+  mutate(flowers_total_field = as.numeric(flowers_total_field)) %>%
+  group_by(species_code, camera_num)%>%
+  summarise(num_dates_sampled = n(),
+            flowers_total_field = sum(flowers_total_field, na.rm = TRUE)) %>%
+  mutate(flowers_per_day = flowers_total_field/num_dates_sampled) %>% 
+  ungroup()
+  
+#Then average across ind'l plants to level of species
+flowers_per_inflor_camera_counts <- flowers_per_plant_camera_counts %>%
+  group_by(species_code) %>%
+  summarise(median = median(flowers_per_day, na.rm = TRUE),
+            mean = mean(flowers_per_day, na.rm = TRUE),
+            sd = sd(flowers_per_day, na.rm = TRUE),
+            min = min(flowers_per_day, na.rm = TRUE),
+            max = max(flowers_per_day, na.rm = TRUE),
+            num_plants_sampled = n(),
+            num_inflors_sampled = n(),
+            num_sampling_dates_per_plant = mean(num_dates_sampled, na.rm = TRUE)) %>% #I.e., on average, each plant was had its flowers counted on this many dates
+  ungroup() %>%
+  mutate(count_unit = "inflor",
+         source = "Camera flower counts (2017-2018)")
+```
+
+## Step 7: Combine estimates of flowers per inflorescence/tree from different sources
+
+Problem:
+
+How to choose which source to use when species are duplicated?
+
+Decision:
+
+Choose based on sample size, but take observation time (number of dates) into account, not just number of plants/inflors
+
+Calculate a 'sampling amount' column: Num inflorescences *versus* Num plants *versus* Num plants x mean number of dates per plant, if available
+    
+Use the data that corresponds to the largest amount of sampling.
+
+```{r step7, message = FALSE}
+#This is full summary, including duplicate flowers-per-inflor estimates (i.e. more than one estimate per species due to multiple sources)
+#Calculate sampling 'amount', giving more weight to plants sampled across multiple days (i.e., nectar sampling and camera flower counts)
+flowers_per_inflor_data <- flowers_per_inflor_birkett_thesis %>%
+  bind_rows(flowers_per_inflor_notes_column) %>%
+  bind_rows(flowers_per_inflor_nectar) %>% 
+  bind_rows(flowers_per_inflor_camera_counts) %>%
+  left_join(distinct(select(resource_data, c(species_code, species_name)))) %>% #Add scientific names
+  mutate_at(vars(median, mean, sd, min, max, num_sampling_dates_per_plant), ~round(., digits = 1)) %>%
+  mutate(sampling_amount = ifelse(!is.na(num_plants_sampled) & !is.na(num_sampling_dates_per_plant), num_plants_sampled * num_sampling_dates_per_plant, num_plants_sampled),
+         sampling_amount = ifelse(is.na(sampling_amount), num_inflors_sampled, sampling_amount)) %>%
+  mutate(num_plants_sampled = ifelse(grepl("Birkett", source), "Unknown", num_plants_sampled),
+         num_sampling_dates_per_plant = ifelse(grepl("Birkett", source), "Unknown", num_sampling_dates_per_plant)) %>%
+  select(species_code, species_name, count_unit:num_sampling_dates_per_plant, sampling_amount, everything()) #Reorder columns
+
+#Prioritize data with most sampling effort
+max_effort <- flowers_per_inflor_data %>%
+  group_by(species_code, species_name) %>%
+  summarise(sampling_amount = max(sampling_amount)) %>%
+  ungroup() %>%
+  mutate(priority = "yes")
+
+#Flowers-per-inflorescence data - NO DUPLICATES
+flowers_per_inflor_data_no_duplicates <- flowers_per_inflor_data %>%
+  left_join(max_effort) %>%
+  filter(priority == "yes") %>%
+  select(-priority) %>%
+  filter(species_code != "HETO") %>% #For HETO, this isn't necessary; will assign flowers based on number of open bracts
+  arrange(source, species_code) %>%
+  mutate(species_unit = paste(species_code, count_unit, sep = "_"))
+```
+
+## Step 8: Get 'expert opinion' estimates for missing species, including a couple problem species that have the count unit of 'tree'
+
+Identify species that still don't have data for # flowers per ______
+```{r step8a, message = FALSE}
+species_that_STILL_need_data <- species_that_need_data %>%
+  mutate(species_unit = paste(species_code_for_calories, count_unit, sep = "_")) %>%
+  filter(!(species_unit %in% flowers_per_inflor_data_no_duplicates$species_unit)) %>%
+  arrange(count_unit)
+  
+species_that_STILL_need_data$count_unit %>% length()
+```
+
+Use our data to get data for RUBY and PORO - which have the count unit of 'tree'
+```{r step8b, message = FALSE}
+#How many inflorescences, on average according our data? Can multiply this by # flowers/inflorescence. Alternative is to look in literature, but data from our system seems better.
+ruby_poro_inflor_sum <- resource_data %>%
+  filter(count_unit_status == "known" & count_unit == "inflor") %>%
+  filter(species_code == "RUBY" | species_code == "PORO") %>%
+  group_by(species_code) %>%
+  calculate_basic_summary_stats(variable = num_inflors)
+
+ruby_poro_inflor_sum
+
+# Median number of inflorescences/tree
+# PORO: 340 (at 10 flowers/inflor, this is 3400 flowers per tree)
+# RUBY: 8 (at 6 flowers/inflor, this is 48 flowers per tree)
+# On 5/25/2020, added these numbers to Michael's estimation spreadsheet ('Flores_por_inflorescencia')
+```
+
+Get estimates from field tech Michael Atencio
+```{r step8c, message = FALSE}
+#Species names
+species_names <- resource_data %>%
+  distinct(species_code, species_name)
+
+#Get estimates and add scientific names
+atencio_estimates <- read.csv("../../data/import/misc_data_for_resource_estimate/Atencio_flores_por_inflorescencia_20200525.csv", check.names = FALSE) %>%
+  purrr:::discard(~all(is.na(.) | . == "")) %>%
+  rename(page_in_guide = `Pagina en guia`,
+         family = `Familia`,
+         species_name = `Nombre de la especie`,
+         species_code = `Codigo de la especie`,
+         flowers_per = `Numero de flores por inflorescencia`,
+         confidence_level = `Nivel de confianza`, #1 = low confidence, 3 = high confidence
+         notes = `Nota`) %>%
+  filter(!is.na(species_code) & species_code != "") %>%
+  filter(!grepl("HE", species_code)) %>% #Remove Heliconia species. Will use data from HETO for those.
+  left_join(species_names) %>%
+  select(species_code, species_name, flowers_per, count_unit = per_unit, notes) %>%
+  mutate(source = "Estimated by experienced observer")
+```
+
+## Step 9: Combine all flowers-per-inflorescence data 
+```{r step9, message = FALSE}
+#Combine with data-based estimates (selecting MEDIAN values of number of flowers)
+flowers_per_inflorescence <- flowers_per_inflor_data_no_duplicates %>%
+  bind_rows(atencio_estimates) %>%
+  mutate(flowers_per = ifelse(is.na(flowers_per), median, flowers_per)) %>%
+  mutate(source = factor(source, levels = c('Birkett inflorescence counts (2014)', 'Notes from resource counts (2016-2018)', 'Nectar sampling (2018)', 'Focal plant flower counts (2017-2018)', 'Estimated by experienced observer'))) %>%
+  arrange(source, count_unit, species_name) %>%
+  select(species_code, species_name, source, num_inflors_sampled, num_plants_sampled, num_sampling_dates_per_plant, min:median, count_unit, flowers_per, everything(), -species_unit, -notes, -sampling_amount)
+```
+
+## Step 10: Summary for supplemental methods - how many species/plants were Michael's estimates used for? How many species/plants needed estimates of flowers per tree?
+```{r step10, message = FALSE}
+#Total number of plants counted
+(total_plants <- length(resource_data$year))
+
+#Species 'estimated by an experienced observer"
+expert_opinion_species <- flowers_per_inflorescence %>%
+  filter(source == "Estimated by experienced observer" & count_unit == "inflor") %>%
+  distinct(species_code, species_name, count_unit)
+
+expert_opinion_plants <- resource_data %>%
+  filter(species_code %in% expert_opinion_species$species_code) %>%
+  filter(count_unit == "inflor")
+
+(percent_michael <- length(expert_opinion_plants$year)/total_plants)
+
+#Species that were counted as 'trees' as the counting unit (only in 2016)
+tree_species <- flowers_per_inflorescence %>%
+  filter(source == "Estimated by experienced observer" & count_unit == "tree") %>%
+  distinct(species_code, species_name, count_unit)
+
+tree_plants <- resource_data %>%
+  filter(species_code %in% tree_species$species_code) %>%
+  filter(count_unit == "tree")
+
+total_trees <- tree_plants %>%
+  summarise(total_trees = sum(num_trees)) #34 plants total
+
+(percent_trees <- total_trees/total_plants)
+```
+
+## Step 11: Export data
+```{r step11, message = FALSE}
+path_name <- c("../../data/export/intermediate")
+
+#Key for converting HETO bracts to flowers + some additional info for supp table
+write.csv(heto_flowers_per_bract_for_supp, file.path(path_name, "Heliconia_flowers_per_bracts_key.csv"))
+
+#Key for converting inflorescences/trees to flowers
+write.csv(flowers_per_inflorescence, file.path(path_name, "Non-Heliconia_flowers_per_inflorescence_key.csv"))
+```
