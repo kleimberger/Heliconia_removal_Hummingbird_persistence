@@ -1,0 +1,109 @@
+---
+title: "Summarizing nectar measurements (for resource estimation)"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Overall goal**
+
+Estimate resource availability per site and year, in terms of calories available to hummingbirds.
+
+**Goals of this code**
+
+Calculate the number of calories per flower, based on nectar volume and concentration.
+
+Steps involved in this calculation (following Bolton *et al.* 1987, Kearns & Inouye 1993)
+
+1. Summarize mean volume and concentration (note: did this in previous step)
+2. Use Kearns & Inouye 1993 (Table 5-2) to convert Brix (g/g) to g/L. To use this table, round nectarConc (Brix %, g/g) to nearest 0.5 (if 10 or less), 1.0 (if >10), or 2.0 (if >20)
+3. Convert nectar volume (in microliters) to liters
+4.  Multiply #2 (g/L) by #3 (L) by 3.94 kilocalories/g
+
+*Oof my naming conventions are V E R Y wonky here, due to a very brief foray into camelCase years ago. Leaving them be for now, since the code works fine.*
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(tidyr)
+```
+
+## Step 1: Import data
+```{r step1a, message = FALSE}
+#Summary of nectar volume/concentration measurements collected in field
+#Need to rename GIN-ROS-AMA because there is another unknown Renealmia species
+#Decided to use mean nectar volume and nectar concentration (instead of median) since that is value most commonly found in literature
+nectar_field <- read.csv("../../data/export/intermediate/Nectar_volume_and_concentration_summary.csv") %>%
+  select(-X) %>%
+  mutate(speciesName = ifelse(species == "GIN-ROS-AMA", "Renealmia sp. 2", as.character(speciesName))) %>%
+  select(species, speciesName, family, nectarVol_micro = mean_vol, nectarConc = mean_conc, everything()) %>%
+  mutate(dataSource = "field_data")
+
+path_name <- c("../../data/import/misc_data_for_resource_estimate")
+
+#Kearns & Inouye 1993, Table 5-2 (converts Brix w/w to w/volume)
+conversion_table <- read.csv(file.path(path_name, "Kearns_Inouye_1993_Table_5-2.csv"))
+
+#Data from literature, for species that were missing field data. There are still blanks for some species; I will substitute field data from congeneric species in next step
+nectar_lit <- read.csv(file.path(path_name, "Nectar_data_from_literature_20200528.csv")) %>%
+  select(species, speciesName, speciesName_sub, family, nectarVol_micro, nectarConc, litSite = site, litSources) %>%
+  arrange(litSources)
+```
+
+## Step 2: Get data ready for calorie calculations
+
+For species that are still missing nectar volume/concentration data, fill in with the nectar measurements from a congeneric species (data we collected in the field). Also combine our nectar measurements with data from literature
+```{r step2, warning = FALSE, message = FALSE}
+#speciesName_sub is the substitute (congeneric) plant species whose data I will use
+values_for_missing_species <- nectar_field %>%
+  select(speciesName_sub = speciesName, volume_this_study = nectarVol_micro, conc_this_study = nectarConc)
+
+nectar_missing_species <- nectar_lit %>%
+  filter(is.na(nectarVol_micro) | is.na(nectarConc)) %>%
+  left_join(values_for_missing_species) %>%
+  mutate(nectarVol_micro = ifelse(is.na(nectarVol_micro), volume_this_study, nectarVol_micro)) %>%
+  mutate(nectarConc = ifelse(is.na(nectarConc), conc_this_study, nectarConc)) %>%
+  select(-contains("this_study")) %>%
+  mutate(dataSource = "field_data_subbed")
+
+nectar_data <- nectar_lit %>%
+  filter(!is.na(nectarVol_micro)) %>%
+  mutate(dataSource = "literature") %>%
+  bind_rows(nectar_field) %>%
+  bind_rows(nectar_missing_species) %>%
+  select(species, speciesName, speciesName_sub, everything())
+
+#Check: are any species missing data?
+check01 <- nectar_data %>%
+  filter(is.na(nectarVol_micro) | is.na(nectarConc))
+```
+
+## Step 3: Calculate calories
+```{r step3, message = FALSE}
+#1. Round nectar concentrations (Brix %) to match what is in Kearns & Inouye table
+#2. Join to Kearns and Inouye table. New column is grams of sugar per liter nectar (nectarConc_gL)
+#3. Convert nectar volume to L (from microliters)
+#4. Calculate calories per flower
+nectar_data_with_calories <- nectar_data %>%
+  mutate(nectarConc_approx = case_when(nectarConc <= 10 ~ plyr::round_any(nectarConc,accuracy = 0.5),
+                                       nectarConc > 10 & nectarConc <= 20 ~ plyr::round_any(nectarConc,accuracy = 1.0),
+                                       nectarConc > 20 ~ plyr::round_any(nectarConc,accuracy = 2.0))) %>%
+  left_join(conversion_table) %>%
+  mutate(nectarVol_L = nectarVol_micro/1000/1000) %>% #Microliters to milliliters to liters
+  mutate(kilocalories = nectarConc_gL * nectarVol_L * 3.94) %>% #Sucrose provides 3.94 kilocalories/g
+  mutate(calories = kilocalories * 1000) %>%
+  mutate(calories = round(calories, digits = 2)) %>%
+  mutate(kilocalories = round(kilocalories, digits = 5)) %>%
+  select(-nectarConc_approx, -nectarConc_gL, -nectarVol_L) %>%
+  select(dataSource, family, species, speciesName, speciesName_sub, mean_vol = nectarVol_micro, sd_vol,  contains("vol"), mean_conc = nectarConc, sd_conc, contains("conc"), calories, kilocalories, starts_with("numFlowers"), everything()) %>%
+  arrange(dataSource, family, speciesName) 
+```
+
+## Step 4: Export data
+```{r step4, message = FALSE}
+path_name <- c("../../data/export/intermediate")
+write.csv(nectar_data_with_calories, file.path(path_name, "Nectar_volume_concentration_and_calories_summary.csv"))
+```
+
