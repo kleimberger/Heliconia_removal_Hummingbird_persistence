@@ -1,0 +1,330 @@
+---
+title: "Filtering and summarizing camera data for analysis"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Goal**
+
+Filter and summarize data for different analyses.
+
+**Approach**
+
+Filter camera data to remove:
+
+- Videos where no flowers were present
+- Videos from afternoon of covering day; these likely reflect behavioral adjustment by hummingbirds, not the experimental outcome or 'normal' visitation
+
+Then, subset this dataset ('full dataset') into different datasets for different analyses.
+
+1. Experimental dataset
+
+**Purpose:** Investigate hummingbird responses to experimental Heliconia removal, following Before-After-Control-Impact design
+
+- Needs cameras to have data from pre AND post periods, because I'm interested in the pre-to-post change
+- Only includes data from pre and post periods, not videos reviewed outside of those periods
+
+2. 'Normal' (unmanipulated) dataset
+
+**Purpose:** Understand 'normal' visitation patterns in this study system. Use to tailor resource estimate to different hummingbird groups & understand 'normal' visitation to *Heliconia tortuosa.*
+
+- Not bound by the requirements in #1. 
+- Only includes data from control replicates and 'pre' period of treatment replicates; do not want data affected by Heliconia removal
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+library(tidyr)
+library(dplyr)
+library(lubridate)
+library(ggplot2)
+```
+
+## Step 1: Import data
+```{r step1, warning=FALSE}
+##  Import camera data
+## 1. Create column for unique camera ID
+## 2. Convert start/end columns into period objects, so can treat them as times when filtering out afternoon videos from covering days
+camera_data <- read.csv("../../data/import/Camera_data_with_flower_counts_2016-2018_20220712.csv") %>%
+  mutate(camera_id = paste(year, patch, plant_species, camera_num, sep = "_")) %>% 
+  mutate(across(c(video_start, video_end), ~lubridate::hm(.))) %>%
+  mutate(across(c(sighting_start, sighting_end), ~lubridate::hms(.)))
+
+## Source helper functions
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+source("../../code/helper_functions/Summarize_camera_data.R")
+```
+
+## Step 2: Run some initial checks before filtering 
+```{r step2, warning=FALSE}
+## Check strings that failed to parse in previous step
+check01 <- camera_data %>%
+  filter(if_any(c(video_start, video_end), ~is.na(.)))
+
+## Are there any missing start/end times for sightings within a video?
+## Filter to rows with sighting start/end times (no sightings = NA = no times to parse = warning message)
+check02 <- camera_data %>%
+  filter(if_any(c(sighting_start, sighting_end), ~is.na(.))) %>%
+  filter(sightings_yes_or_no == "Y")
+
+## Are there videos from non-priority dates?
+## "Priority" = days in between capture sessions, omitting the day after cover day (for treatment sites) or its equivalent (for control sites)
+check03 <- camera_data %>%
+  filter(video_priority != 1) %>%
+  select(contains("day"), everything()) %>% 
+  arrange(exp_day, control_count_day, trmt_day_after_cover)
+
+## Are there videos without any visible flowers?
+check06 <- camera_data %>%
+  filter(flowers_camera_video == 0)
+
+## It doesn't really make sense to analyze videos with no visible flowers, but out of curiosity...do hummingbirds ever visit anyway?
+## "Sighting" = hummingbird appears on camera, "Visit" = hummingbird appears to drink from flower
+check04 <- camera_data %>%
+  filter(flowers_camera_video == 0 & sightings_yes_or_no == "Y" & visit_type != "none") 
+
+## Are there sightings from the afternoon of cover day? 
+## Covering is a big disturbance to the site, so we should NOT use these data...and especially should not consider them 'pre' data!
+check05 <- camera_data %>%
+  filter(cover_day == 1) %>%
+  filter(video_end >= lubridate::hm("11:30")) %>%
+  filter(sightings_yes_or_no == "Y")
+```
+
+## Step 3: Filter data for all analyses
+
+Remove videos with no flowers on camera (videos were typically not reviewed if they had no flowers, but some were reviewed anyway).
+```{r step3a}
+## I will still include NAs, since some plants never had flowers visible on video (i.e., MARA-VER, GINGY)
+camera_data02 <- camera_data %>%
+  filter(flowers_camera_video > 0 | is.na(flowers_camera_video))
+```    
+
+Remove sightings from afternoon of cover day (treatment sites only). Here, 'afternoon' = videos starting after 11:30 AM
+```{r step3b}
+## Videos that start (and end) after 11:30 (will just remove these)
+treatment_videos_pm <- camera_data02 %>%
+  filter(cover_day == 1 & control_treatment == "treatment") %>%
+  filter(video_start > hm("11:30"))
+
+## Videos that span the cutoff time (will change end time to 11:30 and remove sightings after this time)
+treatment_videos_am_pm <- camera_data02 %>%
+  filter(cover_day == 1 & control_treatment == "treatment") %>%
+  filter(video_start < hm("11:30")) %>%
+  filter(video_end > hm("11:30"))
+
+## Sightings from afternoon of covering
+treatment_sightings_pm <- treatment_videos_am_pm %>%
+  filter(sighting_end > hm("11:30"))
+
+## 1. Remove videos from afternoon of cover day (i.e., videos starting after 11:30AM)
+## 2. Adjust end time of videos from afternoon of cover day
+## 3. Recalculate video length with updated end times
+## 4. Make 'adjusted' video length the new video length
+camera_data03 <- camera_data02 %>% 
+  filter(!(file_id %in% treatment_videos_pm$file_id)) %>% 
+  filter(!(sighting_id %in% treatment_sightings_pm$sighting_id)) %>% 
+  mutate(video_end_adjust = dplyr::if_else(file_id %in% treatment_videos_am_pm$file_id, hm("11:30"), video_end)) %>%
+  mutate(video_length_adjust = as.numeric(video_end_adjust - video_start, "hours")) %>%
+  select(row_id:video_length, video_end_adjust, video_length_adjust, everything()) %>%
+  select(-video_length) %>%
+  rename(video_length = video_length_adjust)
+```
+
+Calculate total number of video hours in full dataset (from which smaller datasets are created)
+```{r step3c}
+hours_per_camera_date <- camera_data03 %>%
+  distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %>%
+  group_by(year, patch, control_treatment, camera_num, date_video, exp_phase) %>%
+  summarise(video_hours = sum(video_length)) %>%
+  ungroup()
+
+#Number of hours, summarized across cameras
+hours_total <- hours_per_camera_date %>%
+  summarise(video_hours = sum(video_hours)) %>%
+  ungroup()
+
+hours_total
+```
+
+## Step 4: Filter data for experimental analyses
+
+Remove videos that do not correspond to 'pre' and 'post' dates
+
+Remove cameras without data pre and post. For the experiment, I'm interested in the pre-to-post change over time. No data from a given time period means that I cannot look at that change!
+```{r step4, warning = FALSE, message = FALSE}
+#Remove dates that do not correspond to pre and post; sometimes videos were reviewed during setup, for example.
+camera_data04 <- camera_data03 %>%
+  filter(video_priority == 1)
+
+#Identify cameras that have data from both experimental periods
+cameras_pre_and_post <- camera_data04 %>%
+  distinct(year, patch, control_treatment, exp_phase, camera_id, date_video) %>%
+  group_by(year, patch, control_treatment, exp_phase, camera_id) %>%
+  summarise(num_dates = n()) %>%
+  ungroup() %>%
+  pivot_wider(names_from = exp_phase, values_from = num_dates, values_fill = 0) %>%
+  filter(post > 0 & pre > 0)
+
+data_for_experiment <- camera_data04 %>%
+  filter(camera_id %in% cameras_pre_and_post$camera_id)
+
+#Calculate hours in this dataset
+hours_experiment <- data_for_experiment %>%
+  distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %>%
+  group_by(year, patch, control_treatment, camera_num, date_video, exp_phase) %>%
+  summarise(video_hours = sum(video_length)) %>%
+  ungroup() %>%
+  summarise(video_hours = sum(video_hours)) %>%
+  ungroup()
+
+hours_experiment
+```
+
+## Step 5: Filter data for 'normal' visitation
+
+Remove data from 'post' period of treatment replicates (i.e., data affected by experimental *Heliconia* removal)
+```{r step5}
+data_for_normal_visitation <- camera_data03 %>%
+  filter(!(control_treatment == "treatment" & exp_phase == "post"))
+
+#Calculate hours in this dataset
+hours_normal_visitation <- data_for_normal_visitation %>%
+  distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %>%
+  group_by(year, patch, control_treatment, camera_num, date_video, exp_phase) %>%
+  summarise(video_hours = sum(video_length)) %>%
+  ungroup() %>%
+  summarise(video_hours = sum(video_hours)) %>%
+  ungroup()
+
+hours_normal_visitation
+```
+
+## Step 6: Summarize data for experiment
+
+Calculate visitation rates for each patch-year (across camera IDs, dates)
+```{r step6a}
+sighting_rates_all_spp = calculate_sighting_rates(data = data_for_experiment, level_org = "plant_species", level_time = "exp_phase", level_bird = "camera_spp_combined", sightings = "with_visit", include_unknown_spp = FALSE)
+
+sighting_rates_greh_visa = calculate_sighting_rates(data = data_for_experiment, level_org = "plant_species", level_time = "exp_phase", level_bird = list(greh_visa = c("GREH", "VISA")), sightings = "with_visit", include_unknown_spp = FALSE)
+
+#Combine various summaries
+sighting_rates <- sighting_rates_all_spp %>%
+  bind_rows(sighting_rates_greh_visa) %>%
+  select(bird_group, everything())
+```
+
+Calculate visitation rates for each patch-year (across camera IDs, dates) - color-marked birds only
+
+There are some 'marked' birds for 2016, before we marked birds with nail polish, but those are for radio transmitters. I am only interested in birds that can be identified to individual based on color mark, so these data will only reflect the last two years of study (2017-2018)
+```{r step6b}
+marked_sighting_rates_all_spp = calculate_sighting_rates(data = data_for_experiment, level_org = "plant_species", level_time = "exp_phase", level_bird = "individual_marked", sightings = "with_visit", include_unknown_spp = FALSE) %>%
+  filter(!is.na(color_id))
+
+marked_sighting_rates_greh_visa = marked_sighting_rates_all_spp %>%
+  filter(bird_species == "GREH" | bird_species == "VISA")
+  
+marked_sighting_rates <- marked_sighting_rates_all_spp %>%
+  bind_rows(marked_sighting_rates_greh_visa) %>%
+  select(bird_group, everything())
+
+#How many video hours are there for 2017-2018? Calculate hours in this dataset
+hours_experiment_17_18 <- data_for_experiment %>%
+  filter(year == "2017" | year == "2018") %>%
+  distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %>%
+  group_by(year, patch, control_treatment, camera_num, date_video, exp_phase) %>%
+  summarise(video_hours = sum(video_length)) %>%
+  ungroup() %>%
+  summarise(video_hours = sum(video_hours)) %>%
+  ungroup()
+
+hours_experiment_17_18
+
+#How many marked individuals were detected on camera?
+marked_individuals_on_camera <- marked_sighting_rates %>%
+  distinct(year, patch, bird_species, band_number, trans_freq, colors, color_id)
+
+marked_individuals_on_camera$color_id %>% length()
+
+#How does that compare to the number of individuals that were color marked?
+#STILL NEED TO ADD THIS
+```
+
+Summarize data for checking telemetry data
+```{r}
+#STILL NEED TO ADD THIS
+```
+
+## Step 7: Explore data related to *Heliconia*, using 'normal' visitation data
+
+What species visit Heliconia?
+```{r step7a}
+#To level of species
+heto_sightings_by_species <- calculate_sighting_rates(data = data_for_normal_visitation, level_org = "plant_species_across_sites", level_time = "all", level_bird = "camera_spp_separate", sightings = "with_visit", include_unknown_spp = TRUE) %>% 
+  filter(plant_species == "HETO") %>%
+  filter(sightings > 0) %>%
+  mutate(bird_sex = "all")
+
+#Before summarizing to level of sex, combine unknown sex categories, i.e. convert unknown male (UM) and unknown female (UF) to unknown
+data_for_heto_sightings_by_sex <- data_for_normal_visitation %>%
+    mutate(bird_sex = ifelse(bird_sex == "UM" | bird_sex == "UF", "U", as.character(bird_sex)))
+  
+heto_sightings_by_sex <- calculate_sighting_rates(data = data_for_heto_sightings_by_sex, level_org = "plant_species_across_sites", level_time = "all", level_bird = "camera_spp_separate_sex", sightings = "with_visit", include_unknown_spp = TRUE) %>% 
+  filter(plant_species == "HETO") 
+
+#Combine for Supp material
+heto_sightings <- heto_sightings_by_species %>%
+  bind_rows(heto_sightings_by_sex) %>%
+  arrange(bird_species, desc(sightings))
+
+#How many video hours for this dataset?
+hours_normal_visitation_heto <- data_for_normal_visitation %>%
+  filter(plant_species == "HETO") %>%
+  distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %>%
+  group_by(year, patch, control_treatment, camera_num, date_video, exp_phase) %>%
+  summarise(video_hours = sum(video_length)) %>%
+  ungroup() %>%
+  summarise(video_hours = sum(video_hours)) %>%
+  ungroup()
+
+hours_normal_visitation_heto
+```
+
+How many hummingbird sightings per *Heliconia* plant (inflorescence) per day?
+```{r step7b}
+#Summarize using 'normal' data, by camera number. Each camera was positioned at a single Heliconia inflorescence
+heto_sightings_per_date <- calculate_sighting_rates(data = data_for_normal_visitation, level_org = "camera_num", level_time = "date_video", level_bird = "camera_spp_combined", sightings = "with_visit", include_unknown_spp = TRUE) %>% 
+  filter(plant_species == "HETO")
+
+heto_sightings_per_date_sum <- heto_sightings_per_date %>%
+  calculate_basic_summary_stats(variable = sightings)
+
+heto_sightings_per_date_sum
+
+#Sightings per date is the most meaningful metric...but not all dates have 12 hours of video. Can I extrapolate from sightings/hour? Only problem would be if rate isn't constant throughout day
+heto_sightings_per_12_hours <- heto_sightings_per_date %>%
+  mutate(sightings_per_12hours = sightings_per_hour * 12) %>% #Hourly sighting rate multiplied by 12
+  select(-sightings_per_hour)
+
+heto_sightings_per_12_hours_sum <- heto_sightings_per_12_hours %>%
+  calculate_basic_summary_stats(variable = sightings_per_12hours)
+
+heto_sightings_per_12_hours_sum #Slightly higher values when multiply by 12
+```
+
+## Step 8: Export
+```{r step8}
+## Camera data, filtered but not summarized
+write.csv(data_for_experiment, "../../data/export/intermediate/Camera_data_filtered_for_experiment.csv") 
+write.csv(data_for_normal_visitation, "../../data/export/intermediate/Camera_data_filtered_for_normal_visitation.csv") 
+
+## Summarized data for analysis of experiment
+write.csv(sighting_rates, "../../data/export/for_analysis/Visitation_rates_for_analysis.csv") 
+write.csv(marked_sighting_rates, "../../data/export/for_analysis/Visitation_rates_marked_birds_for_analysis.csv")
+
+##  Summarized data of Heliconia visitation
+write.csv(heto_sightings, "../../data/export/supp_tables/Heliconia_visitor_summary.csv")
+```
