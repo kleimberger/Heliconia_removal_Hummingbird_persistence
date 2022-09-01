@@ -25,11 +25,11 @@
 
 
 #Function to calculate sighting rates
-#Argument 'include_unknown_spp' refers to unknown species. Only relevant if summarizing all species (combined or separaately), not certain groups (e.g., GREH/VISA)
+#Argument 'include_unknown_spp' refers to unknown species. Only relevant if summarizing all species (combined or separately), not certain groups (e.g., GREH/VISA)
 #Argument 'sightings' can be either 'all' (no filtering), 'with_visit', or 'honest_visit'
 #Argument 'marked' can be either 'all' (no filtering), 'unmarked' or 'marked'
 #Default arguments reflect single overall network across sites, years
-calculate_sighting_rates <- function(data, level_org = "plant_species_across_sites", level_time = "all", level_bird = "camera_spp_combined", sightings = "with_visit", marked = "all", include_unknown_spp = FALSE){
+calculate_sighting_rates <- function(data, level_org = "plant_species_across_sites", level_time = "all", level_bird = "individual_marked", sightings = "with_visit", marked = "all", include_unknown_spp = FALSE){
   
   #---------------------------------------------------------------------
   #Define the variables of interest (levels at which to summarize data)
@@ -68,6 +68,25 @@ calculate_sighting_rates <- function(data, level_org = "plant_species_across_sit
   if(level_bird == "camera_spp_separate"){
     
     bird_vars = append(vars, "bird_species")
+    
+  }
+  
+  #All bird species considered separately, not grouped together. This species-level summary is what is needed to create networks
+  if(level_bird == "camera_spp_separate_sex"){
+    
+    bird_vars = append(vars, c("bird_species", "bird_sex"))
+    
+  }
+  
+  
+  #Individually marked birds
+  if(level_bird == "individual_marked"){
+    
+    bird_vars = append(vars, c("bird_species", "band_number", "trans_freq", "colors", "color_id"))
+    
+    data_sightings <- data_sightings %>%
+      filter(!is.na(colors) & colors != "None" & colors != "M" & colors != "U") %>% #Remove birds without distinguishable marks
+      filter(color_id != "2018_29_STRH_B") #This mark is duplicated, not distinguishable
     
   }
   
