@@ -1,0 +1,383 @@
+---
+title: "Calculating capture & recapture rates"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Overall goal**
+
+Calculate two response variables:
+
+1. Capture rates: number of hummingbirds caught per net-hour
+
+- Will keep these columns separate so can model rate with an offset using GLMM
+
+2. Recapture rates: proportion of birds captured (and tagged) during the 'pre' period that were recaptured during the 'post' period
+
+- Will keep these columns separate so can model rate as counted proportion using GLMM
+
+**Additional goals**
+
+Explore capture data and summarize for results/methods. How many total hummingbirds captured? Recaptures? etc.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+```
+
+## Step 1: Import data and functions
+
+```{r step1}
+#Capture data. This is all capture data, spanning all years of the project.
+#1. Subset just to data for the experiment (2016-2018)
+#2. Remove data from establishment period (initial failed capture in p200)
+#3. Remove day recaptures
+#4. Remove bird that died during first capture (not around to be recaptured in post)
+#5. Add column for bird ID, because birds were sometimes not banded. Using colors instead in those cases. This ID will allow me to identify recaps between pre/post a given patch/year
+captures <- read.csv("../../data/import/Hummingbird_captures_2010-2018_20220713.csv") %>%
+  rename(patch = site) %>%
+  filter(year >= 2016) %>%
+  filter(exp_phase == "capture_1" | exp_phase == "capture_2") %>% 
+  filter(status != "DR") %>%
+  filter(!(grepl("died", notes))) %>%
+  mutate(bird_id = ifelse(is.na(band_number), paste(year, patch, species, colors, sep = "_"), paste(year, patch, species, band_number, sep = "_"))) %>%
+  mutate(date = lubridate::mdy(date)) %>%
+  mutate(across(c(year, patch), as.character)) %>% 
+  mutate(trap_id = as.integer(trap_id))
+
+#Capture effort (net-hours)
+net_hours <- read.csv("../../data/export/intermediate/Net-hours_2016-2018.csv") %>%
+  select(-X) %>%
+  rename(control_treatment = control_trmt) %>%
+  mutate(net_hours = round(net_hours_adjusted, digits = 4)) %>%
+  mutate(date = lubridate::ymd(date)) %>%
+  mutate(across(c(year, patch), as.character))
+
+#Scientific names
+bird_species_names <- read.csv("../../data/import/Hummingbird_codes_species_list.csv") %>%
+  rename(species = code)
+
+#Functions
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+```
+
+## Step 2: Explore capture data (totals)
+
+Calculate the following for the results/Supp material.
+
+- Total number of captures, omitting day recaptures
+- Total number of individuals captured
+
+First, double check to make sure day recaptures have been removed. I filtered them out above (status != "DR"), but it's possible some could have slipped through.
+```{r step2a}
+recaps_within_day <- captures %>%
+  distinct(patch, date, species, band_number) %>%
+  filter(!is.na(band_number)) %>% #NA for birds not banded
+  group_by(date, species, band_number) %>%
+  summarise(num_captures = n()) %>%
+  filter(num_captures > 1)
+
+#Yes, they have all been removed.
+```
+
+Total of number of captures and individuals
+```{r step2b}
+#Total number of captures (omitting day recaptures)
+total_captures <- captures %>%
+  summarise(total_birds = n())
+
+total_captures
+
+#Total captures by species
+total_captures_per_species <- captures %>%
+  group_by(species) %>%
+  summarise(num_captures = n()) %>%
+  arrange(desc(num_captures))
+
+total_captures_per_species
+
+#Total number of individuals captured and banded
+banded_individuals <- captures %>%
+  distinct(species, band_number) %>%
+  filter(!is.na(band_number))
+
+num_banded_individuals <- banded_individuals$band_number %>% length() + 2
+
+#318 birds banded + 2 birds that were probably band typos (see below) --> 320 birds banded
+
+#Total number of individuals captured and not banded
+unbanded_individuals <- captures %>%
+  filter(is.na(band_number) | band_number == "NA")
+
+num_unbanded_individuals <- unbanded_individuals$band_number %>% length()
+
+#Total individuals captured
+(total_captured_individuals = num_banded_individuals + num_unbanded_individuals)
+
+#320 BANDED + 12 UNBANDED = 332
+```
+
+## Step 3: Identify and summarize recaptures on different levels
+
+- Between sites (across years)
+- Within sites (across years)
+- Within sites (within year, i.e. during experiment)
+
+Birds recaptured in different sites
+```{r step3a}
+#Calculate number of sites/bird to get recaptures across sites
+recaps_across_sites <- captures %>%
+  distinct(patch, species, band_number) %>%
+  filter(!is.na(band_number)) %>% #NA for birds not banded
+  group_by(species, band_number) %>%
+  summarise(num_sites = n()) %>%
+  arrange(desc(num_sites)) %>%
+  filter(num_sites > 1)
+
+#There are supposedly four birds caught in different patches, but only half of these seem probable.
+
+#Possible recaptures across sites: 
+#GCBR SA3779 - transmitter frequency 131. Caught 3 times in 2017! Banded in p24, caught in pre and post, and then caught ~ 1 mo later in p203
+#GCBR SA4102 - banded in p203 in 2017, caught in 2018 in p24
+#Interestingly, both of these are GCBR going between p24 and p203, which are only ~600m apart.
+
+#Unlikely recaptures across sites
+#RTAH SA4722 - both captures in 2017, p204/p49. Confirmed data entry error for initial capture - new band, NOT a recapture. Missing datashet for supposed (new) capture on 29-Apr-17 but probably a typo in that band number.
+#STRH SA4207 - both captures in 2018, p29/p10. Suspected typo - new band in both, NOT a recapture.
+
+#Either way, birds moving between sites seems pretty rare
+length(recaps_across_sites$band_number)/total_captured_individuals
+```
+
+Birds recaptured across years
+```{r step3b}
+recaps_across_years <- captures %>%
+  distinct(year, species, band_number) %>% #Don't bother with color marks; will have worn off.
+  filter(!is.na(band_number)) %>% #NA for birds not banded
+  group_by(species, band_number) %>%
+  summarise(num_years = n()) %>%
+  filter(num_years > 1)
+
+length(recaps_across_years$band_number)
+
+#15 birds caught in different years. This includes 1 bird (GCBR SA4102) recaptured across sites
+#Interestingly, the only birds caught in all three years were in p10: GREH SA4005 and STRH SA4200
+```
+
+Birds recaptured within an experiment (i.e., birds caught pre and post); this is what I'm interested in
+```{r step3c}
+recaps_within_experiment <-  captures %>%
+  distinct(year, patch, exp_phase, species, bird_id, band_number, colors) %>% #Not all birds banded, so use colors marks as well.
+  group_by(year, patch, species, bird_id, band_number, colors) %>%
+  summarise(num_captures = n()) %>%
+  filter(num_captures > 1)
+
+length(recaps_within_experiment$bird_id)
+
+#34 birds caught in both pre and post. Will use this later on to calculate recapture rate (proportion of birds tagged pre that were re-captured post)
+```
+
+~The Math~
+
+The breakdown in the difference between 383 total captures and 332 unique individuals (i.e., how the 51 recaptures are partitioned)
+
+- 2 bird recaptured across sites --> +2
+- 15 birds recaptured across years, but 1 of those birds already accounted for in birds recaptured across sites (-1). But then two birds were re-caught 3 times, not 2 (+2) --> +16
+- 34 birds recaptured within experiment, but 1 of those birds already accounted for in birds recaptured across years (STRH SA4200) --> +33
+
+2 + 16 + 34 = 51 recaps
+
+## Step 4: Make a summary table of bird species detected per site
+```{r step4}
+#Captures of unique individuals per site, by species
+species_per_site <- captures %>%
+  distinct(patch, species, band_number) %>%
+  group_by(patch, species) %>%
+  summarise(num_birds = n()) %>%
+  left_join(bird_species_names)
+
+#Convert to wide form, with just an 'x' if species was detected in the site
+species_per_site_x <- species_per_site %>%
+  mutate(detected = "x") %>%
+  select(-num_birds) %>%
+  pivot_wider(names_from = patch, values_from = detected, values_fill = "")
+
+#Individuals per species
+individuals_per_species <- species_per_site %>%
+  group_by(species) %>%
+  summarise(num_birds = sum(num_birds))
+
+#Individuals per species - OMITTING BIRDS FROM 'POST' PERIOD IN TREATMENT (i.e., for description of relative abundance/what is 'normal' for study system)
+individuals_per_species_normal <- captures %>% 
+  filter(!(control_treatment == "treatment" & exp_phase == "capture_2")) %>%
+  distinct(patch, species, band_number) %>%
+  group_by(species) %>%
+  summarise(num_birds_normal = n())
+
+#Combine data. This is a combined summary of (a) bird species included in capture data, and (b) which sites had which birds
+capture_summary_table <- species_per_site_x %>%
+  left_join(individuals_per_species) %>%
+  left_join(individuals_per_species_normal) %>%
+  left_join(total_captures_per_species) %>%
+  mutate_at(vars(num_birds_normal), ~ifelse(is.na(.), 0, .)) %>%
+  arrange(desc(num_birds))
+```
+
+## Step 5: Summarize capture data for analysis
+
+I want to summarize capture numbers for:
+
+- All species combined ('all_spp')
+- *Heliconia* specialists, green hermits and violet sabrewings ('greh_visa')
+
+```{r step5}
+#All species combined
+num_birds_all_species  <- captures %>% 
+  group_by(year, patch, control_treatment, date, exp_phase) %>% 
+  summarise(num_birds = n()) %>% 
+  ungroup() %>% 
+  right_join(net_hours) %>% #Add info about net hours. Right join so can fill in missing data with zeroes
+  mutate(num_birds = ifelse(is.na(num_birds), 0, num_birds)) %>%  #Some patches had no captures (of any species) - making these zero
+  mutate(bird_group = "all_spp")
+
+#GREH/VISA only
+num_birds_greh_visa <- captures %>% 
+  filter(species == "GREH" | species == "VISA") %>% 
+  group_by(year, patch, control_treatment, date, exp_phase) %>% 
+  summarise(num_birds = n()) %>% 
+  ungroup() %>% 
+  right_join(net_hours) %>% #Add info about net hours. Right join so can fill in missing data with zeroes
+  mutate(num_birds = ifelse(is.na(num_birds), 0, num_birds)) %>%  #Some patches had no captures (of any species) - making these zero
+  mutate(bird_group = "greh_visa")
+
+#Combine, calculate capture rates
+capture_rates <- num_birds_all_species %>%
+  bind_rows(num_birds_greh_visa) %>%
+  select(bird_group, year, patch, control_treatment, date, exp_phase, net_hours = net_hours_adjusted, num_birds) %>%
+  arrange(bird_group, year, patch, control_treatment, exp_phase) %>%
+  mutate(capture_rate = num_birds/net_hours,
+         capture_rate = round(capture_rate, digits = 4))
+```
+
+*Notes*
+
+There was 1 instance where no birds (of any species) were captured during pre period
+- 2017 p137 (control) --> also no birds during post period
+
+There were 3 *additional* instances where no GREH or VISA were captured during pre period
+- 2016 p200 (control)
+- 2017 p200 (treatment)
+- 2018 p137 (control) --> also no GREH/VISA during post period
+
+Will need to decide whether or not to include sites that didn't have any captures during 'pre'. Including would be biased *against* finding a treatment effect (decline in capture numbers), since you can only go up from zero.
+
+## Step 6: Summarize recapture data for analysis
+
+Here, 'recaptures' = birds caught during both of the capture sessions, pre AND post
+
+Recapture rate = proportion of birds tagged in first capture that were caught during second capture
+
+Filter data to be used in recapture analysis
+```{r step6a}
+#1. Remove birds without any identifying marks. Cannot ensure independence between measurements if not marked.
+#2. Remove birds with suspect band numbers (likely typos in band number are indicated by asterisk as of 1/25/2021). Need to remove these birds from recapture analysis, because recaptures based on band number match
+data_for_recaptures <- captures %>%
+  filter(!(grepl("*", band_number, fixed = TRUE))) %>%
+  select(bird_id, everything())
+```
+
+Identify recaptures
+```{r step6b}
+#Birds that were captured during pre period
+pre_birds <- data_for_recaptures %>%
+  filter(exp_phase == "capture_1")
+
+#Birds that were captured during post period
+post_birds <- data_for_recaptures %>%
+  filter(exp_phase == "capture_2")
+
+#Identifying pre-post recaps (for a given patch, post %in% pre)
+#THIS IS THE SAME AS 'recaps_within_experiment', above
+recaptures <- post_birds %>%
+  filter(bird_id %in% pre_birds$bird_id) %>% 
+  select(year, patch, control_treatment, bird_id, species)
+
+#What percentage of birds captured during pre were recaptured during post?
+(num_pre_birds <- pre_birds$band_number %>% length())
+(num_recaptures <- recaptures$bird_id %>% length())
+
+num_recaptures/num_pre_birds
+```
+
+*Of 203 birds [without suspected band typos] captured during the 'pre' period, 34 were captured during the post (~17% overall recapture rate)*
+
+Add column (0/1) to dataset of birds captured during pre, indicating whether they were they recaptured during post. This is for if I want to incorporate individual covariates that might determine whether a bird was recaptured later on.
+```{r step6c}
+pre_birds_with_recap_status <- pre_birds %>%
+  mutate(recaptured_post = ifelse(bird_id %in% recaptures$bird_id, 1, 0)) %>%
+  select(bird_id, recaptured_post, everything())
+```
+
+Now, summarize # of birds re-captured for:
+
+- All species combined ('all_spp')
+- *Heliconia* specialists, green hermits and violet sabrewings ('greh_visa')
+
+```{r step6d}
+#All species
+num_recaptures_all_species  <- recaptures %>% 
+  group_by(year, patch, control_treatment) %>% 
+  summarise(num_birds = n()) %>% 
+  ungroup() %>%
+  mutate(bird_group = "all_spp")
+
+#GREH/VISA only
+num_recaptures_greh_visa <- recaptures %>% 
+  filter(species == "GREH" | species == "VISA") %>% 
+  group_by(year, patch, control_treatment) %>% 
+  summarise(num_birds = n()) %>% 
+  ungroup() %>%
+  mutate(bird_group = "greh_visa")
+
+#Combine data
+num_recaptures <- num_recaptures_all_species %>%
+  bind_rows(num_recaptures_greh_visa) %>%
+  rename(num_recaps_post = num_birds)
+  
+recapture_rates <- capture_rates %>%
+  select(bird_group, year, patch, control_treatment, exp_phase, num_birds) %>%
+  pivot_wider(names_from = exp_phase, values_from = num_birds) %>%
+  rename(num_birds_pre = capture_1, num_birds_post = capture_2) %>%
+  left_join(num_recaptures) %>%
+  mutate(num_recaps_post = ifelse(is.na(num_recaps_post), 0, num_recaps_post)) %>% #Fill in zeroes for no recaps
+  mutate(recap_rate = num_recaps_post / num_birds_pre) #Will be NaN if denominator is zero (no birds caught during pre)
+```
+
+## Step 7: Export data
+
+```{r step7}
+#CAPTURES
+#For main analysis
+write.csv(capture_rates, "../../data/export/for_analysis/Capture_rates.csv")
+
+#For Supp table
+write.csv(capture_summary_table, "../../data/export/supp_tables/Captured_species_per_site_summary_table.csv")
+
+#RECAPTURES
+#For main analysis
+write.csv(recapture_rates, "../../data/export/for_analysis/Recapture_rates.csv")
+
+#For analysis of pre-post changes in body condition
+write.csv(recaptures, "../../data/export/intermediate/Birds_recaptured_post.csv")
+
+#For potential future analysis of whether individual attributes influence recapture (0/1 for each bird)
+write.csv(pre_birds_with_recap_status, "../../data/export/intermediate/Birds_captured_pre_with_recap_status.csv") 
+```
