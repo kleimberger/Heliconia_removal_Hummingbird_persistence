@@ -1,0 +1,251 @@
+---
+title: "Calculating time at location"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Goal:**
+
+Calculate the amount of time birds spent at each location (GPS coordinate), based on the difference between arival time and departure time. However, due to the difficulties in following (i.e., keeping up with) hummingbirds, sometimes the departure time was not recorded. If departure time is not recorded, estimate time at location based on the next arrival time. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(lubridate) #Need to load before raster, because otherwise will mask 'intersect'
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+## Step 1: Get data
+```{r, get_data}
+telem_data <- read.csv("../../data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv") %>%
+  select(-X, -id)
+```
+
+## Step 2: Calculate time at location
+
+If 'time_arrive' and 'time_leave' are the same time, then end up with a bunch of zeroes. However, this is misleading because the bird was not there for 0 minutes; rather, the bird was there for 1 minute or less. Possible solutions:
+
+- Add a minute to all existing times at location, which makes the time inclusive (i.e. assume that the bird is at the point for the entire minute of 'time_arrive' and 'time_left'). However, this also leads to double-counting minutee if the time left is also the next time start, inflating the time in patch (sometimes more than the calculated observation time),
+
+- Convert time at location to 1 minute if start and end time are the same. <-- *DECIDED TO DO THIS*
+
+```{r, calculated_time_at_location}
+#Are there any rows where 'time_arrive' is NA?
+check01 <- telem_data %>%
+  filter(is.na(time_arrive))
+
+#Calculate time at location (when start and end times present)
+telem_data02 <- telem_data %>%
+  mutate(date = ymd(date)) %>%
+  mutate(time_leave_period = hm(time_leave), #Convert to lubridate::period object but keep original time column!
+         time_arrive_period = hm(time_arrive), #Convert to lubridate::period object but keep original time column!
+         time_at_location = as.numeric(time_leave_period - time_arrive_period, "minutes")) %>%
+  mutate(time_at_location = ifelse(time_at_location == 0, 1, time_at_location))
+```
+
+## Step 3: Estimate time at location when departure time ('time_leave') not recorded
+
+The challenge with calculating time spent in in patch: how much time did the bird spend at a location? Unfortunately, the time that the bird left the point was usually not recorded during 2016-2017 telemetry data. How to deal with rows missing this data?
+
+Assume that time left can be roughly estimated by the start time of the next point, as long as observer is following bird closely. To determine whether observer was following closely, did the following:
+
+- Went back to 2016-2017 Excel sheets and, if there was a note about losing the bird or a weak/poor/changing/interference-y signal, manually filled in 'time_leave' with 'time_arrive'. Basically searched keywords suggesting that the bird was probably not at that location very long or the observer didn't have particularly close tabs on the bird. Adding an end time for these rows hopefully helps prevent instances of a bird re-appearing much later and the entire intervening time interval getting scored as being at the previous point.
+  
+    Search keywords relating to poor signal and/or signal moving around: 'LOST/LOSE/LOSING', 'WEAK/POOR SIGNAL', 'INTERFERENCE', 'SIGNAL CHANGE/CHANGING', 'GONE'
+    Search keywords relating to bird leaving the patch: 'LEFT/SALIO'
+    
+    For 'LEFT'/'SALIO', it was often unclear where the bird was leaving. Did they just leave the previous point and arrive at current point -OR- were they leaving the current point? If I was fairly confident that the note implied bird was leaving the patch - i.e., not leaving to go TO the patch, not leaving the "banana patch", "trash patch", non-focal patch, etc. - I filled in 'time_leave' with 'time_arrive'. This will hopefully reduce the instances of bird having really long time at (in patch) location depsite probably not being in patch.
+    
+- Went back to 2016-2017 Excel sheets to address when observers stopped following the bird (temporarily or for the day). For these, decided to add the stop time as the 'time_leave'. Otherwise, bird could be at point for a really long time.
+
+    Search keywords relating to stopping telemetry: 'STOP', 'END', 'FINISH', 'DONE', 'BREAK'
+    
+AS OF 12/14/2021:
+
+Decided not to try and score 'MOVING/FLYING' because only Tocho (ESP) took seems to have regularly taken notes on it, and it's also not always clear if the bird is just flying around in the flowers (in one spot) or actively flying away. And the birds were basically always moving anyway.
+
+Created column in raw data ('time_leave_category') so that manual edits involving some degree of uncertainty will NOT be considered 'known' times at location. This column replaces the relevant notes from the 'notes_data' column.
+
+In 2016 data, have ~70 rows where manually adjusted 'time_leave' (most are for poor signal/leaving patch/etc. Remaining rows are for truncated stop time).
+In 2017 data, have ~60 rows where manually adjusted 'time_leave' (most are for poor signal/leaving patch/etc. Remaining rows are for truncated stop time).
+    
+```{r, estimate_time_at_location}
+#Input dataframe has already had 'time at location' calculated if an end time ('time_leave') is present, with 'time_leave' was either recorded in the field or assigned based on notes (i.e., if the bird was unlikely to be stationary)
+#This function fills in missing values in 'time_leave', then re-calculates time at each location
+estimate_time_at_loc <- function(telem_data){
+  
+  #Dataset with timepoints labeled per frequency and date, and 'time_next' calculated
+  data_with_time_next <- telem_data %>%
+    arrange(year, patch, frequency, date, time_arrive_period) %>%
+    group_by(frequency, date) %>%
+    mutate(time_id = 1:length(year)) %>% #Number observations in chronological order for each bird on a given date
+    mutate(time_next = dplyr::lead(time_arrive_period)) %>%
+    ungroup()
+  
+  #Last observation of each day
+  last_observation <- data_with_time_next %>%
+    group_by(frequency, date) %>%
+    summarise(time_id_max = max(time_id)) %>%
+    ungroup()
+
+  #Estimate time at location
+  data_time_at_loc <- data_with_time_next %>%
+    left_join(last_observation) %>%
+    
+    #Only estimate time and location if there is not already data present
+    #For last observation on each date, assign 1 minute if 'time_leave' is missing. Originally assigned NA, but as of 9/28/20, decided to assign 1 minute so that if bird was in patch, this information will not totally disappear when calculate time in patch.
+    mutate(time_at_location_est = ifelse(is.na(time_at_location), as.numeric(time_next - time_arrive_period, 'min'), time_at_location), 
+           time_at_location_est = ifelse(is.na(time_at_location) & time_id == time_id_max, 1, time_at_location_est)) %>% 
+    
+    #Update this column. Already filled in certain categories manually in Excel sheet ('estimated_notes' and 'stop_time')
+    mutate(time_leave_category = ifelse(is.na(time_at_location), "estimated_next_point", time_leave_category)) %>%
+    mutate(time_leave_category = ifelse(!is.na(time_at_location) & is.na(time_leave_category), "known", time_leave_category)) %>%
+
+    #Convert zeroes in estimated time at location column to 1 minute, just to make sure data does not totally disappear when calculate time in patch. Zeroes arise when there were multiple observers following the same bird and recording points simultaneously, leading to situations where 'time_arrive' = 'time_next'.
+    mutate(time_at_location_est = ifelse(time_at_location_est == 0, 1, time_at_location_est)) %>%
+    
+    #Replace original 'time_at_location' column with estimate column
+    select(-time_at_location) %>%
+    select(row_id:frequency, time_id, time_id_max, time_arrive, time_leave, time_arrive_period, time_leave_period, time_next, time_at_location = time_at_location_est, time_leave_category, everything()) #Reorder columns
+  
+  return(data_time_at_loc)
+}
+
+#Run function
+telem_data03 <- estimate_time_at_loc(telem_data02) %>%
+    select(-time_id, -time_id_max, -contains("period"))
+```
+
+Running some checks. Are there major outliers for time at location?
+
+```{r, checking_time_at_location}
+#But wait...I won't be using ALL of the telemetry data. There will be some filtering before I get to analysis. Hopefully filtering will get rid of some of the extremeness in times.
+time_at_loc_data <- telem_data03 %>%
+  filter(!is.na(point_in_patch)) %>% #Remove rows for which we do not have info about whether bird is in/out of patch. This means completes GPS coords --OR-- notes about in/out of patch
+  filter(!grepl("lost transmitter", notes_capture, ignore.case = TRUE)) %>%
+  filter(distance <= 100)
+
+#Check: why are there zeroes in the estimated time at location column? There were multiple observers following the same bird and recording points simultaneously, leading to situations where 'time_arrive' = 'time_next'.
+check02 <- time_at_loc_data %>%
+  filter(time_at_location == 0)
+
+#Check: how many of these zeroes are "in patch"? Will affect response variable (proportion of time in patch)
+check03 <- check02 %>%
+  filter(point_in_patch == 1)
+
+#Check: why are there really large estimated times at location?
+check04 <- time_at_loc_data %>%
+  filter(time_at_location > 30 & time_leave_category != "known") %>%
+  select(year, observer, patch, species, frequency, date, starts_with("time"), point_in_patch, notes_location_english, notes_location_spanish, notes_data)
+
+#Check: how many of these really large estimated times are "in patch"? Will affect response variable (proportion of time in patch)
+check05 <- check04 %>%
+  filter(point_in_patch == 1)
+```
+
+## Step 4: Data exploration
+
+How long are birds typically at a point out of patch vs. in patch
+
+```{r, time_in_versus_out_of_patch}
+in_out_sum <- time_at_loc_data %>%
+  filter(time_leave_category == "known") %>%
+  group_by(point_in_patch) %>%
+  summarise(mean = mean(time_at_location, na.rm = TRUE),
+            sd = sd(time_at_location, na.rm = TRUE),
+            median = median(time_at_location, na.rm = TRUE)) %>%
+  filter(!is.na(point_in_patch))
+
+in_out_sum
+
+#Plot of time in patch vs. time out of patch
+time_at_loc_data %>%
+  filter(!is.na(point_in_patch)) %>%
+  ggplot(., aes(x = time_at_location, fill = factor(point_in_patch)))+
+    geom_density(alpha = 0.4)+
+    geom_vline(data = in_out_sum, aes(xintercept = mean, linetype = factor(point_in_patch)), size = 0.8) + #Add line for mean time at location
+    xlab("Time at location") +
+    scale_fill_grey() +
+    scale_linetype_manual(values = c("dashed", "dotted"), labels = c("0", "1")) +
+    theme_bw(base_size = 20)
+```
+
+*For known locations, approximately 5-6 minutes +/- 6-ish minutes (for both in-patch and out-of-patch). Median of 3-4 minutes.*
+
+How closely do estimated times approximate that known times?
+```{r, compare_known_vs_estimated_times, fig.width = 10, fig.height = 7.5}
+time_at_loc_data_to_plot <- time_at_loc_data %>%
+  filter(time_leave_category == "known" | time_leave_category == "estimated_next_point") %>%
+  mutate(log_time_at_location = log(time_at_location))
+
+time_at_loc_sum <- time_at_loc_data_to_plot %>% 
+  group_by(time_leave_category) %>%
+  summarise(mean = mean(time_at_location, na.rm = TRUE),
+            sd = sd(time_at_location, na.rm = TRUE),
+            median = median(time_at_location, na.rm = TRUE)) 
+
+time_at_loc_sum
+
+time_at_loc_sum_pretty <- time_at_loc_sum %>%
+  mutate_at(vars("mean", "sd", "median"), ~round(., 2)) %>%
+  rename(Category = time_leave_category, Mean = mean, SD = sd, Median = median) %>%
+  mutate(Category = factor(Category, levels = c("estimated_next_point", "known"), labels = c("Estimated", "Recorded \nin field")))
+
+#Code to add table, from Lab 3 in Ariel's class
+library(gridExtra)
+library(gtable)
+library(grid)
+table_for_plot <- tableGrob(time_at_loc_sum_pretty,
+                            rows = NULL,
+                            theme = ttheme_default(core = list(bg_params = list(fill = "white")), colhead = list(bg_params = list(fill = "white", col = "white"))))
+
+#Add rectangle around table
+table_for_plot = gtable_add_grob(table_for_plot, grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+                                 t = 1, b = nrow(table_for_plot), r = ncol(table_for_plot), l = 1)
+#Add line under column names
+table_for_plot = gtable_add_grob(table_for_plot, grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+                                  t = 1, l = 1, r = ncol(table_for_plot))
+#Make density plot                         
+time_at_loc_density_plot <- ggplot(time_at_loc_data_to_plot, aes(x = time_at_location, fill = time_leave_category)) +
+  geom_density(alpha = 0.6)+
+  theme_bw(base_size = 20) +
+  theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +
+  geom_vline(data = time_at_loc_sum, aes(xintercept = mean, color = time_leave_category, linetype = time_leave_category), size = 0.75, alpha = 0.8) + #Add line for mean time at location
+  scale_fill_grey(labels = c("Estimated from next location", "Recorded in field")) +
+  scale_color_manual(values = c("gray0", "gray20"), labels = c("Estimated from next location", "Recorded in field")) + #Color is for lines. Make lines a little darker than default scale_color_grey
+  scale_linetype_manual(values = c("dashed", "dotted"), labels = c("Estimated from next location", "Recorded in field"))+
+  labs(x = "Minutes at location", y = "Density", color = "Method", fill = "Method", linetype = "Method") +
+  annotation_custom(grob = table_for_plot, xmin = 25, xmax = 150, ymin = .10, ymax = .15)
+
+time_at_loc_density_plot
+ 
+log_time_at_loc_density_plot <- ggplot(time_at_loc_data_to_plot, aes(x = log_time_at_location, fill = time_leave_category))+
+  geom_density(alpha = 0.5)+
+  theme_bw(base_size = 20) +
+  theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +
+  scale_fill_grey(labels = c("Estimated from next location", "Recorded in field")) +
+  labs(x = "Ln(Minutes at location)", y = "Density", color = "Method", fill = "Method")
+  
+log_time_at_loc_density_plot
+
+#Combine plots
+(time_at_loc_plots <- ggpubr::ggarrange(time_at_loc_density_plot, log_time_at_loc_density_plot, common.legend = TRUE, labels = "AUTO"))
+```
+
+*Time-at-locations estimated from difference between successive points are 2-3 minutes longer than known time-at-locations, but not too far off*
+
+## Step 5: Export
+
+```{r, export_data}
+write.csv(telem_data03, "../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv")
+
+ggsave("../../results/response_variables/figures/Time_at_location_density_plots.png", plot = time_at_loc_plots, width = 10, height = 7.5, units = "in", dpi = 300)
+```
+
+*Note: for analysis, will still need to filter out rows with missing data. But, some of these rows have information about telemetry effort, so leaving them in here for now.*

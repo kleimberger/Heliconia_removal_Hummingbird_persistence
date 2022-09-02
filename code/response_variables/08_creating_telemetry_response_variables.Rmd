@@ -1,0 +1,348 @@
+---
+title: "Creating telemetry response variables"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Goals**
+
+Calculate the proportion of observation time that hummingbirds spent in the focal area
+
+Also calculate time at each location --> to try and see if *Heliconia* removal led to birds were moving less/resting more (potential future analysis)
+
+Make a table of radio-tracking outcomes. We tagged 72 birds, but only 36 ended up in the main analysis. What happened to all the birds?
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(lubridate)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+```
+
+## Step 1: Get data and functions
+
+```{r step1}
+#Telemetry data
+telem_data <- read.csv("../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv") %>%
+  select(-X) %>%
+  rename(control_treatment = control_trmt) %>%
+  mutate(date = lubridate::ymd(date))
+
+#Get observation effort
+effort_date <- read.csv("../../data/export/intermediate/Telemetry_effort_by_date.csv") %>%
+  mutate(date = lubridate::ymd(date)) %>%
+  mutate(telem_start = lubridate::ymd_hms(start)) %>%
+  mutate(telem_end = lubridate::ymd_hms(end)) %>%
+  select(-X, -start, -end)
+
+#Bird info
+birds_tagged <- read.csv("../../data/import/Telemetry_birds.csv") %>%
+  select(year, patch = site, species, sex, frequency = frequency_adjusted, bird_notes = notes) %>%
+  mutate(outcome = "tagged")
+
+#Camera data, for checking telemetry data
+camera_data <- read.csv("../../data/import/Camera_data_with_flower_counts_2016-2018_20220712.csv")
+
+#Functions
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+```
+
+## Step 2: Remove points greater than a certain distance from observer
+```{r step2}
+#Since my focus is whether bird is in focal area, not so much the exact location, I am using a greater distance that previous studies from our lab.
+dist_threshold = 100 
+
+telem_data02 <- telem_data %>%
+  filter(distance <= dist_threshold)
+```
+
+## Step 3: Calculate time in patch per bird and date
+
+Will refine this summary throughout the rest of this script, then eventually calculate time in patch at level of experimental period.
+```{r step3}
+time_in_patch_by_date <- telem_data02 %>%
+  filter(point_in_patch == 1) %>% #Only sum the time at locations for points that were IN PATCH. If GPS coords incomplete, will be discarded in this step.
+  group_by(year, patch, control_treatment, frequency, exp_phase, date) %>%
+  summarise(time_in_patch = sum(time_at_location, na.rm = TRUE)) %>%
+  ungroup()
+
+#Add time-in-patch data to list of all telemetry birds, so it's clear which birds are missing data
+#If time_in_patch is NA, assume it wasn't there
+birds_tagged_time_in_patch <- birds_tagged %>%
+  full_join(effort_date) %>%
+  left_join(time_in_patch_by_date) %>%
+  mutate(time_in_patch = ifelse(is.na(time_in_patch), 0, time_in_patch))
+```
+
+## Step 4: Create summary of radio tracking outcomes
+
+Eventually want information about each of the following:
+
+* **Birds tagged:** How many birds were tagged of each species?
+
+Individuals lost from analysis for various reasons:
+
+* **Lost transmitter:** How many lost transmitters, to our knowledge? This is only if we recovered the transmitter.
+* **Never found:** How many were never detected again? Either during telemetry OR on camera
+* **Data reliability:** How many birds were unreliably detected? I.e., not detected during telemetry but seen on camera during period of radio telemetry
+* **Never found in focal area:** How many were never detected in focal area again? Either during telemetry OR on camera
+* **Never found in focal area during 'pre' period:** How many were detected in focal area again, but never in during pre period? Either during telemetry OR on camera
+
+**Identify birds that lost transmitters**
+```{r step4a}
+#These birds lost their transmitters
+birds_with_lost_tags <- birds_tagged %>%
+  filter(grepl("Lost transmitter", bird_notes)) %>%
+   mutate(outcome = "lost_transmitter")
+```
+
+Camera data from 2017-2018 allowed identification of transmitter birds based on color marks. Next, I can use these data to:
+
+- Determine whether birds never found during radio telemetry were indeed never detected on camera
+
+- Check the reliability of the telemetry data on any given date. That is, if birds that were detected on camera during telemetry observations but were not included in telemetry data during that time, then those data are suspect.
+
+Get camera data and filter to relevant datasets
+```{r step4b}
+#Sightings of marked birds with transmitters
+transmitter_sightings <- camera_data %>%
+  rename(frequency = trans_freq, date = date_video) %>%
+  filter(!is.na(frequency)) %>%
+  mutate(date = lubridate::mdy(date)) %>%
+  mutate(sighting_start = lubridate::ymd_hms(paste(date, sighting_start))) %>%
+  select(year, patch, date, exp_phase, sighting_start, bird_species, frequency)
+
+#Sights of marked birds with transmitters, but only when they appeared on camera *during telemetry observation on a given date*
+transmitter_sightings_during_during_telem <- transmitter_sightings %>%
+  left_join(effort_date) %>%
+  filter((sighting_start > telem_start) & (sighting_start < telem_end)) %>%
+  group_by(year, patch, frequency, date) %>%
+  summarise(num_sightings_video = n()) %>%
+  ungroup()
+```
+
+**Identify birds never found in telemetry data OR camera data**
+```{r step4c}
+#These birds were never found during telemetry (i.e., aren't in telemetry data at all). Though note that they might be detected on camera!
+birds_never_found <- birds_tagged %>%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %>%
+  filter(!(frequency %in% telem_data$frequency)) %>%
+  mutate(outcome = "never_found")
+
+unique(birds_never_found$frequency) %>% length
+
+#Were any birds that were completely missing from telemetry data then found on camera?
+birds_only_found_on_camera <- transmitter_sightings %>%
+  filter(frequency %in% birds_never_found$frequency)
+
+unique(birds_only_found_on_camera$frequency) %>% length
+
+#Nope, if they weren't found in telemetry data, they weren't found at all.
+```
+
+**Identify birds with data reliability issues (mismatch between telemetry and camera data)**
+```{r step4d}
+#Find birds/dates where bird was in patch according to camera, but not according to telemetry
+transmitter_birds_undetected_during_telem <- birds_tagged_time_in_patch %>%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %>%
+  filter(!(frequency %in% birds_never_found$frequency)) %>%
+  left_join(transmitter_sightings_during_during_telem) %>%
+  filter(num_sightings_video > 0 & time_in_patch == 0) %>%
+  mutate(bird_date_id = paste(frequency, date, sep = "_"))
+
+unique(transmitter_birds_undetected_during_telem$frequency) %>% length
+
+#Remove the birds + dates where there is a mismatch between telemetry and camera data
+#Does the bird still have data pre and post? If not, 'absence' during one of the periods (pre/post) could be artificial absence due to mismatch between telemetry and cameras, not a true absence. Will have to remove these birds.
+birds_with_data_reliability_issues <- birds_tagged_time_in_patch %>%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %>%
+  filter(!(frequency %in% birds_never_found$frequency)) %>%
+  filter(frequency %in% transmitter_birds_undetected_during_telem$frequency) %>%
+  select(species, sex, frequency, exp_phase, time_in_patch) %>%
+  group_by(species, sex, frequency, exp_phase) %>%
+  summarise(time_in_patch = sum(time_in_patch)) %>%
+  ungroup() %>%
+  pivot_wider(names_from = exp_phase, values_from = time_in_patch, values_fill = 0) %>%
+  filter(pre == 0 | post == 0) %>%
+  mutate(outcome = "data_reliability_issures")
+
+unique(birds_with_data_reliability_issues$frequency) %>% length
+```
+
+Seven birds were seen at cameras during telemetry observation period but NOT recorded in telemetry data. Overall, perhaps due to more limited ability to do telemetry in control patches, that ended up in us assigning fewer and/or less experienced observers to control sites (?). All but one of these birds were from controls.
+
+Four of these birds had so many mismatches that the ended up with no usable data in one or more experimental period, and had to be removed.
+
+**Identify birds that were never detected in focal area (or were never detected during the 'pre' period)**
+```{r step4e}
+#Birds that were never detected in focal area ("patch"), excluding birds that were never detected at all and birds that lost transmitters
+birds_never_in_patch <- birds_tagged_time_in_patch %>%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %>%
+  filter(!(frequency %in% birds_never_found$frequency)) %>%
+  filter(!(frequency %in% birds_with_data_reliability_issues$frequency)) %>%
+  group_by(frequency, species, sex) %>%
+  summarise(time_in_patch = sum(time_in_patch)) %>%
+  filter(time_in_patch == 0) %>%
+  mutate(outcome = "never_in_patch")
+
+unique(birds_never_in_patch$frequency) %>% length()
+
+#Birds not present in pre
+birds_never_in_patch_during_pre <- birds_tagged_time_in_patch %>%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %>%
+  filter(!(frequency %in% birds_never_found$frequency)) %>%
+  filter(!(frequency %in% birds_with_data_reliability_issues$frequency)) %>%
+  filter(!(frequency %in% birds_never_in_patch$frequency)) %>%
+  group_by(frequency, species, sex, exp_phase) %>%
+  summarise(time_in_patch = sum(time_in_patch)) %>%
+  filter(time_in_patch == 0 & exp_phase == "pre") %>%
+  mutate(outcome = "never_in_patch_during_pre")
+
+unique(birds_never_in_patch_during_pre$frequency) %>% length()
+```
+
+**Summarize radio tracking outcomes for results/Supp table**
+```{r step4f}
+birds_with_outcomes <- birds_tagged %>%
+  bind_rows(birds_with_lost_tags) %>%
+  bind_rows(birds_never_found) %>%
+  bind_rows(birds_with_data_reliability_issues) %>%
+  bind_rows(birds_never_in_patch) %>%
+  bind_rows(birds_never_in_patch_during_pre) %>%
+  distinct(outcome, species, sex, frequency)
+
+#Radio tracking outcomes, by species/sex
+outcomes_by_species_sex <- birds_with_outcomes %>%
+  group_by(outcome, species, sex) %>%
+  summarise(num_birds = n())
+
+#Radio tracking outcomes, by species
+outcomes_by_species <- birds_with_outcomes %>%
+  group_by(outcome, species) %>%
+  summarise(num_birds = n())
+
+#Radio tracking outcomes, combined across species/sex
+outcomes <- birds_with_outcomes %>%
+  group_by(outcome) %>%
+  summarise(num_birds = n())
+
+outcomes
+```
+
+## Step 5: Remove problematic birds to create dataset for analysis
+```{r step5}
+#Remove problem birds AND dates with mismatch between camera and telemetry data
+time_in_patch_for_analysis <- birds_tagged_time_in_patch %>%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %>%
+  filter(!(frequency %in% birds_never_found$frequency)) %>%
+  filter(!(frequency %in% birds_with_data_reliability_issues$frequency)) %>%
+  filter(!(frequency %in% birds_never_in_patch$frequency)) %>%
+  filter(!(frequency %in% birds_never_in_patch_during_pre$frequency)) %>%
+  mutate(bird_date_id = paste(frequency, date, sep = "_")) %>%
+  filter(!(bird_date_id %in% transmitter_birds_undetected_during_telem$bird_date_id)) %>%
+  select(-bird_date_id)
+  
+unique(time_in_patch_for_analysis$frequency) %>% length #Should be 36 individuals
+
+#ALSO REMOVE THESE BIRD-DATE COMBINATIONS FROM THE ORIGINAL TELEMETRY DATA!
+telem_data03 <- telem_data02 %>%
+  mutate(bird_date_id = paste(frequency, date, sep = "_")) %>%
+  filter(!(bird_date_id %in% transmitter_birds_undetected_during_telem$bird_date_id)) %>%
+  select(-bird_date_id)
+
+telem_data_for_analysis <- telem_data03
+```
+
+*Note: if want to analyze telemetry data outside context of experiment (i.e., space-for-time-approach from dissertation), then don't remove birds that were never in patch/never in patch during pre; those zeroes are useful data. Then calculate propotion as done below, but filter to 'pre' period only.*
+
+## Step 6: Summarize data to pre/post (across dates) + calculate proportion of time spent in patch
+```{r step6}
+prop_time_for_analysis <- time_in_patch_for_analysis %>%
+  group_by(year, patch, control_treatment, frequency, species, sex, exp_phase) %>%
+  summarise(obs_effort_minutes = sum(obs_effort_minutes),
+            time_in_patch_minutes = sum(time_in_patch)) %>%
+  ungroup() %>%
+  mutate(prop_time_in_patch = time_in_patch_minutes/obs_effort_minutes)
+
+#THIS IS THE FILE TO EXPORT FOR ANALYSIS OF PROPORTION TIME IN PATCH (PRE/POST CHANGE)
+```
+
+## Step 7: Summarize more info about effort at level of bird, for methods/results
+```{r step7}
+#Locations per bird
+locations_per_bird <- telem_data_for_analysis %>%
+  filter(!is.na(point_in_patch)) %>% #Only sum the locations with complete GPS coords
+  filter(frequency %in% prop_time_for_analysis$frequency) %>% #Filter to birds in final dataset
+  group_by(year, patch, control_treatment, frequency, species, sex) %>%
+  summarise(num_locations = n()) %>%
+  ungroup()
+
+locations_per_bird_sum <- locations_per_bird %>%
+  calculate_basic_summary_stats(variable = num_locations)
+
+locations_per_bird_sum
+  
+#Dates per bird. Use dataset built on list of tagged birds to include dates even when bird was not detected (and therefore didn't show up in telem data)
+dates_per_bird <- time_in_patch_for_analysis %>%
+  group_by(year, patch, control_treatment, species, sex, frequency) %>%
+  summarise(num_dates = n()) %>%
+  ungroup()
+
+dates_per_bird_sum <- dates_per_bird %>%
+  calculate_basic_summary_stats(variable = num_dates)
+
+dates_per_bird_sum
+```
+
+## Step 8: Calculate mean time spent at location (for analysis of activity level/torpor)
+
+*As of 9/1/22, do not have plans to analyze this, since we still would not be able to rule out nighttime torpor. But it's here just in case.*
+```{r step8}
+time_at_location_sum <- telem_data_for_analysis %>%
+  filter(!is.na(frequency)) %>%
+  group_by(year, patch, control_treatment, frequency, species, sex, exp_phase) %>%
+  calculate_basic_summary_stats(variable = time_at_location) %>%
+  rename(num_locations = n)
+
+#Need to look at birds with at least one location pre and post
+time_at_location_birds_complete <- time_at_location_sum %>%
+  distinct(year, patch, control_treatment, frequency, species, sex, exp_phase, num_locations) %>%
+  pivot_wider(names_from = exp_phase, values_from = num_locations, values_fill = 0) %>%
+  filter(pre > 0 & post > 0)
+
+time_at_location_for_analysis <- time_at_location_sum %>%
+  filter(frequency %in% time_at_location_birds_complete$frequency)
+
+unique(time_at_location_for_analysis$frequency) %>% length
+#More birds present in this dataset (N = 48), because they do not need to be in focal area or have complete GPS coords.
+
+#How close are mean and median time at location? If they are about the same, choice of which one to use does not matter too much.
+time_at_location_plot <- time_at_location_for_analysis %>%
+  select(year:exp_phase, mean, median) %>%
+  pivot_longer(cols = c("mean", "median"), names_to = "method", values_to = "time_at_location") %>%
+  ggplot(data = , aes(x = time_at_location, fill = method)) +
+  geom_density(alpha = 0.5) +
+  theme_bw(base_size = 18) +
+  theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +
+  scale_fill_grey(labels = c("Mean", "Median")) +
+  labs(x = "Minutes at location", y = "Density", color = "Method", fill = "Method")
+
+time_at_location_plot
+```
+
+## Step 9: Export data
+```{r, step9}
+write.csv(prop_time_for_analysis, "../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv")
+write.csv(telem_data_for_analysis, "../../data/export/for_analysis/Telemetry_data_filtered_for_analysis.csv")
+
+#Radio-tracking outcomes for Supp material
+write.csv(outcomes_by_species_sex, "../../data/export/supp_tables/Telemetry_outcomes_by_species_and_sex.csv")
+write.csv(outcomes_by_species, "../../data/export/supp_tables/Telemetry_outcomes_by_species.csv")
+write.csv(outcomes, "../../data/export/supp_tables/Telemetry_outcomes.csv")
+```

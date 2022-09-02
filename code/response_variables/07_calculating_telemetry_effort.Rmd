@@ -1,0 +1,330 @@
+---
+title: "Calculating telemetry effort"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Goal**
+
+Due to missing data, it is not possible to calculate observation effort at level of individual bird; here, I calculate telemetry observation effort for each site and date.
+
+However, even this is a little bit tricky, because sometimes observation start and end times were not recorded. Here, I estimate observation effort based on the available data. Ultimately, this approach seems to work OK; estimated times are pretty close to the times recorded in the field.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(lubridate)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(chron)
+```
+
+## Step 1: Import data and functions
+```{r, get_data}
+#Telemetry data
+telem_data <- read.csv("../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv") %>%
+  select(-X) %>%
+  mutate(date = lubridate::ymd(date))
+
+#Experiment info. Will add to observation effort
+exp_info <- read.csv("../../data/import/Experiment_dates_2016-2018.csv") %>%
+  select(year, patch, control_treatment = control_trmt, date, exp_phase, priority = video_priority) %>%
+  mutate(date = lubridate::mdy(date))
+
+#Get observation effort data (originally compiled by hand in Dec 2018)
+obs_effort <- read.csv("../../data/import/Telemetry_effort_bird_level_20211214.csv") %>%
+  mutate(date = lubridate::mdy(date)) #Will convert to ymd in later step
+
+#Functions
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+```
+
+## Step 2: Calculate observation effort
+
+Prepare effort data
+```{r, prepare_effort_data}
+#1. Remove rows where 'bird_found' = 'yes_presence_only' (from when people scanned for signal) because there are no GPS points in telemetry data for these efforts
+#2. Combine date and time into one column
+#3. Convert to long form in order to remove missing data from start and end time independently
+obs_effort <- obs_effort %>%
+  filter(bird_found != "yes_presence_only") %>% 
+  mutate(start = ifelse(!is.na(time_start), paste(date, time_start, sep = " "), NA)) %>%  
+  mutate(end = ifelse(!is.na(time_end), paste(date, time_end, sep = " "), NA)) %>%  
+  mutate(across(c(start, end), ~lubridate::ymd_hm(.))) %>%
+  select(bird_found, year, patch, observer, date, frequency, start, end) %>%
+  pivot_longer(cols = c(start, end), names_to = "start_or_end", values_to = "time") 
+```
+
+Due to observers often not recording effort data in the field, this is at level of SITE and DATE (not individual bird). 
+
+Also uses times recorded in the telemetry data to supplement explicitly recorded effort data. This was Matt's suggestion to deal with missing (i.e., not explicitly recorded) observation effort. Logic is that if at least one person is still in the field taking points, they are presumably scanning through for other birds and/or have a partner that is looking for the other one(s). Can calculate the difference between first and last observation time. Potential issue: if nobody finds any birds on a given day, no points will be in telemetry data --> looks like no effort.
+
+Extract first and last times from RECORDED OBSERVATION EFFORT for a given patch and date
+```{r, get_times_from_obs_effort}
+#Have to select earliest/latest times due to possibility that multiple observers recorded observation effort in a given patch on a given date.
+extract_times_obs_effort <- function(data){
+  
+  effort_from_effort <- data %>%
+    
+    #For a patch on a given date, when is the earliest start time? When is the latest end time? Across observers/birds
+    group_by(year, patch, date) %>%
+    summarise(start = min(time, na.rm = TRUE),
+              end = max(time, na.rm = TRUE)) %>%
+    ungroup() %>%
+    mutate(source = "Recorded_in_field")
+  
+  return(effort_from_effort)
+  
+}
+
+#Running...
+effort_from_effort <- extract_times_obs_effort(data = obs_effort)
+```
+
+Extract first and last times from TELEMETRY DATA for a given patch and date
+```{r, get_times_from_telem_data}
+extract_times_telem_data <- function(data){
+  
+  effort_from_telem <- data %>%
+    mutate(start = ifelse(!is.na(time_arrive), paste(date, time_arrive, sep = " "), NA)) %>%
+    mutate(end = ifelse(!is.na(time_leave), paste(date, time_leave, sep = " "), NA)) %>%
+    select(year, patch, date, start, end) %>%
+    mutate(across(c(start, end), ~lubridate::ymd_hm(.))) %>%
+    
+    #Convert to long form to remove NAs from time
+    pivot_longer(cols = c(start, end), names_to = "start_or_end", values_to = "time") %>%
+    filter(!is.na(time)) %>%
+  
+    #Create a summary of min/max times
+    group_by(year, patch, date) %>%
+    summarise(start = min(time, na.rm = TRUE),
+              end = max(time, na.rm = TRUE)) %>%
+    ungroup() %>%
+    mutate(source = "First_last_locations")
+  
+  return(effort_from_telem)
+  
+}
+
+#Running...
+effort_from_telem <- extract_times_telem_data(data = telem_data)
+```
+
+Extract first and last times across recorded observation effort AND telemetry data
+```{r, get_times_from_both}
+#'level' is the desired level of summary, either 'date' or 'pre_post'
+calculate_obs_effort <- function(data_telem, data_effort, level){
+  
+  effort_from_effort <- extract_times_obs_effort(data_effort)
+  effort_from_telem <- extract_times_telem_data(data_telem)
+  
+  #Combine. This returns obs effort at level of date
+  effort_all <- effort_from_effort %>%
+    bind_rows(effort_from_telem) %>%
+    left_join(exp_info) %>% #Add experimental info to get info about pre/post
+
+    #Calculate min/max across different sources of observation effort
+    group_by(year, patch, control_treatment, date, exp_phase) %>% #At level of date
+    summarise(start = min(start, na.rm = TRUE),
+              end = max(end, na.rm = TRUE)) %>%
+    ungroup() %>%
+    mutate(obs_effort_hours = as.numeric(end - start, "hours")) %>%
+    mutate(obs_effort_minutes = obs_effort_hours * 60) #Convert effort to minutes from hours
+  
+  ##Summary of obs effort, pre/post per patch##
+  effort_sum_pp <- effort_all %>%
+    group_by(year, patch, control_treatment, exp_phase) %>%
+    summarise(obs_effort_hours = sum(obs_effort_hours, na.rm = TRUE),
+              obs_effort_minutes = sum(obs_effort_minutes, na.rm = TRUE)) %>%
+    ungroup()
+  
+  if(level == "date"){return(effort_all)}
+  if(level == "pre_post"){return(effort_sum_pp)}
+}
+
+#Effort
+effort_date <- calculate_obs_effort(data_telem = telem_data, data_effort = obs_effort, level = "date")
+effort_pp <- calculate_obs_effort(data_telem = telem_data, data_effort = obs_effort, level = "pre_post")
+```
+
+## Step 3: Compare methods of calculating observation effort
+
+That is, does recorded observation effort compare to observation effort estimated from start/end times of telemetry points? If pretty similar, it would be reasonable to fill in missing effort data with first/last telemetry points.)
+
+Compare methods
+```{r, compare_observation_effort, fig.width = 10, fig.height = 7.5}
+#Obs effort at level of date
+effort_all <- effort_from_effort %>%
+  bind_rows(effort_from_telem) %>%
+  mutate(obs_effort = as.numeric(end - start, "hours"))%>%
+  mutate(obs_effort_minutes = obs_effort * 60) %>%
+  left_join(exp_info)
+
+effort_method_comparison <- effort_all%>%
+  select(-c(start, end, obs_effort)) %>%
+  pivot_wider(names_from = source, values_from = obs_effort_minutes) %>%
+  mutate(effort_diff = Recorded_in_field - First_last_locations)
+
+#How correlated are the two methods?
+effort_sum <- effort_all %>%
+  group_by(source) %>%
+  calculate_basic_summary_stats(variable = obs_effort) %>%
+  ungroup() %>%
+  select(-min, -max)
+
+effort_sum
+
+effort_sum_pretty <- effort_sum %>%
+  mutate(across(c(mean, sd, median), ~round(., 2))) %>%
+  rename(Category = source, Mean = mean, SD = sd, Median = median) %>%
+  mutate(Category = factor(Category, levels = c("First_last_locations", "Recorded_in_field"), labels = c("Estimated", "Recorded \nin field")))
+
+#Is location-based start/end estimation lower than recorded observation times? I expect so, but let's visualize
+library(gridExtra)
+library(gtable)
+library(grid)
+
+#Overall - density plot
+table_for_plot_effort <- tableGrob(effort_sum_pretty,
+                                   rows = NULL,
+                                   theme = ttheme_default(core = list(bg_params = list(fill = "white")), colhead = list(bg_params = list(fill = "white", col = "white"))))
+                                                                                 
+#Add rectangle around table
+table_for_plot_effort = gtable_add_grob(table_for_plot_effort, grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+                                 t = 1, b = nrow(table_for_plot_effort), r = ncol(table_for_plot_effort), l = 1)
+# dd line under column names
+table_for_plot_effort = gtable_add_grob(table_for_plot_effort, grobs = rectGrob(gp = gpar(fill = NA, lwd = 2)),
+                                  t = 1, l = 1, r = ncol(table_for_plot_effort))
+
+obs_effort_density_plot <- ggplot(effort_all, aes(x = obs_effort, fill = source)) +
+  geom_density(alpha = 0.5) +
+  theme_bw(base_size = 20) +
+  theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank(), legend.position = "top") +
+  geom_vline(data=effort_sum, aes(xintercept=mean, color=source, linetype=source), size = 0.75, alpha = 0.8) + #Add line for mean time at location
+  scale_fill_grey(labels = c("Estimated from first and last locations", "Recorded in field")) +
+  scale_color_manual(values = c("gray0", "gray20"), labels = c("Estimated from first and last locations", "Recorded in field")) + #Color is for lines. Make lines a little darker than fill colors
+  scale_linetype_manual(values=c("dashed", "dotted"), labels = c("Estimated from first and last locations", "Recorded in field")) +
+  labs(x = "Hours per date", y = "Density", color = "Method", fill = "Method", linetype = "Method") +
+  annotation_custom(grob = table_for_plot_effort, xmin = 0, xmax = 2, ymin = .4, ymax = .6)
+
+obs_effort_density_plot
+```
+
+Conclusion: 
+
+The different ways of calculating observation effort are pretty correlated, but not always. Likely makes the most sense to take the smallest and largest times out of recorded observation effort *AND* first/last telemetry points, as done above.
+
+## Step 4: Check for missing effort
+
+```{r, explore_missing_effort}
+#How much effort data are missing?
+missing_effort <- exp_info %>%
+  filter(priority == 1) %>%
+  filter(!(date %in% effort_all$date)) %>%
+  filter(!(year == 2016 & (patch == 204 | patch == 49))) %>% #Remove patches without tagged birds
+  filter(!(year == 2017 & (patch == 137 | patch == 200))) #Remove patches without tagged birds
+```
+
+There are still dates where effort was not available. This could be because (a) nobody went out to do telemetry, or (b) people did telemetry but did not find the bird. Unfortunately I am not able to reconstruct what exactly happened; the observation effort here can therefore be considered a minimum amount.
+
+## Step 5: Summarize observation effort for methods/results
+
+These summaries include all effort, regardless of radio-tracking success (i.e. whether bird found or note).
+
+Summary of amount of effort
+```{r, summarize_effort}
+#Days per site/replicate
+days_per_site <- effort_date %>%
+  distinct(year, patch, control_treatment, date) %>%
+  group_by(year, patch, control_treatment) %>%
+  summarise(num_days = n()) %>%
+  ungroup()
+
+days_per_site_sum <- days_per_site %>%
+    calculate_basic_summary_stats(variable = num_days)
+
+days_per_site_sum
+
+#There should be 6 dates per site, according to experimental design. However, there are sometimes fewer dates (mean: 5.3; median: 5), presumably due to scheduling need or unrecorded observation effort (coupled with no telemetry records)
+
+#Hours per session
+#I.e., hours per site-year per day
+hours_per_session <- effort_date %>%
+  group_by(year, patch, control_treatment, date) %>%
+  summarise(num_hours = sum(obs_effort_hours)) %>%
+  ungroup()
+
+hours_per_session_sum <- hours_per_session %>%
+  calculate_basic_summary_stats(variable = num_hours)
+
+hours_per_session_sum
+
+#What does distribution of session length look like?
+#Histogram of observation effort (hours per day per patch)
+ggplot(data = effort_date, aes(x = obs_effort_hours)) +
+  geom_histogram() +
+  theme_bw(base_size = 18) +
+  labs(x = "Observation effort per patch and date (hours)")
+
+#Total hours per replicate (site-year)
+hours_per_replicate <- effort_date %>%
+  group_by(year, patch, control_treatment) %>%
+  summarise(num_hours = sum(obs_effort_hours)) %>%
+  ungroup()
+
+hours_per_replicate
+
+#Effort by year
+effort_per_year <- effort_date %>%
+  group_by(year, exp_phase) %>%
+  summarise(obs_effort = sum(obs_effort_hours, na.rm = TRUE))
+
+effort_per_year
+
+#Total effort
+total_effort <- effort_date %>%
+  summarise(total_obs_effort = sum(obs_effort_hours))
+
+total_effort
+```
+
+When was telemetry typically conducted? In the morning, but from when to when?
+```{r}
+effort_times <- effort_date %>%
+  mutate(start_time = hms::as_hms(start), 
+         end_time = hms::as_hms(end)) %>%
+  pivot_longer(cols = c(start_time, end_time), names_to = "start_or_end", values_to = "time")
+
+#Summarise
+effort_times_sum <- effort_times %>%
+  group_by(start_or_end) %>%
+  summarise(mean = mean(chron::times(time)),
+            median = median(chron::times(time)))
+
+effort_times_sum
+```
+
+Conclusions/Observations:
+
+- Typically did telemetry for ~5-6 days/site, ~3 hours per day
+
+- 450 hours doing telemetry over three years (conservative estimate since some effort data are missing)
+
+- Observations typically conducted from 8:00-11:00
+
+- There are some really low estimates of total observation effort (<2 hours). Are those accurate? Do I have any other information? Can I supplement with notes? I checked the 5 lowest efforts and they seem accurate to the best of my knowledge...but I also don't have any other info. Given the lack of additional data, decided to keep these low estimates unchanged.
+
+## Step 6: Export
+
+```{r, export}
+write.csv(effort_date, "../../data/export/intermediate/Telemetry_effort_by_date.csv")
+write.csv(effort_pp, "../../data/export/intermediate/Telemetry_effort_pre_post.csv")
+
+#Figure
+ggsave("../../results/response_variables/figures/Telemetry_effort_density_plot.png", plot = obs_effort_density_plot, width = 10, height = 7.5, units = "in", dpi = 300)
+```

@@ -1,0 +1,295 @@
+---
+title: "Processing telemetry data"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Overall goal**
+
+Get these data ready for analysis. It's a bit of a process, because each row is a bird's GPS location, and hummingbirds move very quickly; sometimes not all the data were recorded in the field, or were recorded incorrectly.
+
+**Specific goals**
+
+- Continue cleaning telemetry data, with focus on spatial data
+
+- Use direction and distance to project coordinates (i.e. calculate bird's location using trigonometric relationships)
+
+- Score whether bird in focal area or not
+
+- Visualize data using tmap
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(lubridate) #Need to load before raster, because otherwise will mask 'intersect'
+library(sf)
+library(raster) #Need to load before dplyr, because otherwise will mask 'select'
+library(tmap)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(purrr)
+```
+
+## Step 1: Get data
+```{r, get_data}
+#These data have already had some initial cleaning, at least enough to allow years to be joined together
+telem_data <- read.csv("../../data/import/Telemetry_data_2016-2018_20220603.csv") %>%
+  select(-X)
+
+#Get focal area outlines, for determining whether or not a GPS point was in the patch
+#Here, "patch" and "focal area" are used interchangeably
+focal_area_outlines <- sf::st_read("../../data/export/intermediate/focal_areas_2016-2018.shp")
+
+#Net location info, for determining centroid of area where bird caught (and radio-tagged)
+nets <- read.csv("../../data/import/Nets_2016-2018_20210909.csv")
+```
+
+## Step 2: Do some QA/QC
+
+Identify incorrect/illogical combinations of distance and direction
+```{r, check_distance_and_direction}
+#Check: if distance is 0, direction should be NA. 
+check01 <- telem_data %>%
+  filter(distance == 0) %>%
+  distinct(direction)
+
+check01
+
+#Check: if a direction is present with distance zero, this implies that distance of 0 is incorrect
+#Already converted these distances to NA in Excel to make sure I do not use these points
+check02 <- telem_data %>%
+  mutate(across(c(distance, direction), as.numeric)) %>%
+  filter(distance == 0 & direction > 0)
+```
+
+Check for missing GPS data
+```{r, check_missing_gps_data}
+#Missing GPS coordinates
+#This typically occurred when landmarks, like nets, were recorded but we didn't record net locations. Also when one of GPS coordinates was deemed inaccurate
+missing_coords <- telem_data %>%
+  filter(x_utm == "" | is.na(x_utm) | y_utm == "" | is.na(y_utm))
+
+missing_coords_by_observer <- missing_coords %>%
+  group_by(year, observer) %>%
+  summarise(num_missing_points = n()) %>%
+  arrange(desc(num_missing_points))
+
+#Missing distances (if no distance, will not result in projected GPS coord, i.e., will lose these data)
+#This typically occured when there was no signal or when start/end times were being recorded.
+missing_distances <- telem_data %>%
+  filter(distance == "" | is.na(distance))
+
+missing_distances_by_observer <- missing_distances %>%
+  group_by(year, observer) %>%
+  summarise(num_missing_points = n()) %>%
+  arrange(desc(num_missing_points))
+
+#Missing directions are only a problem distances over a given threshold - under this, and can just use original coordinate if needed).
+#Decision: 20-m is distance threshold. If direction is missing and distance <20, it's OK
+missing_directions <- telem_data %>%
+  filter(direction == "" | is.na(direction)) %>%
+  filter(as.numeric(distance) > 20)
+
+missing_directions_by_observer <- missing_directions %>%
+  group_by(year, observer) %>%
+  summarise(num_missing_points = n()) %>%
+  arrange(desc(num_missing_points))
+
+#Missing GPS data, combined
+missing_gps_data <- missing_coords %>%
+  bind_rows(missing_distances) %>%
+  bind_rows(missing_directions) %>%
+  distinct()
+
+#Note: On 12/27/2018, I checked 2016-2017 missing data (gps x, gps y, distance, direction) against notebooks available. No way to check for additional 2018 data because collected on phone.
+```
+
+## Step 3: Project coordinates
+
+To convert compass bearing (direction) and distance into GPS coordinates, use trigonometry. But note that trigonometic functions in R use radians, NOT degrees! Multiply degrees by pi/180 to convert degrees to radians.
+
+There are multiple ways to project the coordinates. The simplest way uses the unit circle, but the unit circle starts in a different place from where compass starts (it is offset 90 degrees clockwise from compass "north") and also goes counter-clockwise (vs. clockwise with compass). This can be handled by subtracted the compass angle from 90 degrees.
+
+![unit circle](../../data/import/unit_circle.png)
+
+DECISION: If direction is missing but distance is less than 20m, just use original (non-projected) GPS coords instead of removing the data entirely.
+
+```{r, project_coordinates}
+#Keep original coordinates if distance is zero **OR** if there is no direction info but distance is less than or equal to 20m. Otherwise, attempt to project (will not be able project if missing distance or direction)
+telem_data02 <- telem_data %>%
+  mutate(across(c("x_utm", "y_utm", "distance", "direction"), as.numeric)) %>%
+  mutate(x_displace = distance * cos((90 - direction) * pi/180),
+         y_displace = distance * sin((90 - direction) * pi/180),
+         x_utm_proj = ifelse(distance == 0 | (distance <= 20 & (is.na(direction) | direction == "")), x_utm, x_utm + x_displace),
+         y_utm_proj = ifelse(distance == 0 | (distance <= 20 & (is.na(direction) | direction == "")), y_utm, y_utm + y_displace))
+
+#Check: why are certain projected coordinates NA? Should only be NA if missing GPS coords, distance, or direction.
+check03 <- telem_data02 %>%
+  select(year, patch, date, observer, species, frequency, notes_location_english, notes_data, x_utm, y_utm, distance, direction, x_displace, y_displace, x_utm_proj, y_utm_proj) %>%
+  filter(x_utm_proj == "" | is.na(x_utm_proj) | y_utm_proj == "" | is.na(y_utm_proj))
+```
+
+## Step 4: Do some more QA/QC
+
+Identify suspect GPS coordinates
+```{r, check_coordinates}
+#Of the projected coordinates, which ones are really off base?
+#First, check for coordinates that are REALLY out of bounds. This will include coordinates with too few or too many digits.
+#x coords should be 276000-296000
+#y coords should be 962000-978000 
+out_of_bound_coords <- telem_data02 %>%
+  filter(x_utm_proj < 276000 | x_utm_proj > 296000 | y_utm_proj < 962000 | y_utm_proj > 978000)
+
+#Next, check for coordinates that are out of bounds given the context (i.e., patch).
+#Create mean center summary for nets from capture #1 in each patch
+#Net mean center summary
+net_centers <- nets %>%
+  select(-X) %>%
+  mutate_all(as.character) %>%
+  mutate(date = ymd(date)) %>%
+  distinct(year, patch, date, exp_phase, net_number, x_utm, y_utm) %>%
+  filter(exp_phase == "capture_1") %>%
+  group_by(year, patch) %>%
+  summarise(mean_x = mean(as.numeric(x_utm), na.rm = TRUE),
+            mean_y = mean(as.numeric(y_utm), na.rm = TRUE)) %>%
+  filter(!is.na(mean_x))
+
+#Check any points more than 1000m away from mean center of net locations in that patch (this was roughly where bird was caught).
+#These extremely distant points only seem to occur when signal is very weak/bird is very far away.
+outlier_coords_1000 <- telem_data02 %>%
+  mutate_all(as.character) %>%
+  left_join(net_centers) %>%
+  filter(x_utm_proj >= mean_x + 1000 |
+         x_utm_proj <= mean_x - 1000 |
+         y_utm_proj >= mean_y + 1000 |
+         y_utm_proj <= mean_y - 1000)
+```
+
+## Step 5: Score whether point (bird) was in focal area or not
+
+I will do this in two ways:
+
+1. With spatial data. This is primary way. Is the bird's GPS coordinate within the focal area outline?
+
+2. With written notes. This is only used if bird is missing a complete set of GPS coordinates.
+
+**Use spatial data**
+```{r, score_bird_with_spatial_data}
+#Patch = 'focal area' outline (100% MCP of resource count coordinates)
+#Make telemetry points spatial. Only want the row_id and the coordinates, with missing coordinate values removed
+points <- telem_data02 %>%
+  select(row_id, year, patch, x_utm_proj, y_utm_proj) %>%
+  unite("id", patch, year, sep = ".", remove = TRUE) %>%
+  filter(!is.na(x_utm_proj) & !is.na(y_utm_proj))
+
+#Make telemetry points into spatial (sf) object. use "identity" when the attributes uniquely identifies the geometry of particular "thing"
+points_utm <- sf::st_as_sf(points, coords = c("x_utm_proj", "y_utm_proj"), crs = 32617, agr = "identity")
+
+#Make sure focal area outlines are in UTM
+focal_area_outlines_utm <- sf::st_transform(focal_area_outlines, crs = 32617) %>%
+  select(-id, -mcp_prc) %>%
+  unite("id", patch, year, sep = ".")
+  
+#st_join joins points to outlines for ALL years, so have to remove duplicates by fitering to matches. argument 'left' returns an inner join if FALSE
+points_in_patches <- sf::st_join(points_utm, focal_area_outlines_utm, join = st_within, left = FALSE) %>% #
+  filter(id.x == id.y) %>% 
+  rename(id = id.x) %>% #Keep this for plotting function
+  select(-id.y) %>%
+  as.data.frame() %>% #If you want to remove the geometry column and transform an sf object to a data frame or tibble, you can use as_tibble() or as.data.frame() in a pipe before select()
+  select(-geometry) %>%
+  mutate(point_in_patch_spatial = 1)
+
+points_not_in_patches <- points %>%
+  filter(!(row_id %in% points_in_patches$row_id)) %>%
+  mutate(point_in_patch_spatial = 0) %>%
+  select(row_id, point_in_patch_spatial)
+
+point_info_to_add <- points_in_patches %>%
+  bind_rows(points_not_in_patches)
+
+#Add points back into telemetry data based on row_id
+telem_data03 <- telem_data02 %>%
+  left_join(point_info_to_add) %>%
+  select(row_id:direction, contains("utm"), contains("point_in"), everything())
+```
+
+**Use notes to score in/out of patch for rows missing GPS coordinates**
+
+At the very least, I can code whether the bird was in/out of patch (focal area) based on the written notes. For example, keywords like 'net', 'pole', 'station' would indicate that bird was in patch and/or near a net pole. These data could be useful for calculating time in patch later on, though it would not solve the problem of very few points for home range calculations.
+
+Scoring based on the keyword 'patch'/'in patch' is difficult, because there are many variations of this (e.g., 'going to patch', 'returning from patch', 'in a different patch', 'not in patch', 'left the patch', etc.)
+
+```{r, score_bird_using_written_notes}
+#Verbatim comments that can be used to score in/out of patch **when GPS data are missing**. Did not include comments saying that bird was 'leaving/going toward/returning to patch', only comments that implied bird was in the patch at the recorded time.
+in_patch_comments <- c("in patch", 
+                       "Back in patch - confirmed by ASH",
+                       "briefly in patch, <50m from net 20",
+                       "came through patch and left down toward houses",
+                       "Weak signal inside patch 58, looking for 725",
+                       "He was in a HETO plant. I managed to observe it. It was a lot of time in the patch",
+                       "Saw bird fly from Station 1 to HETO in front of Camera 13. Did not drink. Headed NE",
+                       "still inside the p58 he moves in search of HETO flowers",
+                       "It is inside the patch")
+
+#Add info based on these comments and combine columns with information about in/out of patch (i.e., from notes and from spatial overlap)
+telem_data04 <- telem_data03 %>%
+  mutate(point_in_patch_from_notes = ifelse(row_id %in% missing_gps_data$row_id & grepl("net|pole|focal#1|focal#2|corner", notes_location_english, ignore.case = TRUE), 1, NA)) %>%
+  mutate(point_in_patch_from_notes = ifelse(row_id %in% missing_gps_data$row_id & (notes_location_english %in% in_patch_comments), 1, point_in_patch_from_notes)) %>% 
+  mutate(point_in_patch = ifelse(row_id %in% missing_gps_data$row_id, point_in_patch_from_notes, point_in_patch_spatial)) %>% 
+  select(row_id:direction, contains("utm"), contains("point_in"), everything())
+```
+
+## Step 6: Visualize data
+```{r, visualize_data}
+#Quick visualization check
+#Use purr to filter data for each patch-year combination, then make plot.
+#Would not work just with tmap() facets. Maybe because of missing points for some patches? Still not sure.
+filter_to_patch_year <- function(year_id, patch_id, data_type){
+  
+  if(data_type == "patches"){data <- focal_area_outlines_utm}
+  if(data_type == "points"){data <- points_utm}
+
+  result <- data %>%
+    separate(id, c("patch", "year"), remove = FALSE) %>%
+    filter(patch == patch_id & year == year_id)
+  
+  return(result)
+}
+
+make_map <- function(patches, points){
+
+  num_points <- dim(points)[[1]]
+  
+  #If there are points to plot...
+  if(num_points != 0){
+    tm_shape(patches) +
+      tm_polygons(col = "lightgrey", alpha = 0.5) +
+    tm_shape(points) +
+      tm_symbols(col = "black", size = 1, alpha = 1)
+  }
+  
+  #If there are no points...returns NULL
+}
+
+maps <- telem_data04 %>%
+  distinct(year, patch) %>% #Get a list of years and patches
+  mutate(patches = map2(year, patch, ~filter_to_patch_year(.x, .y, data_type = "patches"))) %>%
+  mutate(points = map2(year, patch, ~filter_to_patch_year(.x, .y, data_type = "points"))) %>%
+  mutate(maps = map2(patches, points, ~make_map(.x, .y)))
+
+maps$maps
+```
+
+## Step 7: Export data
+```{r, export_data}
+write.csv(telem_data04, "../../data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv") 
+```
+
+*Note: for analysis, will still need to filter out rows with missing data. But, some of these rows have information about telemetry effort, so leaving them in here for now.*
+
+
