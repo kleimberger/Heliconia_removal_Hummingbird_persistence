@@ -214,13 +214,28 @@ proportion_pollinated_sum <- tubes_for_analysis %>%
   mutate(prop_with_tubes = styles_with_tubes/styles) %>%
   filter(plant_species == "HAPA" | plant_species == "HETO" | plant_species == "PAV-ROJ-AMA")
 
+#How many styles ended up in the final sample?
+styles_analyzed <- proportion_pollinated_sum %>%
+  group_by(plant_species) %>%
+  summarise(styles = sum(styles))
+
+styles_analyzed
+
+#Check for complete separation. Are there data for each experimental period, control AND treatment?
+styles_analyzed_per_category <- proportion_pollinated_sum %>%
+  group_by(plant_species, control_treatment, exp_phase) %>%
+  summarise(styles_with_tubes = sum(styles_with_tubes),
+            styles_no_tubes = sum(styles_no_tubes))
+
+styles_analyzed_per_category
+
 #Minimum number of total tubes/style. Did not use this method because past researchers in our lab have used the other metric.
-tubes_per_style_sum <- tubes_for_analysis %>%
-  group_by(plant_species, year, patch, control_treatment, exp_phase, focal_nf) %>%
-  summarise(tubes = sum(tubes_total_min, na.rm = TRUE),
-            styles = n()) %>%
-  ungroup() %>%
-  mutate(tubes_per_style = tubes/styles)
+# tubes_per_style_sum <- tubes_for_analysis %>%
+#   group_by(plant_species, year, patch, control_treatment, exp_phase, focal_nf) %>%
+#   summarise(tubes = sum(tubes_total_min, na.rm = TRUE),
+#             styles = n()) %>%
+#   ungroup() %>%
+#   mutate(tubes_per_style = tubes/styles)
 ```
 
 ## Step 7: Explore data, part II
