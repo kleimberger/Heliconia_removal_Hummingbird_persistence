@@ -457,7 +457,7 @@ proportion_calories_removed_boxplots
 ## Step 12: Export data
 ```{r step12}
 #Data to be used in analysis
-write.csv(heto_removed_as_treatment, "../../data/export/intermediate/Heliconia_resources_removed_as_treatment.csv")
+write.csv(heto_removed_as_treatment, "../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv")
 
 #Supp tables
 write.csv(heto_removed, "../../data/export/supp_tables/Heliconia_resources_removed.csv")
