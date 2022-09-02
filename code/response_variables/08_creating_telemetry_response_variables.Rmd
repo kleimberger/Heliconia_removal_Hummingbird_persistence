@@ -339,7 +339,7 @@ time_at_location_plot
 ## Step 9: Export data
 ```{r, step9}
 write.csv(prop_time_for_analysis, "../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv")
-write.csv(telem_data_for_analysis, "../../data/export/for_analysis/Telemetry_data_filtered_for_analysis.csv")
+write.csv(telem_data_for_analysis, "../../data/export/intermediate/Telemetry_data_filtered_for_analysis.csv")
 
 #Radio-tracking outcomes for Supp material
 write.csv(outcomes_by_species_sex, "../../data/export/supp_tables/Telemetry_outcomes_by_species_and_sex.csv")

@@ -278,8 +278,8 @@ proportion_pollinated_plots$plot
 ## Step 8: Export data
 ```{r step8}
 #Filtered data (unsummarized)
-write.csv(tubes_for_analysis, "../../data/export/for_analysis/Pollen_tube_data_filtered_for_analysis.csv")
+write.csv(tubes_for_analysis, "../../data/export/intermediate/Pollen_tube_data_filtered_for_analysis.csv")
 
 #Summarized data for analysis
-write.csv(proportion_pollinated_sum, "../../data/export/for_analysis/Pollen_tube_pollination_successs.csv")
+write.csv(proportion_pollinated_sum, "../../data/export/for_analysis/Pollen_tube_pollination_success.csv")
 ```
