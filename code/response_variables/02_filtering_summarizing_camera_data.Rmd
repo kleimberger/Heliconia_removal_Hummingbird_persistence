@@ -207,7 +207,8 @@ hours_normal_visitation
 
 Calculate visitation rates for each patch-year (across camera IDs, dates)
 ```{r step6a}
-sighting_rates_all_spp = calculate_sighting_rates(data = data_for_experiment, level_org = "plant_species", level_time = "exp_phase", level_bird = "camera_spp_combined", sightings = "with_visit", include_unknown_spp = FALSE)
+sighting_rates_all_spp = calculate_sighting_rates(data = data_for_experiment, level_org = "plant_species", level_time = "exp_phase", level_bird = "camera_spp_combined", sightings = "with_visit", include_unknown_spp = FALSE) %>%
+  mutate(bird_group = "all_spp") #Replace "camera_spp_combined" with "all_spp"
 
 sighting_rates_greh_visa = calculate_sighting_rates(data = data_for_experiment, level_org = "plant_species", level_time = "exp_phase", level_bird = list(greh_visa = c("GREH", "VISA")), sightings = "with_visit", include_unknown_spp = FALSE)
 
@@ -221,11 +222,15 @@ Calculate visitation rates for each patch-year (across camera IDs, dates) - colo
 
 There are some 'marked' birds for 2016, before we marked birds with nail polish, but those are for radio transmitters. I am only interested in birds that can be identified to individual based on color mark, so these data will only reflect the last two years of study (2017-2018)
 ```{r step6b}
+#This summary is at the level of indvidual bird. Since there is species info, will just filter to GREH/VISA
 marked_sighting_rates_all_spp = calculate_sighting_rates(data = data_for_experiment, level_org = "plant_species", level_time = "exp_phase", level_bird = "individual_marked", sightings = "with_visit", include_unknown_spp = FALSE) %>%
-  filter(!is.na(color_id))
+  filter(!is.na(color_id)) %>%
+  mutate(bird_group = "all_spp") #Replace "individual_marked" with "all_spp"
 
 marked_sighting_rates_greh_visa = marked_sighting_rates_all_spp %>%
-  filter(bird_species == "GREH" | bird_species == "VISA")
+  filter(bird_species == "GREH" | bird_species == "VISA") %>%
+  select(-bird_group) %>%
+  mutate(bird_group = "greh_visa")
   
 marked_sighting_rates <- marked_sighting_rates_all_spp %>%
   bind_rows(marked_sighting_rates_greh_visa) %>%
@@ -247,15 +252,35 @@ hours_experiment_17_18
 marked_individuals_on_camera <- marked_sighting_rates %>%
   distinct(year, patch, bird_species, band_number, trans_freq, colors, color_id)
 
-marked_individuals_on_camera$color_id %>% length()
-
-#How does that compare to the number of individuals that were color marked?
-#STILL NEED TO ADD THIS
+(num_marked_individuals_on_camera <- marked_individuals_on_camera$color_id %>% length())
 ```
 
-Summarize data for checking telemetry data
+How does this number compare to the number of individuals that were color marked? I.e., what proportion of color-marked birds were detected on camera?
 ```{r}
-#STILL NEED TO ADD THIS
+captures <- read.csv("../../data/import/Hummingbird_captures_2010-2018_20220713.csv") %>%
+  select(control_treatment, exp_phase, year, patch = site, everything())
+
+captures_marked_birds <- captures %>%
+  filter(!is.na(control_treatment)) %>%
+  filter(exp_phase == "capture_1") %>%
+  filter(status != "DR") %>%
+  filter(!is.na(colors)) %>%
+  unite(color_id, year, patch, species, colors, sep = "_", remove = FALSE)
+
+(num_marked_indivduals <-unique(captures_marked_birds$color_id) %>% length())
+
+duplicated_marks <- captures_marked_birds %>%
+  filter(duplicated(color_id)) %>%
+  select(year, patch, species, sex, color_id)
+
+#According to capture data, 142 birds were marked with nail polish during initial capture (2017-2018 only). 140 were unique to year, patch, and species.
+#Duplicated marks: 
+#2017_201_VISA_Y (same color, but on different sexes, so would have been distinguishable. But not seen on camera)
+#2018_29_STRH_B (seen on camera, sex not distinguishable)
+#Note: if calculate number of marked birds according to 'color_marks' datasheets, 143 birds were marked with nail polish during initial capture (2017-2018 only), because this includes CHHU from p200 establishment
+
+#Percentage of color-marked birds detected on camera
+num_marked_individuals_on_camera/num_marked_indivduals
 ```
 
 ## Step 7: Explore data related to *Heliconia*, using 'normal' visitation data
