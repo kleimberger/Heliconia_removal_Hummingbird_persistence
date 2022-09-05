@@ -224,7 +224,6 @@ There are some 'marked' birds for 2016, before we marked birds with nail polish,
 ```{r step6b}
 #This summary is at the level of indvidual bird. Since there is species info, will just filter to GREH/VISA
 marked_sighting_rates_all_spp = calculate_sighting_rates(data = data_for_experiment, level_org = "plant_species", level_time = "exp_phase", level_bird = "individual_marked", sightings = "with_visit", include_unknown_spp = FALSE) %>%
-  filter(!is.na(color_id)) %>%
   mutate(bird_group = "all_spp") #Replace "individual_marked" with "all_spp"
 
 marked_sighting_rates_greh_visa = marked_sighting_rates_all_spp %>%
@@ -234,8 +233,22 @@ marked_sighting_rates_greh_visa = marked_sighting_rates_all_spp %>%
   
 marked_sighting_rates <- marked_sighting_rates_all_spp %>%
   bind_rows(marked_sighting_rates_greh_visa) %>%
-  select(bird_group, everything())
+  mutate(analysis = ifelse(plant_species == "HETO", "camera_HETO", "camera_non-HETO")) %>%
+  select(analysis, bird_group, everything())
 
+#Remove birds not present during pre (at HETO and non-HETO separately)
+birds_not_present_during_pre <- marked_sighting_rates %>%
+  group_by(analysis, year, patch, exp_phase, color_id) %>%
+  summarise(sightings = sum(sightings, na.rm = TRUE)) %>%
+  filter(exp_phase == "pre" & sightings == 0) %>%
+  mutate(present_during_pre = "no")
+
+marked_sighting_rates <- marked_sighting_rates %>%
+  left_join(birds_not_present_during_pre)
+```
+
+Summarize effort for marked birds
+```{r}
 #How many video hours are there for 2017-2018? Calculate hours in this dataset
 hours_experiment_17_18 <- data_for_experiment %>%
   filter(year == "2017" | year == "2018") %>%
@@ -250,13 +263,11 @@ hours_experiment_17_18
 
 #How many marked individuals were detected on camera?
 marked_individuals_on_camera <- marked_sighting_rates %>%
-  distinct(year, patch, bird_species, band_number, trans_freq, colors, color_id)
+  distinct(year, patch, bird_species, color_id)
 
 (num_marked_individuals_on_camera <- marked_individuals_on_camera$color_id %>% length())
-```
 
-How does this number compare to the number of individuals that were color marked? I.e., what proportion of color-marked birds were detected on camera?
-```{r}
+#How does this number compare to the number of individuals that were color marked? I.e., what proportion of color-marked birds were detected on camera?
 captures <- read.csv("../../data/import/Hummingbird_captures_2010-2018_20220713.csv") %>%
   select(control_treatment, exp_phase, year, patch = site, everything())
 

@@ -42,8 +42,8 @@ calculate_sighting_rates <- function(data, level_org = "plant_species_across_sit
 
   if(level_time == "exp_phase"){vars = append(vars, "exp_phase")}
   if(level_time == "date_video"){vars = append(vars, c("exp_phase", "date_video"))}
-  if(level_time == "all"){vars = vars}
-  
+  if(level_time == "all"){vars = vars}  
+
   #---------------------------------------------------------------------
   #Subset sightings according to certain visit criteria
   #---------------------------------------------------------------------
@@ -82,7 +82,7 @@ calculate_sighting_rates <- function(data, level_org = "plant_species_across_sit
   #Individually marked birds
   if(level_bird == "individual_marked"){
     
-    bird_vars = append(vars, c("bird_species", "band_number", "trans_freq", "colors", "color_id"))
+    bird_vars = append(vars, c("bird_species", "color_id"))
     
     data_sightings <- data_sightings %>%
       filter(!is.na(colors) & colors != "None" & colors != "M" & colors != "U") %>% #Remove birds without distinguishable marks
@@ -123,11 +123,11 @@ calculate_sighting_rates <- function(data, level_org = "plant_species_across_sit
   #-----------------------------------------
   #Summarize sightings
   #-----------------------------------------
-
   sum_sightings <- data_sightings %>%
     group_by_at(bird_vars) %>%  #If not summarizing by individual bird species, then this is just vars.
-    summarise(sightings = n())
-  
+    summarise(sightings = n()) %>%
+    ungroup()
+
   #-----------------------------------------
   #Summarize effort and number of flowers
   #-----------------------------------------
@@ -147,7 +147,6 @@ calculate_sighting_rates <- function(data, level_org = "plant_species_across_sit
   #Flower summary (how many flowers were available each day)
   #If summarizing at level of date, this will just be the number of flowers on that day. If summarizing at the level of experimental phase, this will be average number of flowers per day.
   #Days with zero flowers have already been removed
-  
   sum_flowers <- data %>%
     select(all_of(vars_flowers)) %>%
     distinct() %>%
@@ -171,20 +170,39 @@ calculate_sighting_rates <- function(data, level_org = "plant_species_across_sit
   #Need to fill in zero sightings for each possible species per patch/camera/etc, i.e., make IMPLICITLY missing bird species EXPLICITLY missing bird species so can compare pre and post.
   if(level_bird == "camera_spp_separate"){
     
-    nesting_vars <- append(append(vars, "hours"), "flowers")
+    nesting_vars <- append(vars, c("hours", "flowers"))
     nesting_vars <- syms(nesting_vars) #with 'ensyms', get an error saying only strings can be converted to symbols. 'syms' converts a character names vector into a list of symbols
     
     rates <- sum_effort %>%
       left_join(sum_flowers) %>%
       left_join(sum_sightings) %>%
-      complete(bird_species, nesting(!!!nesting_vars), fill = list(sightings=0)) %>%
+      complete(bird_species, nesting(!!!nesting_vars), fill = list(sightings = 0)) %>%
       filter(!is.na(bird_species)) %>% #Remove NAs in the bird column. NAs were introduced for zero sightings
-      mutate(sightings_per_hour = sightings/hours) %>% #Sighting rate without controlling for number of flowers
+      mutate(sightings_per_hour = sightings/hours) %>% 
       mutate(bird_group = level_bird)
     
   }
   
+  #This is currently hard-coded to summarize sightings to level of plant species (within site) + experimental phase, then fill in zeroes for pre/post (if individual was only associated with that plant species during one period)
+  if(level_bird == "individual_marked" & level_org == "plant_species" & level_time == "exp_phase"){
+  
+    sum_sightings_complete <- sum_sightings %>%
+      group_by(year, patch, control_treatment) %>%
+      complete(exp_phase, nesting(bird_species, color_id, plant_species), fill = list(sightings = 0)) %>%
+      ungroup()
+    
+    rates <- sum_effort %>%
+      left_join(sum_flowers) %>%
+      left_join(sum_sightings_complete) %>%
+      filter(!is.na(color_id)) %>%
+      mutate(sightings_per_hour = sightings/hours) %>% 
+      mutate(bird_group = level_bird) %>%
+      arrange(color_id, plant_species)
+    
+  }
+  
   return(rates)
+  
 }
 
 ###############################################

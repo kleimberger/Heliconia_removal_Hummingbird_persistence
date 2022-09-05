@@ -588,7 +588,6 @@ in birds that can be identified to individual based on color mark, so
 these data will only reflect the last two years of study (2017-2018)</p>
 <pre class="r"><code>#This summary is at the level of indvidual bird. Since there is species info, will just filter to GREH/VISA
 marked_sighting_rates_all_spp = calculate_sighting_rates(data = data_for_experiment, level_org = &quot;plant_species&quot;, level_time = &quot;exp_phase&quot;, level_bird = &quot;individual_marked&quot;, sightings = &quot;with_visit&quot;, include_unknown_spp = FALSE) %&gt;%
-  filter(!is.na(color_id)) %&gt;%
   mutate(bird_group = &quot;all_spp&quot;) #Replace &quot;individual_marked&quot; with &quot;all_spp&quot;
 
 marked_sighting_rates_greh_visa = marked_sighting_rates_all_spp %&gt;%
@@ -598,9 +597,20 @@ marked_sighting_rates_greh_visa = marked_sighting_rates_all_spp %&gt;%
   
 marked_sighting_rates &lt;- marked_sighting_rates_all_spp %&gt;%
   bind_rows(marked_sighting_rates_greh_visa) %&gt;%
-  select(bird_group, everything())
+  mutate(analysis = ifelse(plant_species == &quot;HETO&quot;, &quot;camera_HETO&quot;, &quot;camera_non-HETO&quot;)) %&gt;%
+  select(analysis, bird_group, everything())
 
-#How many video hours are there for 2017-2018? Calculate hours in this dataset
+#Remove birds not present during pre (at HETO and non-HETO separately)
+birds_not_present_during_pre &lt;- marked_sighting_rates %&gt;%
+  group_by(analysis, year, patch, exp_phase, color_id) %&gt;%
+  summarise(sightings = sum(sightings, na.rm = TRUE)) %&gt;%
+  filter(exp_phase == &quot;pre&quot; &amp; sightings == 0) %&gt;%
+  mutate(present_during_pre = &quot;no&quot;)
+
+marked_sighting_rates &lt;- marked_sighting_rates %&gt;%
+  left_join(birds_not_present_during_pre)</code></pre>
+<p>Summarize effort for marked birds</p>
+<pre class="r"><code>#How many video hours are there for 2017-2018? Calculate hours in this dataset
 hours_experiment_17_18 &lt;- data_for_experiment %&gt;%
   filter(year == &quot;2017&quot; | year == &quot;2018&quot;) %&gt;%
   distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %&gt;%
@@ -617,14 +627,12 @@ hours_experiment_17_18</code></pre>
 ## 1      14949.</code></pre>
 <pre class="r"><code>#How many marked individuals were detected on camera?
 marked_individuals_on_camera &lt;- marked_sighting_rates %&gt;%
-  distinct(year, patch, bird_species, band_number, trans_freq, colors, color_id)
+  distinct(year, patch, bird_species, color_id)
 
 (num_marked_individuals_on_camera &lt;- marked_individuals_on_camera$color_id %&gt;% length())</code></pre>
 <pre><code>## [1] 44</code></pre>
-<p>How does this number compare to the number of individuals that were
-color marked? I.e., what proportion of color-marked birds were detected
-on camera?</p>
-<pre class="r"><code>captures &lt;- read.csv(&quot;../../data/import/Hummingbird_captures_2010-2018_20220713.csv&quot;) %&gt;%
+<pre class="r"><code>#How does this number compare to the number of individuals that were color marked? I.e., what proportion of color-marked birds were detected on camera?
+captures &lt;- read.csv(&quot;../../data/import/Hummingbird_captures_2010-2018_20220713.csv&quot;) %&gt;%
   select(control_treatment, exp_phase, year, patch = site, everything())
 
 captures_marked_birds &lt;- captures %&gt;%
