@@ -418,7 +418,7 @@ results <- models %>%
 
 ## Step 7: Export results as rds file
 ```{r}
-saveRDS(results, "results/statistical_analysis/rds_files/Camera_data_results.rds")
+saveRDS(results, "results/statistical_analysis/rds_files/Camera_results.rds")
 ```
 
 *WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES IN ONE MASTER SCRIPT*
