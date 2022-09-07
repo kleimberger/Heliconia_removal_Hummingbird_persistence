@@ -1,0 +1,260 @@
+---
+title: "Analyzing capture data"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Goals**
+
+Analyze how experimental *Heliconia* removal influences:
+
+- The amount of time that radio-tagged hummingbirds spent in the focal area ("patch", i.e., where they were captured and we removed *Heliconia*)
+
+```{r, setup, include=FALSE}
+#Packages for statistical modeling
+library(glmmTMB)
+library(AICcmodavg)
+library(DHARMa)
+library(emmeans)
+library(ggeffects)
+
+#Packages for data wrangling
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(purrr)
+
+#Packages for plotting
+library(ggplot2)
+library(ggrepel)
+library(ggpubr)
+
+#Set up parallel processing (likelihood profile CI take forever to run!)
+library(future)
+plan(multisession)
+
+#Set seed
+set.seed(1)
+```
+
+## Step 1: Import data and functions
+
+**Data for analysis**
+```{r}
+#Telemetry data, all hummingbird species
+telem_data <- read.csv("data/export/for_analysis/Telemetry_proportion_time_in_patch.csv") %>%
+  mutate(bird_group = "all_spp") %>%
+  select(-X)
+
+head(telem_data)
+
+#Create subset for GREH/VISA
+telem_data_greh_visa <- telem_data %>%
+  filter(species == "GREH" | species == "VISA") %>%
+  mutate(bird_group = "greh_visa")
+
+#Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
+heto_removed <- read.csv("data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
+  select(-X)
+
+##1. Combine data
+#2. Log-transform HETO calories removed
+#3. Remove plants without flower counts (GINGY and MARA-VER)
+telem_data_for_analysis <- telem_data %>%
+  bind_rows(telem_data_greh_visa) %>%
+  left_join(heto_removed) %>%
+  rename(focal_area_hectares = area) %>%
+  mutate(exp_phase = factor(exp_phase, levels = c("pre", "post"))) %>%
+  mutate(control_treatment = factor(control_treatment, levels = c("control", "treatment"))) %>%
+  mutate(year_patch = paste(year, patch, sep = "_")) %>%
+  mutate(bird_id = paste(year, patch, frequency, sep = "_")) %>%
+  mutate(log_calories_removed_per_ha = log(calories_removed_per_ha + 1),
+         log_focal_area_hectares = log(focal_area_hectares)) %>%
+  mutate(analysis = "telemetry") %>%
+  mutate(subanalysis = "telemetry") %>%
+  select(analysis, subanalysis, bird_group, year, patch, year_patch, control_treatment, exp_phase, bird_id, frequency, species, sex, obs_effort_minutes, everything())
+```
+
+**Import functions**
+```{r step1a}
+source("code/helper_functions/Modeling_helper_functions.R")
+source("code/helper_functions/Plotting_helper_functions.R")
+source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("code/helper_functions/Calculate_basic_summary_stats.R")
+```
+
+# Step 2: Create datasets for each analysis 
+
+**Get organized**
+```{r create_table_to_hold_results}
+#Create tables that will be filled in with models and model results
+analysis = c("telemetry")
+subanalysis = c("all_replicates", "without_outlier") #Replicate 2016_10 exerts a LOT of influence, according to influence plots. Run with and without.
+bird_group = c("all_spp", "greh_visa")
+model_type = c("categorical", "quantitative")
+model_name = c("control/treatment * pre/post", "calories removed/ha * pre/post")
+treatment_variable = c("control_treatment", "log_calories_removed_per_ha")
+model_types_names = data.frame(model_type = model_type, model_name = model_name, treatment_variable = treatment_variable)
+
+base_table <- crossing(analysis, subanalysis, bird_group, model_type) %>% 
+  left_join(model_types_names) %>%
+  mutate(yvar = "prop_time_in_patch") %>%
+  arrange(analysis, subanalysis, model_type, bird_group) %>%
+  mutate(model_number = 1:length(yvar)) %>%
+  mutate(title = paste(analysis, subanalysis, bird_group, sep = "_")) %>%
+  mutate(subtitle = yvar) %>%
+  select(model_number, analysis, yvar, subanalysis, everything())
+```
+
+**Filter master dataset to relevant sub-dataset & scale continuous predictors**
+```{r}
+subset_data <- function(dataset, analysis, subanalysis, bird_group){
+  
+  dataset <- dataset %>%
+    filter(analysis == {{ analysis }}) %>%
+    filter(bird_group == {{ bird_group }}) %>%
+    mutate(across(c(log_calories_removed_per_ha, log_focal_area_hectares), ~c(scale(.))))
+  
+  if(subanalysis == "without_outlier"){
+    
+    dataset <- dataset %>%
+      filter(year_patch != "2016_10")
+    
+  }
+      
+  return(dataset)
+  
+}
+
+#Create datasets (will add models in later step)
+data <- base_table %>%
+    mutate(data = pmap(list(analysis, subanalysis, bird_group), ~subset_data(dataset = telem_data_for_analysis, analysis = ..1, subanalysis = ..2, bird_group = ..3)))
+```
+
+## Step 3: Initial model fitting
+
+For count data, there multiple possible distributions. I need to choose between Poisson and negative binomial (nbinom1 and nbinom2) and also see if there is support for zero-inflation or not. Will check assumptions for all models again later on.
+
+**Captures**
+```{r, include = FALSE, eval = FALSE}
+#Filter by hand so can have unscaled value of net-hours for offset
+fit_data01 <- telem_data_for_analysis %>%
+  filter(analysis == "telemetry" & subanalysis == "telemetry" & bird_group == "all_spp")
+
+m1 <- glmmTMB::glmmTMB(prop_time_in_patch ~ control_treatment * exp_phase + (1|patch/year_patch/bird_id), data = fit_data01, na.action = na.omit, family = "binomial", weights = obs_effort_minutes, ziformula = ~0)
+
+m2 <- glmmTMB::glmmTMB(prop_time_in_patch ~ control_treatment * exp_phase + (1|patch/year_patch/bird_id), data = fit_data01, na.action = na.omit, family = "binomial", weights = obs_effort_minutes, ziformula = ~1)
+
+m3 <- glmmTMB::glmmTMB(prop_time_in_patch ~ control_treatment * exp_phase + (1|patch/year_patch/bird_id), data = fit_data01, na.action = na.omit, family = "betabinomial", weights = obs_effort_minutes, ziformula = ~0, control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+
+m4 <- glmmTMB::glmmTMB(prop_time_in_patch ~ control_treatment * exp_phase + (1|patch/year_patch/bird_id), data = fit_data01, na.action = na.omit, family = "betabinomial", weights = obs_effort_minutes, ziformula = ~1, control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+
+#Combine models
+model_fitting01 <- tibble(model_name = c("m1", "m2", "m3", "m4"), model = list(m1, m2, m3, m4)) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "basic")),
+         dharma_zeroinfl_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "overdispersion"))) %>%
+  mutate(AICc = map(model, MuMIn::AICc))
+
+#Which model is best according to AIC?
+model_fitting01 %>%
+  select(model_name, AICc) %>%
+  unnest(AICc) %>%
+  arrange(AICc)
+
+#Check to make sure assumptions look OK
+model_fitting01$dharma_plot[[3]]
+model_fitting01$dharma_overdisp_plot[[3]]
+model_fitting01$dharma_zeroinfl_plot[[3]]
+```
+
+## Step 4: Fit models
+```{r}
+#Function to make model for given analysis
+#Alternative optimizer (default is nlminb)
+#control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS"))
+create_model <- function(dataset, analysis, subanalysis, treatment_variable){
+
+  model <- glmmTMB(as.formula(paste0("prop_time_in_patch ~ ", treatment_variable, " * exp_phase + (1|patch/year_patch/bird_id)")), data = dataset, na.action = na.omit, family = "betabinomial", ziformula = ~0, weights = obs_effort_minutes, control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+      
+  return(model)
+  
+}
+
+#Create models
+models <- data %>%
+   mutate(model_quietly = pmap(list(data, analysis, subanalysis, treatment_variable), quietly(function(a, b, c, d){model <- create_model(dataset = a, analysis = b, subanalysis = c, treatment_variable = d)})),
+          model = map(model_quietly, get_result),
+          warning = map(model_quietly, get_warning), 
+          convergence = map(model, check_convergence)) %>%
+  mutate(xvar_table = map(model, ~data.frame(xvar = all.vars(terms(.))[-1])))
+
+#Make sure there weren't any problems + check to make sure table of predictor variables is correct
+models$warning
+models$convergence
+models$xvar_table
+```
+
+## Step 5: Check assumptions
+```{r, fig.show = 'hide', results = 'hide', eval = FALSE}
+assumption_checks <- models %>%
+  mutate(re_plot = pmap(list(model, title, subtitle), ~check_re(model = ..1, plot_title = ..2, plot_subtitle = ..3))) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot_safely = pmap(list(dharma_object, title, subtitle),
+                                   safely(function(a, b, c){make_dharma_plot(dharma_object = a, plot_title = b, plot_subtitle = c, plot_type = "basic")})),
+         dharma_plot = map(dharma_plot_safely, get_result),
+         dharma_plot_error = map(dharma_plot_safely, get_error)) %>%
+  mutate(dharma_xvar_plot_safely = pmap(list(xvar_table, data, dharma_object, title, subtitle),
+                                        safely(function(a, b, c, d, e){make_dharma_xvar_plot(predictor_table = a, dataset = b, dharma_object = c, plot_title = d, plot_subtitle = e)})),
+         dharma_xvar_plot = map(dharma_xvar_plot_safely, get_result),
+         dharma_xvar_plot_error = map(dharma_xvar_plot_safely, get_error)) %>%
+  mutate(dharma_zeroinfl_plot = pmap(list(dharma_object, title, subtitle), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2, plot_subtitle = ..3, plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, title, subtitle),  ~make_dharma_plot(dharma_object = ..1, plot_title = ..2, plot_subtitle = ..3, plot_type = "overdispersion"))) %>%
+  mutate(plotname1 = paste("re_diagnostics_", model_number, ".png", sep = "")) %>%
+  mutate(plotname2 = paste("dharma_overall_diagnostics_", model_number, ".png", sep = "")) %>%
+  mutate(plotname3 = paste("dharma_xvar_diagnostics_", model_number, ".png", sep = "")) %>%
+  mutate(plotname4 = paste("dharma_zeroinfl_diagnostics_", model_number, ".png", sep = "")) %>%
+  mutate(plotname5 = paste("dharma_overdisp_diagnostics_", model_number, ".png", sep = ""))
+
+
+#Export diagnostic plots because they load very slowly in RStudio
+path_name <- c("results/statistical_analysis/assumption_checks/telemetry")
+walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
+walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
+walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
+walk2(assumption_checks$plotname4, assumption_checks$dharma_zeroinfl_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
+walk2(assumption_checks$plotname5, assumption_checks$dharma_overdisp_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
+
+#Check for highly influential replicates
+#Make plots of DFBETAS and Cook's distance
+influence_checks <- models %>%
+  mutate(influence_plot = pmap(list(model, data, title, subtitle), ~make_influence_plot(model = ..1, dataset = ..2, plot_title = ..3, plot_subtitle = ..4, group_id = "year_patch"))) %>%
+  mutate(plotname6 = paste("influence_diagnostics_", model_number, ".png", sep = ""))
+
+#Export plots
+walk2(influence_checks$plotname6, influence_checks$influence_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
+```
+
+## Step 6: Create results for export
+```{r}
+#Will also add information about sample size: total # of observations (rows), number of levels per random effect, and the number of replicates (split into 'control' vs. 'treatment')
+results <- models %>%
+  mutate(summary = map(model, summary),
+         summary_tidy = map(model, broom.mixed::tidy),
+         confint_wald = map(model, ~calculate_ci(., method_name = "wald"))) %>%
+  mutate(num_obs = map(model, get_number_obs),
+         num_levels = map(model, get_number_re_levels),
+         num_reps = map(data, ~get_sample_size(data = ., vars = c("year", "patch", "control_treatment"), grouping_var = "control_treatment")))
+```
+
+## Step 7: Export results as rds file
+```{r}
+saveRDS(results, "results/statistical_analysis/rds_files/Telemetry_data_results.rds")
+```
+
+*WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES IN ONE MASTER SCRIPT*
