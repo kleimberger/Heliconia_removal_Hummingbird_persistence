@@ -1,0 +1,424 @@
+---
+title: "Analyzing camera data"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Goals**
+
+Analyze how experimental *Heliconia* removal influences:
+
+- Visitation rates to focal *Heliconia* plants (those that remained uncovered throughout the experiment)
+  * Visitation from all hummingbirds
+  * Visitation from individual color-marked hummingbirds (2017-2018 only)
+
+- Visitation rates to non-*Heliconia* plants
+  * Visitation from all hummingbirds
+  * Visitation from individual color-marked hummingbirds (2017-2018 only)
+
+For each analysis, I will examine (A) all hummingbird species, and (B) species that are *Heliconia* specialists (green hermits and violet sabrewings).
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+#Packages for statistical modeling
+library(glmmTMB)
+library(AICcmodavg)
+library(DHARMa)
+library(emmeans)
+library(ggeffects)
+
+#Packages for data wrangling
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(purrr)
+
+#Packages for plotting
+library(ggplot2)
+library(ggrepel)
+library(ggpubr)
+
+#Set up parallel processing (likelihood profile CI take forever to run!)
+library(future)
+plan(multisession)
+
+#Set seed
+set.seed(1)
+```
+
+## Step 1: Import data and functions
+
+**Get data**
+```{r}
+#Camera data, visits summarized across birds
+visit_data <- read.csv("data/export/for_analysis/Camera_visitation_rates.csv") %>%
+  mutate(subanalysis = "all_birds") %>%
+  select(-X)
+
+#Camera data, visits by individual birds
+#Decided not to exclude birds that have no visits during the pre period (determined for HETO and non-HETO separately)
+visit_data_marked <- read.csv("data/export/for_analysis/Camera_visitation_rates_marked_birds.csv") %>%
+  mutate(subanalysis = "marked_birds") %>%
+  select(-present_during_pre, -X)
+
+#Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
+heto_removed <- read.csv("data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
+  select(-X, -area)
+
+##1. Combine data
+#2. Log-transform HETO calories removed
+#3. Remove plants without flower counts (GINGY and MARA-VER)
+visit_data_for_analysis <- visit_data_marked %>%
+  bind_rows(visit_data) %>%
+  left_join(heto_removed) %>%
+  mutate(exp_phase = factor(exp_phase, levels = c("pre", "post"))) %>%
+  mutate(control_treatment = factor(control_treatment, levels = c("control", "treatment"))) %>%
+  mutate(year_patch = paste(year, patch, sep = "_")) %>%
+  mutate(log_calories_removed_per_ha = log(calories_removed_per_ha + 1)) %>%
+  filter(!is.na(flowers) & flowers != "NA") %>%
+  select(analysis, subanalysis, bird_group, everything())
+```
+
+**Import functions**
+```{r step1a}
+source("code/helper_functions/Modeling_helper_functions.R")
+source("code/helper_functions/Plotting_helper_functions.R")
+source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+```
+
+## Step 2: Create datasets for each analysis 
+
+**Get organized**
+```{r create_table_to_hold_results}
+#Create tables that will be filled in with models and model results
+analysis = c("camera_HETO", "camera_non-HETO")
+subanalysis = c("all_birds", "marked_birds")
+bird_group = c("all_spp", "greh_visa")
+model_type = c("categorical", "quantitative")
+model_name = c("control/treatment * pre/post", "calories removed/ha * pre/post")
+treatment_variable = c("control_treatment", "log_calories_removed_per_ha")
+model_types_names = data.frame(model_type = model_type, model_name = model_name, treatment_variable = treatment_variable)
+
+base_table <- crossing(analysis, subanalysis, bird_group, model_type) %>% 
+  left_join(model_types_names) %>%
+  mutate(yvar = "sightings") %>%
+  arrange(analysis, subanalysis, model_type, bird_group) %>%
+  mutate(model_number = 1:length(yvar)) %>%
+  mutate(title = paste(analysis, subanalysis, bird_group, sep = "_")) %>%
+  mutate(subtitle = yvar) %>%
+  select(model_number, analysis, yvar, subanalysis, everything())
+```
+
+**Filter master dataset to relevant sub-dataset & scale continuous predictors**
+```{r}
+subset_data <- function(dataset, analysis, subanalysis, bird_group){
+  
+  dataset <- dataset %>%
+    filter(analysis == {{ analysis }}) %>%
+    filter(subanalysis == {{ subanalysis}}) %>%
+    filter(bird_group == {{ bird_group }}) %>%
+    mutate(across(c(log_calories_removed_per_ha, flowers), ~c(scale(.))))
+      
+  return(dataset)
+  
+}
+
+#Create datasets (will add models in later step)
+data <- base_table %>%
+    mutate(data = pmap(list(analysis, subanalysis, bird_group), ~subset_data(dataset = visit_data_for_analysis, analysis = ..1, subanalysis = ..2, bird_group = ..3)))
+```
+
+## Step 3: Initial model fitting
+
+For count data, there multiple possible distributions. I need to choose between Poisson and negative binomial (nbinom1 and nbinom2) and also see if there is support for zero-inflation or not. Will check assumptions for all models again later on.
+
+**Heliconia visitation rate, all birds (not marked)**
+```{r, include = FALSE, eval = FALSE}
+fit_data01 <- data %>%
+  filter(analysis == "camera_HETO" & subanalysis == "all_birds" & bird_group == "all_spp" & model_type == "categorical") %>%
+  pull(data) %>%
+  as.data.frame()
+
+m1 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data01, na.action = na.omit, family = "poisson", ziformula = ~0)
+
+m2 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data01, na.action = na.omit, family = "poisson", ziformula = ~1)
+
+m3 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data01, na.action = na.omit, family = "nbinom1", ziformula = ~0)
+
+m4 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data01, na.action = na.omit, family = "nbinom1", ziformula = ~1)
+
+m5 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data01, na.action = na.omit, family = "nbinom2", ziformula = ~0)
+
+m6 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data01, na.action = na.omit, family = "nbinom2", ziformula = ~1)
+
+#Combine models
+model_fitting01 <- tibble(model_name = c("m1", "m2", "m3", "m4", "m5", "m6"), model = list(m1, m2, m3, m4, m5, m6)) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "basic")),
+         dharma_zeroinfl_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "overdispersion"))) %>%
+  mutate(AICc = map(model, MuMIn::AICc))
+
+#Which model is best according to AIC?
+model_fitting01 %>%
+  select(model_name, AICc) %>%
+  unnest(AICc) %>%
+  arrange(AICc)
+
+#Check to make sure assumptions look OK
+model_fitting01$dharma_plot[[3]]
+model_fitting01$dharma_overdisp_plot[[3]]
+model_fitting01$dharma_zeroinfl_plot[[3]]
+```
+
+**Non-Heliconia visitation rate, all birds (not marked)**
+```{r, include = FALSE, eval = FALSE}
+fit_data02 <- data %>%
+  filter(analysis == "camera_non-HETO" & subanalysis == "all_birds" & bird_group == "all_spp" & model_type == "categorical") %>%
+  pull(data) %>%
+  as.data.frame()
+
+m1 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species), data = fit_data02, na.action = na.omit, family = "poisson", ziformula = ~0)
+
+m2 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species), data = fit_data02, na.action = na.omit, family = "poisson", ziformula = ~1)
+
+m3 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species), data = fit_data02, na.action = na.omit, family = "nbinom1", ziformula = ~0)
+
+m4 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species), data = fit_data02, na.action = na.omit, family = "nbinom1", ziformula = ~1)
+
+m5 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species), data = fit_data02, na.action = na.omit, family = "nbinom2", ziformula = ~0)
+
+m6 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species), data = fit_data02, na.action = na.omit, family = "nbinom2", ziformula = ~1)
+
+#Combine models
+model_fitting02 <- tibble(model_name = c("m1", "m2", "m3", "m4", "m5", "m6"), model = list(m1, m2, m3, m4, m5, m6)) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "basic")),
+         dharma_zeroinfl_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "overdispersion"))) %>%
+  mutate(AICc = map(model, MuMIn::AICc))
+
+#Which model is best according to AIC?
+model_fitting02 %>%
+  select(model_name, AICc) %>%
+  unnest(AICc) %>%
+  arrange(AICc)
+
+#Check to make sure assumptions look OK
+model_fitting02$dharma_plot[[3]]
+model_fitting02$dharma_overdisp_plot[[3]]
+model_fitting02$dharma_zeroinfl_plot[[3]]
+
+#model 4 (ZI model) is technically best in terms of AIC, but does not converge for GREH/VISA; using second-best model (model 3) instead, because assumptions look fine and it converges for GREH/VISA (and is the best model for that group in terms of AIC)
+```
+
+**Heliconia visitation rate, marked birds**
+```{r, include = FALSE, eval = FALSE}
+fit_data03 <- data %>%
+  filter(analysis == "camera_HETO" & subanalysis == "marked_birds" & bird_group == "all_spp" & model_type == "categorical") %>%
+  pull(data) %>%
+  as.data.frame()
+
+
+m1 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/color_id), data = fit_data03, na.action = na.omit, family = "poisson", ziformula = ~0)
+
+m2 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/color_id), data = fit_data03, na.action = na.omit, family = "poisson", ziformula = ~1)
+
+m3 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/color_id), data = fit_data03, na.action = na.omit, family = "nbinom1", ziformula = ~0)
+
+m4 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/color_id), data = fit_data03, na.action = na.omit, family = "nbinom1", ziformula = ~1)
+
+m5 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/color_id), data = fit_data03, na.action = na.omit, family = "nbinom2", ziformula = ~0)
+
+m6 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/color_id), data = fit_data03, na.action = na.omit, family = "nbinom2", ziformula = ~1)
+
+#Combine models
+model_fitting03 <- tibble(model_name = c("m1", "m2", "m3", "m4", "m5", "m6"), model = list(m1, m2, m3, m4, m5, m6)) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "basic")),
+         dharma_zeroinfl_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "overdispersion"))) %>%
+  mutate(AICc = map(model, MuMIn::AICc))
+
+#Which model is best according to AIC?
+model_fitting03 %>%
+  select(model_name, AICc) %>%
+  unnest(AICc) %>%
+  arrange(AICc)
+
+#Check to make sure assumptions look OK
+model_fitting03$dharma_plot[[1]]
+model_fitting03$dharma_overdisp_plot[[1]]
+```
+
+**Non-Heliconia visitation rate, marked birds**
+```{r, include = FALSE, eval = FALSE}
+fit_data04 <- data %>%
+  filter(analysis == "camera_non-HETO" & subanalysis == "marked_birds" & bird_group == "all_spp" & model_type == "categorical") %>%
+  pull(data) %>%
+  as.data.frame()
+
+m1 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species) + (1|color_id), data = fit_data04, na.action = na.omit, family = "poisson", ziformula = ~0)
+
+m2 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species) + (1|color_id), data = fit_data04, na.action = na.omit, family = "poisson", ziformula = ~1)
+
+m3 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species) + (1|color_id), data = fit_data04, na.action = na.omit, family = "nbinom1", ziformula = ~0)
+
+m4 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species) + (1|color_id), data = fit_data04, na.action = na.omit, family = "nbinom1", ziformula = ~1)
+
+m5 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species) + (1|color_id), data = fit_data04, na.action = na.omit, family = "nbinom2", ziformula = ~0)
+
+m6 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch/plant_species) + (1|color_id), data = fit_data04, na.action = na.omit, family = "nbinom2", ziformula = ~1)
+
+#Combine models
+model_fitting04 <- tibble(model_name = c("m1", "m2", "m3", "m4", "m5", "m6"), model = list(m1, m2, m3, m4, m5, m6)) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "basic")),
+         dharma_zeroinfl_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "overdispersion"))) %>%
+  mutate(AICc = map(model, MuMIn::AICc))
+
+#Which model is best according to AIC?
+model_fitting04 %>%
+  select(model_name, AICc) %>%
+  unnest(AICc) %>%
+  arrange(AICc)
+
+#Check to make sure assumptions look OK
+model_fitting04$dharma_plot[[5]]
+model_fitting04$dharma_overdisp_plot[[5]]
+```
+
+## Step 4: Fit models
+```{r}
+#Function to make model for given analysis
+#Alternative optimizer (default is nlminb)
+#control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS"))
+create_model <- function(dataset, analysis, subanalysis, treatment_variable){
+
+  #All models will have this part, but will adjust random effects for each model
+  base_formula <- paste0("sightings ~ ", treatment_variable, " * exp_phase + flowers + offset(log(hours))")
+  
+  #Make models for each analysis
+  if(analysis == "camera_HETO"){
+    
+    if(subanalysis == "all_birds"){
+      
+      
+      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0)
+      
+    }
+    
+    if(subanalysis == "marked_birds"){
+      
+       model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch/color_id)")), data = dataset, na.action = na.omit, family = "poisson", ziformula = ~0)
+       
+    }
+    
+  }
+  
+  if(analysis == "camera_non-HETO"){
+    
+    if(subanalysis == "all_birds"){
+      
+      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch/plant_species)")), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0)
+      
+    }
+    
+    if(subanalysis == "marked_birds"){
+      
+       model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch/plant_species) + (1|color_id)")), data = dataset, na.action = na.omit, family = "nbinom2", ziformula = ~0)
+       
+    }
+    
+  }
+  
+  return(model)
+  
+}
+
+#Testing
+# test01 <- create_model(dataset = fit_data01, analysis = "camera_HETO", subanalysis = "all_birds", treatment_variable = "control_treatment")
+# summary(test01)
+
+#Create models
+models <- data %>%
+   mutate(model_quietly = pmap(list(data, analysis, subanalysis, treatment_variable), quietly(function(a, b, c, d){model <- create_model(dataset = a, analysis = b, subanalysis = c, treatment_variable = d)})),
+          model = map(model_quietly, get_result),
+          warning = map(model_quietly, get_warning), 
+          convergence = map(model, check_convergence)) %>%
+  mutate(xvar_table = map(model, ~data.frame(xvar = all.vars(terms(.))[-1])))
+
+#Make sure there weren't any problems + check to make sure table of predictor variables is correct
+models$warning
+models$convergence
+models$xvar_table
+```
+
+## Step 5: Check assumptions
+```{r, fig.show = 'hide', results = 'hide', eval = FALSE}
+assumption_checks <- models %>%
+  mutate(re_plot = pmap(list(model, title, subtitle), ~check_re(model = ..1, plot_title = ..2, plot_subtitle = ..3))) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot_safely = pmap(list(dharma_object, title, subtitle),
+                                   safely(function(a, b, c){make_dharma_plot(dharma_object = a, plot_title = b, plot_subtitle = c, plot_type = "basic")})),
+         dharma_plot = map(dharma_plot_safely, get_result),
+         dharma_plot_error = map(dharma_plot_safely, get_error)) %>%
+  mutate(dharma_xvar_plot_safely = pmap(list(xvar_table, data, dharma_object, title, subtitle),
+                                        safely(function(a, b, c, d, e){make_dharma_xvar_plot(predictor_table = a, dataset = b, dharma_object = c, plot_title = d, plot_subtitle = e)})),
+         dharma_xvar_plot = map(dharma_xvar_plot_safely, get_result),
+         dharma_xvar_plot_error = map(dharma_xvar_plot_safely, get_error)) %>%
+  mutate(dharma_zeroinfl_plot = pmap(list(dharma_object, title, subtitle), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2, plot_subtitle = ..3, plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, title, subtitle),  ~make_dharma_plot(dharma_object = ..1, plot_title = ..2, plot_subtitle = ..3, plot_type = "overdispersion"))) %>%
+  mutate(plotname1 = paste("re_diagnostics_", model_number, ".png", sep = "")) %>%
+  mutate(plotname2 = paste("dharma_overall_diagnostics_", model_number, ".png", sep = "")) %>%
+  mutate(plotname3 = paste("dharma_xvar_diagnostics_", model_number, ".png", sep = "")) %>%
+  mutate(plotname4 = paste("dharma_zeroinfl_diagnostics_", model_number, ".png", sep = "")) %>%
+  mutate(plotname5 = paste("dharma_overdisp_diagnostics_", model_number, ".png", sep = ""))
+
+
+#Export diagnostic plots because they load very slowly in RStudio
+path_name <- c("results/statistical_analysis/assumption_checks/cameras")
+walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
+walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
+walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
+walk2(assumption_checks$plotname4, assumption_checks$dharma_zeroinfl_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
+walk2(assumption_checks$plotname5, assumption_checks$dharma_overdisp_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
+
+#Check for highly influential replicates
+#Make plots of DFBETAS and Cook's distance
+influence_checks <- models %>%
+  mutate(influence_plot = pmap(list(model, data, title, subtitle), ~make_influence_plot(model = ..1, dataset = ..2, plot_title = ..3, plot_subtitle = ..4, group_id = "year_patch"))) %>%
+  mutate(plotname6 = paste("influence_diagnostics_", model_number, ".png", sep = ""))
+
+#Export plots
+walk2(influence_checks$plotname6, influence_checks$influence_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
+
+#Replicate 2016_58 seems to be pretty influential in non-HETO models for GREH/VISA, perhaps because of GIN-ROS-AMA (highest # sightings in entire dataset). But it's influential in the direction of rewiring, and we're still not finding a statistically significant treatment effect (interaction term).
+```
+
+## Step 6: Create results for export
+```{r}
+#Will also add information about sample size: total # of observations (rows), number of levels per random effect, and the number of replicates (split into 'control' vs. 'treatment')
+results <- models %>%
+  mutate(summary = map(model, summary),
+         summary_tidy = map(model, broom.mixed::tidy),
+         confint_wald = map(model, ~calculate_ci(., method_name = "wald"))) %>%
+  mutate(num_obs = map(model, get_number_obs),
+         num_levels = map(model, get_number_re_levels),
+         num_reps = map(data, ~get_sample_size(data = ., vars = c("year", "patch", "control_treatment"), grouping_var = "control_treatment")))
+
+#results$summary[[10]]
+```
+
+## Step 7: Export results as rds file
+```{r}
+saveRDS(results, "results/statistical_analysis/rds_files/Camera_data_results.rds")
+```
+
+*WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES IN ONE MASTER SCRIPT*

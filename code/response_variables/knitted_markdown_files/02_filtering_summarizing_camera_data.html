@@ -579,7 +579,8 @@ sighting_rates_greh_visa = calculate_sighting_rates(data = data_for_experiment, 
 #Combine various summaries
 sighting_rates &lt;- sighting_rates_all_spp %&gt;%
   bind_rows(sighting_rates_greh_visa) %&gt;%
-  select(bird_group, everything())</code></pre>
+  mutate(analysis = ifelse(plant_species == &quot;HETO&quot;, &quot;camera_HETO&quot;, &quot;camera_non-HETO&quot;)) %&gt;%
+  select(analysis, bird_group, everything())</code></pre>
 <p>Calculate visitation rates for each patch-year (across camera IDs,
 dates) - color-marked birds only</p>
 <p>There are some ‘marked’ birds for 2016, before we marked birds with
@@ -608,7 +609,8 @@ birds_not_present_during_pre &lt;- marked_sighting_rates %&gt;%
   mutate(present_during_pre = &quot;no&quot;)
 
 marked_sighting_rates &lt;- marked_sighting_rates %&gt;%
-  left_join(birds_not_present_during_pre)</code></pre>
+  left_join(birds_not_present_during_pre) %&gt;%
+  mutate(present_during_pre = ifelse(is.na(present_during_pre), &quot;yes&quot;, present_during_pre))</code></pre>
 <p>Summarize effort for marked birds</p>
 <pre class="r"><code>#How many video hours are there for 2017-2018? Calculate hours in this dataset
 hours_experiment_17_18 &lt;- data_for_experiment %&gt;%

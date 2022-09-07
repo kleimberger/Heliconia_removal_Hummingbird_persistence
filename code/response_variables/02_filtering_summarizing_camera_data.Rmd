@@ -215,7 +215,8 @@ sighting_rates_greh_visa = calculate_sighting_rates(data = data_for_experiment, 
 #Combine various summaries
 sighting_rates <- sighting_rates_all_spp %>%
   bind_rows(sighting_rates_greh_visa) %>%
-  select(bird_group, everything())
+  mutate(analysis = ifelse(plant_species == "HETO", "camera_HETO", "camera_non-HETO")) %>%
+  select(analysis, bird_group, everything())
 ```
 
 Calculate visitation rates for each patch-year (across camera IDs, dates) - color-marked birds only
@@ -244,7 +245,8 @@ birds_not_present_during_pre <- marked_sighting_rates %>%
   mutate(present_during_pre = "no")
 
 marked_sighting_rates <- marked_sighting_rates %>%
-  left_join(birds_not_present_during_pre)
+  left_join(birds_not_present_during_pre) %>%
+  mutate(present_during_pre = ifelse(is.na(present_during_pre), "yes", present_during_pre))
 ```
 
 Summarize effort for marked birds
