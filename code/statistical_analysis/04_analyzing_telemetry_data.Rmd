@@ -1,5 +1,5 @@
 ---
-title: "Analyzing capture data"
+title: "Analyzing telemetry data"
 output: html_document
 knit: (function(inputFile, encoding) {
       out_dir <- "knitted_markdown_files";
@@ -254,7 +254,7 @@ results <- models %>%
 
 ## Step 7: Export results as rds file
 ```{r}
-saveRDS(results, "results/statistical_analysis/rds_files/Telemetry_data_results.rds")
+saveRDS(results, "results/statistical_analysis/rds_files/Telemetry_results.rds")
 ```
 
 *WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES IN ONE MASTER SCRIPT*
