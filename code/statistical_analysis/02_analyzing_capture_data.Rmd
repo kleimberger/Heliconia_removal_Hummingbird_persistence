@@ -267,7 +267,6 @@ create_model <- function(dataset, analysis, subanalysis, treatment_variable){
   
 }
 
-
 #Create models
 models <- data %>%
    mutate(model_quietly = pmap(list(data, analysis, subanalysis, treatment_variable), quietly(function(a, b, c, d){model <- create_model(dataset = a, analysis = b, subanalysis = c, treatment_variable = d)})),
