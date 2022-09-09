@@ -203,16 +203,30 @@ contrasts_recaps <- results_categorical %>%
   mutate(contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response")))) %>%
   mutate(contrast_pval_check = map(emm_regrid, ~summary(contrast(., interaction = "revpairwise"), type = "response")))
 
+#BODY MASS (Gaussian, so change will be relative to ZERO, not 1)
+contrasts_body_mass <- results_categorical %>%
+  filter(subanalysis == "body_mass") %>%
+  mutate(emm = map(model, ~emmeans(., specs = ~exp_phase:control_treatment))) %>%
+  mutate(contrast = map(emm, ~as.data.frame(confint(contrast(., by = c("control_treatment"), method = "pairwise"))))) %>%
+  mutate(contrast_of_contrast = map(emm, ~as.data.frame(confint(contrast(., interaction = c("pairwise", "revpairwise")))))) %>%
+  mutate(contrast_of_contrast = map(contrast_of_contrast, ~rename(., exp_phase_revpairwise = exp_phase_pairwise))) %>% #Rename column to match other analyses
+  mutate(contrast_of_contrast = map(contrast_of_contrast, ~rename(., ratio = estimate))) #Rename column to match other analyses, but note that it's not actually a ratio!
+
+#contrasts_body_mass$contrast
+#contrasts_body_mass$contrast_of_contrast
+
 #Combine
 #Pre-to-post change, control and treatment replicates separately
 contrasts <- contrasts_cameras_captures %>%
-  bind_rows(contrasts_telemetry_pollen_tubes)
+  bind_rows(contrasts_telemetry_pollen_tubes) %>%
+  bind_rows(contrasts_body_mass)
 
 #Contrasts reflecting the coefficient of interest (interaction term for all analyses except recaptures)
 contrasts_of_contrasts <- contrasts_recaps %>%
   rename(contrast_of_contrast = contrast) %>%
   bind_rows(contrasts_cameras_captures) %>%
-  bind_rows(contrasts_telemetry_pollen_tubes)
+  bind_rows(contrasts_telemetry_pollen_tubes) %>%
+  bind_rows(contrasts_body_mass)
 ```
 
 ```{r, include = FALSE, eval = FALSE}
@@ -250,7 +264,7 @@ contrasts_of_contrasts_df <- contrasts_of_contrasts %>%
   select(append(col_names, "contrast_of_contrast")) %>%
   unnest(contrast_of_contrast) %>%
   arrange(model_number) %>%
-  mutate_if(is.numeric, ~round(., digits = 2)) %>%
+  mutate_if(is.numeric, ~signif(., digits = 2)) %>%
   select(model_number:starts_with("control_treatment"), starts_with("exp_phase"), ratio, lower.CL, upper.CL, everything())
 ```
 
@@ -349,6 +363,8 @@ captures_label <- c("# birds captured")
 telemetry_label <-  c("% time in focal area")
 pollination_heto_label <- c(expression(atop("% flowers pollinated", "("*italic(Heliconia)*")")))
 pollination_hapa_label <- c(expression(atop("% flowers pollinated", "("*italic(Hamelia)*")")))
+camera_heto_marked_label <- c(expression(atop("Visitation rate: marked birds", "(focal "*italic(Heliconia)*")")))
+camera_nonheto_marked_label <- c(expression(atop("Visitation rate: marked birds", "(non-"*italic(Heliconia)*")")))
 
 #MAIN PLOT: Cameras (HETO and non-HETO), Captures, Telemetry
 contrast_plot_main <- contrasts_of_contrasts_df %>%
@@ -361,8 +377,8 @@ contrast_plot_main <- contrasts_of_contrasts_df %>%
   mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
   make_contrast_plot(contrasts_df = ., xvar = "analysis_id", shading = "below") +
     scale_x_discrete(labels = c(captures_label, telemetry_label, camera_heto_label, camera_nonheto_label)) +
-    scale_y_continuous(limits = c(0, 2.5), breaks = c(0, 0.5, 1, 1.5, 2, 3)) +
-    coord_cartesian(ylim = c(0, 2.5), xlim = c(1, 4), clip = "off") +
+    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 1.5, 2, 3)) +
+    coord_cartesian(ylim = c(0, 3), xlim = c(1, 4), clip = "off") +
     theme(legend.position = "none")
 
 contrast_plot_main
@@ -390,17 +406,40 @@ contrast_plot_marked_and_recaps <- contrasts_of_contrasts_df %>%
   arrange(analysis) %>%
   mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
   make_contrast_plot(contrasts_df = ., xvar = "analysis_id", shading = "below") +
-    scale_x_discrete(labels = c("% birds recaptured", camera_heto_label, camera_nonheto_label)) +
-    scale_y_continuous(limits = c(0, 2.5), breaks = c(0, 0.5, 1, 1.5, 2, 3)) +
-    coord_cartesian(ylim = c(0, 2.5), xlim = c(1, 3), clip = "off") +
+    scale_x_discrete(labels = c("% birds recaptured", camera_heto_marked_label, camera_nonheto_marked_label)) +
+    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 1.5, 2, 3)) +
+    coord_cartesian(ylim = c(0, 3), xlim = c(1, 3), clip = "off") +
     theme(legend.position = "none")
 
-contrast_plot_marked_and_recaps
+contrast_plot_marked_and_recaps 
 
-#Combine...
+#BODY MASS
+contrast_plot_body_mass <- contrasts_of_contrasts_df %>%
+  filter(analysis == "body_mass") %>%
+  arrange(analysis) %>%
+  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id", shading = "below") +
+    scale_x_discrete(labels = c("Relative body mass")) +
+    scale_y_continuous(limits = c(-0.1, 0.1)) +
+    coord_cartesian(ylim = c(-0.1, 0.1), xlim = c(1, 1), clip = "off") +
+    theme(legend.position = "none")
+
+contrast_plot_body_mass
+```
+
+Combine contrast plots
+```{r}
+contrast_multiplot_supp_analyses <- ggarrange(contrast_plot_marked_and_recaps,
+                                              contrast_plot_body_mass,
+                                              common.legend = TRUE, ncol = 2, nrow = 1, align = "hv", legend = "bottom", widths = c(2.5,1))
+
+contrast_multiplot_supp_analyses
+
+
+#All hummingbird analyses in one figure (except for body mass)
 contrast_multiplot_hbird_analyses <- ggarrange(contrast_plot_main,
-                                             contrast_plot_marked_and_recaps,
-                                             common.legend = TRUE, ncol = 1, nrow = 2, align = "hv", legend = "bottom")
+                                               contrast_plot_marked_and_recaps,
+                                               common.legend = TRUE, ncol = 1, nrow = 3, align = "hv", legend = "bottom")
 contrast_multiplot_hbird_analyses
 ```
 
@@ -422,6 +461,7 @@ ggsave(file.path(path_name, "Interaction_multiplot_captures_telemetry.png"), int
 ggsave(file.path(path_name, "Interaction_multiplot_pollination.png"), interaction_multiplot_pollination, dpi = 300, units = "in", width = 9, height = 6, bg = "white")
 ggsave(file.path(path_name, "Interaction_multiplot_body_mass.png"), interaction_multiplot_body_mass, dpi = 300, units = "in", width = 9, height = 6, bg = "white")
 ggsave(file.path(path_name, "Contrast_multiplot_hummingbird_analyses.png"), contrast_multiplot_hbird_analyses, dpi = 300, units = "in", width = 9, height = 9, bg = "white")
+ggsave(file.path(path_name, "Contrast_multiplot_supp_analyses.png"), contrast_multiplot_supp_analyses, dpi = 300, units = "in", width = 9, height = 6, bg = "white")
 ggsave(file.path(path_name, "Contrast_plot_pollination_analyses.png"), contrast_plot_pollination, dpi = 300, units = "in", width = 9, height = 9, bg = "white")
 ```
 

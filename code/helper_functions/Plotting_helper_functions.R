@@ -119,6 +119,25 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
   plot_data <- contrasts_df %>%
     mutate(order = seq.int(nrow(.)))
   
+  #For body mass, line needs to be at ZERO, not one
+  if("body_mass" %in% contrasts_df$analysis & shading == "below"){
+    
+    plot <- plot_data %>%
+      ggplot(data = ., aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio)) +
+      geom_rect(xmax = Inf, xmin = -Inf, ymax = 0, ymin = -Inf, fill = "grey90", alpha = 1) +
+      geom_point(aes(shape = bird_group), position = position_dodge(.5), size = 3) +
+      geom_errorbar(aes(ymax = upper.CL, ymin = lower.CL, group = bird_group), position = position_dodge(.5), width = 0.25, size = 1) + # error bars show 95% confidence intervals
+      geom_hline(yintercept = 0, color = "black", linetype = "dashed", alpha = 0.8) + # add a line at 0 (no effect)
+      theme_bw(base_size = 18) +
+      scale_shape_manual(values = c(16, 17), labels = legend_text_labels, limits = c("all_spp", "greh_visa")) +
+      theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
+            panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+      labs(x = "", y = "Change", shape = "Bird group")
+    
+    return(plot)
+    
+  }
+  
   if(shading == "below"){
     
     plot <- plot_data %>%
@@ -154,9 +173,11 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
             panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
       labs(x = "", y = "Ratio")
     
+    return(plot)
+    
   }
   
-  #For hummingbird-centric varaibles, will have separate bird groups
+  #For hummingbird-centric varibles, will have separate bird groups
   if(!("pollen_tubes" %in% contrasts_df$analysis)){
     
     plot <- plot +
@@ -169,8 +190,8 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
             panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
       labs(x = "", y = "Ratio", shape = "Bird group")
     
+    return(plot)
+    
   }
-  
-  return(plot)
   
 }
