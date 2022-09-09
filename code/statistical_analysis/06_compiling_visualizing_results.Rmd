@@ -1,0 +1,427 @@
+---
+title: "Compiling and visualizing results"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Goals**
+
+I have exported the results for each main response variable to rds files, but now I need prepare results for reporting and interpretation.
+
+Specific goals:
+
+1. Create summary tables for each model into an easily exportable table.
+
+2. Calculate contrasts and confidence intervals, and organize them into a table. I want to be able to say: "the pre-to-post change in treatment replicates was X times larger (or smaller) than the pre-to-post change in control replicates (95% CI: X - X times) .
+
+3. Make plots of contrasts in #2. These will be plots for main text.
+
+4. Make plots of estimated marginal means for control/treatment and pre/post (interaction plots)
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+library(ggeffects)
+library(emmeans)
+library(ggpubr)
+```
+
+```{r}
+source("../../code/helper_functions/Modeling_helper_functions.R")
+source("../../code/helper_functions/Plotting_helper_functions.R")
+source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+```
+
+## Step 1: Get results (rds files)
+
+```{r}
+cameras <- readRDS("../../results/statistical_analysis/rds_files/Camera_results.rds")
+captures <- readRDS("../../results/statistical_analysis/rds_files/Capture_results.rds")
+telemetry <- readRDS("../../results/statistical_analysis/rds_files/Telemetry_results.rds")
+pollen_tubes <- readRDS("../../results/statistical_analysis/rds_files/Pollen_tube_results.rds")
+body_mass <- readRDS("../../results/statistical_analysis/rds_files/Body_mass_results.rds")
+
+results <- cameras %>%
+  bind_rows(captures) %>%
+  bind_rows(telemetry) %>%
+  bind_rows(pollen_tubes) %>%
+  bind_rows(body_mass) %>%
+  select(-model_number) %>% #Model number within a given analysis. Replace with unique #
+  mutate(model_number = 1:length(yvar)) %>%
+  select(model_number, everything())
+
+#How many total models?
+length(results$model_number)
+```
+
+## Step 2: Create model summaries, calculate confidence intervals, and tidy results into dataframe for export
+
+```{r step2, message = FALSE}
+#Columns to keep when extract the results
+col_names <- c("model_number", "analysis", "subanalysis", "bird_group", "yvar")
+
+#Extract model summaries
+results_tidy <- results %>%
+  select(append(col_names, "summary_tidy")) %>%
+  unnest(c(summary_tidy))
+
+#Extract confidence intervals
+results_confint <- results %>%
+  select(append(col_names, "confint_wald")) %>%
+  mutate(confint_df = map(confint_wald, as.data.frame)) %>% #CI as dataframe
+  mutate(confint_df = map(confint_df, ~tibble::rownames_to_column(., var = "term"))) %>%
+  unnest(cols = confint_df) %>%
+  rename(lowerCI = "2.5 %", upperCI = "97.5 %") %>%
+  select(-confint_wald, -Estimate)
+
+#Back-transform (exponentiate) coefficients and confidence intervals to data scale from model scale
+results_tidy_confint <- results_tidy %>%
+  left_join(results_confint) %>%
+  mutate_at(vars(estimate, lowerCI, upperCI), .funs = list(exp = ~ifelse(effect == "fixed", exp(.), NA))) %>% 
+  mutate_at(vars(estimate, std.error, statistic, lowerCI, upperCI, estimate_exp, lowerCI_exp, upperCI_exp), ~round(., digits = 2)) %>%
+  mutate(pvalue_round = format.pval(pv = round(p.value, 3), digits = 3, nsmall = 3, eps = 0.001)) %>%
+  select(model_number:term, estimate, lowerCI, upperCI, statistic, pvalue_round, pvalue = p.value, std_error = std.error, everything())
+
+#Extract number of reps for each dataset
+sample_size <- results %>%
+  select(append(append(col_names, "num_obs"), "num_reps")) %>%
+  unnest(cols = num_reps) %>%
+  mutate(num_obs = unlist(num_obs)) %>%
+  pivot_wider(names_from = control_treatment, values_from = n)
+```
+
+## Step 3: Calculate estimated marginal means for categorical models
+
+```{r}
+#For the means and contrasts, will only look at categorical models
+results_categorical <- results %>%
+  filter(model_type == "categorical")
+```
+
+I will use estimated marginal means to visualize and help interpret results. Since I will be plotting these data, I'll use the 'ggeffects' package, which organizes results in a standardized framework.
+```{r step 4b, message = FALSE}
+#Models for cameras have offset; I want to calculate the number of visits per 12-hour day
+emmeans_cameras <- results_categorical %>%
+  filter(analysis == "camera_HETO" | analysis == "camera_non-HETO") %>%
+  mutate(ggeffects = map(model, ~ggemmeans(., terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(hours = 12)))) %>%
+  mutate(emmeans = map(model, ~emmeans(., specs = ~exp_phase:control_treatment, type = "response", offset = log(12))))
+
+#Check to make sure that offset is being applied correctly; looks like log(offset) is needed for emmeans::emmeans() but not ggeffects::ggmmeans()
+emmeans_cameras$ggeffects[[1]]
+emmeans_cameras$emmeans[[1]]
+
+#Models for recaps do not have the interaction between treatment and exp_phase
+emmeans_recaps <- results_categorical %>%
+  filter(subanalysis == "recaptures") %>%
+  mutate(ggeffects = map(model, ~ggemmeans(., terms = c("control_treatment"), back.transform = TRUE)))
+
+#Other models
+emmeans_other <- results_categorical %>%
+  filter(!(model_number %in% emmeans_cameras$model_number) & !(model_number %in% emmeans_recaps$model_number)) %>%
+  mutate(ggeffects = map(model, ~ggemmeans(., terms = c("exp_phase", "control_treatment"), back.transform = TRUE)))
+
+#Tibble where each model has a data frame of results to plot
+emmeans_for_plots <- emmeans_cameras %>%
+  bind_rows(emmeans_recaps) %>%
+  bind_rows(emmeans_other) %>%
+  select(-emmeans)
+
+#As data frame
+emmeans_df <- emmeans_for_plots %>%
+  select(append(col_names, "ggeffects")) %>%
+  unnest(ggeffects) %>%
+  mutate_if(is.numeric, ~round(., digits = 2))
+```
+
+## Step 4: Calculate relevant contrasts
+
+Contrasts will also help with results interpretation, especially for models that include an interaction term. For models with an interaction term, I can calculate two different types of contrasts:
+
+1. pre-to-post change in treatment replicates *AND* pre-to-post change in control replicates (calculated separately)
+
+2. pre-to-post change in treatment replicates *RELATIVE TO* pre-to-post change in control replicates. This is the contrast reflecting the treatment:period interaction term and is a 'contrast of a contrast'.
+
+When interpreting the contrasts, I also need to think about the link function of the model.
+
+**Models with log link**
+
+* Captures (Poisson; # hummingbirds captured)
+* Cameras (Poisson/negative binomial; # hummingbird visits)
+
+The default back-transformed contrasts provide *ratios*. These are easy enough to interpret.
+
+**Models with logit link**
+
+* Telemetry (betabinomial; proportion of time spent in focal area)
+* Pollen tubes (binomial; proportion of styles with at least one pollen tube)
+* Recaptures (binomial; proportion of birds recaptured during 'post' period)
+
+The default back-transformed contrasts provide *odds ratios*. They are OK to interpret, but in this case I want to eventually have contrasts for multiple analyses on the same plot. It might be confusing to mix ratios and odds ratios; ideally I would just have ratios.
+
+The solution to this problem is to calculate ["risk ratios", aka "proportion ratios"](https://github.com/rvlenth/emmeans/issues/48) on the data scale by using emmeans::regrid() and then supplying the 'type="response"' as an argument to confint() or summary().
+
+**Models that don't use a link function**
+
+* Body mass (Gaussian; body mass relative to structural size, i.e., wing length)
+
+```{r step 4, message = FALSE}
+#emmeans::confint() gives confidence intervals around contrast
+#emmeans::summary() gives p-value for contrast
+
+#CAMERAS AND CAPTURES (log link)
+contrasts_cameras_captures <- results_categorical %>%
+  filter(analysis == "camera_HETO" | analysis == "camera_non-HETO" | (analysis == "captures" & subanalysis == "captures")) %>%
+  mutate(emm = map(model, ~emmeans(., specs = ~exp_phase:control_treatment))) %>%
+  mutate(contrast = map(emm, ~as.data.frame(confint(contrast(., method = "revpairwise", by = c("control_treatment")), type = "response")))) %>%
+  mutate(contrast_of_contrast = map(emm, ~as.data.frame(confint(contrast(emmeans(., specs = ~exp_phase:control_treatment), interaction = ("revpairwise")), type = "response")))) %>%
+  mutate(contrast_pval_check = map(emm, ~summary(contrast(emmeans(., specs = ~exp_phase:control_treatment), interaction = ("revpairwise")), type = "response")))
+
+#TELEMETRY AND POLLEN TUBES (logit link)
+contrasts_telemetry_pollen_tubes <- results_categorical %>%
+  filter(analysis == "telemetry" | analysis == "pollen_tubes") %>%
+  mutate(emm = map(model, ~emmeans(., specs = ~exp_phase:control_treatment))) %>%
+  mutate(emm_regrid = map(emm, ~regrid(., transform = "log"))) %>%
+  mutate(contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise", by = c("control_treatment")), type = "response")))) %>%
+  mutate(contrast_of_contrast = map(emm_regrid, ~as.data.frame(confint(contrast(emmeans(., specs = ~exp_phase:control_treatment), interaction = "revpairwise"), type = "response")))) %>%
+  mutate(contrast_pval_check = map(emm_regrid, ~summary(contrast(emmeans(., specs = ~exp_phase:control_treatment), interaction = "revpairwise"), type = "response")))
+
+#RECAPTURES (logit link, but don't have the treatment x period interaction)
+contrasts_recaps <- results_categorical %>%
+  filter(subanalysis == "recaptures") %>%
+  mutate(emm = map(model, ~emmeans(., specs = ~control_treatment))) %>%
+  mutate(emm_regrid = map(emm, ~regrid(., transform = "log"))) %>%
+  mutate(contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response")))) %>%
+  mutate(contrast_pval_check = map(emm_regrid, ~summary(contrast(., interaction = "revpairwise"), type = "response")))
+
+#Combine
+#Pre-to-post change, control and treatment replicates separately
+contrasts <- contrasts_cameras_captures %>%
+  bind_rows(contrasts_telemetry_pollen_tubes)
+
+#Contrasts reflecting the coefficient of interest (interaction term for all analyses except recaptures)
+contrasts_of_contrasts <- contrasts_recaps %>%
+  rename(contrast_of_contrast = contrast) %>%
+  bind_rows(contrasts_cameras_captures) %>%
+  bind_rows(contrasts_telemetry_pollen_tubes)
+```
+
+```{r, include = FALSE, eval = FALSE}
+#Check: compare p-value of coefficient of interest to p-value with contrast of interest; they should be pretty close
+results_categorical %>% filter(model_number == 1) %>% pull(summary)
+contrasts_of_contrasts %>% filter(model_number == 1) %>% pull(contrast_pval_check)                                
+                                 
+results_categorical %>% filter(model_number == 17) %>% pull(summary)
+contrasts_of_contrasts %>% filter(model_number == 17) %>% pull(contrast_pval_check) 
+
+results_categorical %>% filter(model_number == 29) %>% pull(summary)
+contrasts_of_contrasts %>% filter(model_number == 29) %>% pull(contrast_pval_check)
+
+results_categorical %>% filter(model_number == 33) %>% pull(summary)
+contrasts_of_contrasts %>% filter(model_number == 33) %>% pull(contrast_pval_check)
+
+results_categorical %>% filter(model_number == 21) %>% pull(summary)
+contrasts_of_contrasts %>% filter(model_number == 21) %>% pull(contrast_pval_check)
+```
+
+Extract contrast results
+```{r step4d, messsage = FALSE}
+#Contrasts for control and treatment replicates separately
+contrasts_df <- contrasts %>%
+  select(append(col_names, "contrast")) %>%
+  unnest(contrast) %>%
+  arrange(model_number) %>%
+  mutate_if(is.numeric, ~round(., digits = 2)) %>%
+  mutate(contrast = ifelse(is.na(contrast), as.character(exp_phase_revpairwise), as.character(contrast))) %>%
+  select(-exp_phase_revpairwise) %>%
+  select(model_number:contrast, control_treatment, ratio, lower.CL, upper.CL, everything())
+
+#Contrasts for treatment effect; for specialization models, this is the contrast representing the interaction term (contrast of contrasts)
+contrasts_of_contrasts_df <- contrasts_of_contrasts %>%
+  select(append(col_names, "contrast_of_contrast")) %>%
+  unnest(contrast_of_contrast) %>%
+  arrange(model_number) %>%
+  mutate_if(is.numeric, ~round(., digits = 2)) %>%
+  select(model_number:starts_with("control_treatment"), starts_with("exp_phase"), ratio, lower.CL, upper.CL, everything())
+```
+
+## Step 5: Plot results
+
+There are two ways that I like to visualize the interaction term of interest
+
+1. Interaction plots, with estimated marginal means for control/treatment and pre/post (pre and post values connected by lines)
+
+- These interaction plots can be confusing without detailed explanation, so they will only be for supplemental information.
+- Not for analysis of recapture rate, since those models do not have an interaction term.
+
+2. Contrast plots, with contrast reflecting the interaction term and its associated confidence intervals
+
+- These is the key plot for the main text
+
+**Make interaction plots**
+```{r step5a, message = FALSE, fig.width=9, fig.height=9}
+#Calculate max values for each response variable
+#If want to have common axis scaling across variables that will be in same plot, can group again and take max across those variables
+max_values <- emmeans_df %>%
+  group_by(analysis, subanalysis) %>%
+  summarise(ymax = round(max(conf.high) + 0.5, 0)) %>%
+  ungroup() %>%
+  mutate(ymin = 0) %>%
+  mutate(ybreak = 1) %>%
+  mutate(yaccuracy = 1)
+
+#Adjust axis limits and breaks as needed (NOTE: body mass plot was kind of complicated so tailored it in function)
+#Make a bunch of plots
+interaction_plots <- emmeans_for_plots %>%
+  filter(subanalysis != "recaptures") %>%
+  left_join(max_values) %>%
+  mutate(ymax = ifelse(analysis == "camera_non-HETO" & subanalysis == "all_birds" & bird_group == "greh_visa", 1, ymax)) %>%
+  mutate(ybreak = ifelse(analysis == "camera_HETO" & subanalysis == "all_birds", 3, ybreak)) %>%
+  mutate(ybreak = ifelse(analysis == "pollen_tubes" | analysis == "telemetry", 25, ybreak)) %>%
+  mutate(ybreak = ifelse(analysis == "captures" & subanalysis == "captures", 3, ybreak)) %>%
+  mutate(interaction_plot = pmap(list(ggeffects, yvar, ymin, ymax, ybreak, yaccuracy), ~make_interaction_plot(ggeffects_df = ..1, yvar = ..2, ymin = ..3, ymax = ..4, ybreak = ..5, yaccuracy = ..6, as_percent = TRUE)))
+
+#interaction_plots %>% filter(model_number == 33) %>% pull(interaction_plot)
+```
+
+**Divide up interaction plots into reasonably sized panel figures**
+```{r}
+#CAMERAS (ALL BIRDS)
+interaction_plots_cameras_all <- interaction_plots %>%
+  filter(analysis == "camera_HETO" | analysis == "camera_non-HETO") %>%
+  filter(subanalysis == "all_birds") %>%
+  arrange(yvar, analysis, bird_group)
+
+interaction_multiplot_cameras_all <- ggarrange(plotlist = interaction_plots_cameras_all$interaction_plot, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom")
+interaction_multiplot_cameras_all
+
+#CAMERAS (MARKED BIRDS)
+interaction_plots_cameras_marked <- interaction_plots %>%
+  filter(analysis == "camera_HETO" | analysis == "camera_non-HETO") %>%
+  filter(subanalysis == "marked_birds") %>%
+  arrange(yvar, analysis, bird_group)
+
+interaction_multiplot_cameras_marked <- ggarrange(plotlist = interaction_plots_cameras_marked$interaction_plot, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom")
+interaction_multiplot_cameras_marked
+
+#CAPTURES + TELEMETRY
+interaction_plots_captures_telemetry <- interaction_plots %>%
+  filter(analysis == "captures" | analysis == "telemetry") %>%
+  filter(subanalysis != "all_replicates") %>%
+  arrange(yvar, analysis, bird_group)
+
+interaction_multiplot_captures_telemetry <- ggarrange(plotlist = interaction_plots_captures_telemetry$interaction_plot, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom")
+interaction_multiplot_captures_telemetry
+
+#POLLEN TUBES
+interaction_plots_pollination <- interaction_plots %>%
+  filter(analysis == "pollen_tubes") %>%
+  arrange(yvar, analysis)
+
+interaction_multiplot_pollination <- ggarrange(plotlist = interaction_plots_pollination$interaction_plot, nrow = 1, ncol = 2, common.legend = TRUE, legend = "bottom")
+interaction_multiplot_pollination
+
+#BODY MASS
+interaction_plots_body_mass <- interaction_plots %>%
+  filter(analysis == "body_mass") %>%
+  arrange(yvar, analysis)
+
+interaction_multiplot_body_mass <- ggarrange(plotlist = interaction_plots_body_mass$interaction_plot, nrow = 1, ncol = 2, common.legend = TRUE, legend = "bottom")
+interaction_multiplot_body_mass
+```
+
+**Contrast plots**
+
+When making interaction plots, I had one plot per model. Here, I want to combine multiple models per plot, so I'll just do the combinations by hand.
+```{r step5b, message = FALSE, warning = FALSE, fig.width = 9, fig.height = 12}
+camera_heto_label <- c(expression(atop("Visitation rate", "(focal "*italic(Heliconia)*")")))
+camera_nonheto_label <- c(expression(atop("Visitation rate", "(non-"*italic(Heliconia)*")")))
+captures_label <- c("# birds captured")
+telemetry_label <-  c("% time in focal area")
+pollination_heto_label <- c(expression(atop("% flowers pollinated", "("*italic(Heliconia)*")")))
+pollination_hapa_label <- c(expression(atop("% flowers pollinated", "("*italic(Hamelia)*")")))
+
+#MAIN PLOT: Cameras (HETO and non-HETO), Captures, Telemetry
+contrast_plot_main <- contrasts_of_contrasts_df %>%
+  filter((analysis == "camera_HETO" & subanalysis == "all_birds") |
+           (analysis == "camera_non-HETO" & subanalysis == "all_birds") |
+           (analysis == "captures" & subanalysis == "captures") |
+           (analysis == "telemetry" & subanalysis == "without_outlier")) %>%
+  mutate(analysis = factor(analysis, levels = c("captures", "telemetry", "camera_HETO", "camera_non-HETO"), ordered = TRUE)) %>%
+  arrange(analysis) %>%
+  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id", shading = "below") +
+    scale_x_discrete(labels = c(captures_label, telemetry_label, camera_heto_label, camera_nonheto_label)) +
+    scale_y_continuous(limits = c(0, 2.5), breaks = c(0, 0.5, 1, 1.5, 2, 3)) +
+    coord_cartesian(ylim = c(0, 2.5), xlim = c(1, 4), clip = "off") +
+    theme(legend.position = "none")
+
+contrast_plot_main
+
+#POLLEN TUBES
+contrast_plot_pollination <- contrasts_of_contrasts_df %>%
+  filter(analysis == "pollen_tubes") %>%
+  mutate(subanalysis = factor(subanalysis, levels = c("HETO", "HAPA"), ordered = TRUE)) %>%
+  arrange(subanalysis) %>%
+  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id", shading = "below") +
+    scale_x_discrete(labels = c(pollination_heto_label, pollination_hapa_label)) +
+    scale_y_continuous(limits = c(0, 6.5), breaks = c(0, 0.5, 1, 2, 4, 6)) +
+    coord_cartesian(ylim = c(0, 6.5), xlim = c(1, 2), clip = "off") +
+    theme(legend.position = "none")
+
+contrast_plot_pollination
+
+#MARKED BIRDS + RECAPTURES
+contrast_plot_marked_and_recaps <- contrasts_of_contrasts_df %>%
+  filter((analysis == "camera_HETO" & subanalysis == "marked_birds") |
+           (analysis == "camera_non-HETO" & subanalysis == "marked_birds") |
+           (analysis == "captures" & subanalysis == "recaptures")) %>%
+  mutate(analysis = factor(analysis, levels = c("captures", "camera_HETO", "camera_non-HETO"), ordered = TRUE)) %>%
+  arrange(analysis) %>%
+  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id", shading = "below") +
+    scale_x_discrete(labels = c("% birds recaptured", camera_heto_label, camera_nonheto_label)) +
+    scale_y_continuous(limits = c(0, 2.5), breaks = c(0, 0.5, 1, 1.5, 2, 3)) +
+    coord_cartesian(ylim = c(0, 2.5), xlim = c(1, 3), clip = "off") +
+    theme(legend.position = "none")
+
+contrast_plot_marked_and_recaps
+
+#Combine...
+contrast_multiplot_hbird_analyses <- ggarrange(contrast_plot_main,
+                                             contrast_plot_marked_and_recaps,
+                                             common.legend = TRUE, ncol = 1, nrow = 2, align = "hv", legend = "bottom")
+contrast_multiplot_hbird_analyses
+```
+
+## Step 6: Export results 
+```{r}
+#SUMMARY TABLES
+path_name <- c("../../results/statistical_analysis/tables")
+write.csv(results_tidy_confint, file.path(path_name, "Hummingbird_persistence_results_summary_tables.csv"))
+write.csv(sample_size, file.path(path_name, "Hummingbird_persistence_results_sample_size_summary.csv"))
+write.csv(emmeans_df, file.path(path_name,"Hummingbird_persistence_results_emmeans.csv"))
+write.csv(contrasts_df, file.path(path_name,"Hummingbird_persistence_results_contrasts.csv"))
+write.csv(contrasts_of_contrasts_df, file.path(path_name, "Hummingbird_persistence_results_contrasts_of_contrasts.csv"))
+
+#FIGURES
+path_name <- c("../../results/statistical_analysis/figures")
+ggsave(file.path(path_name, "Interaction_multiplot_cameras_all_birds.png"), interaction_multiplot_cameras_all, dpi = 300, units = "in", width = 9, height = 9, bg = "white")
+ggsave(file.path(path_name, "Interaction_multiplot_cameras_marked_birds.png"), interaction_multiplot_cameras_marked, dpi = 300, units = "in", width = 9, height = 9, bg = "white")
+ggsave(file.path(path_name, "Interaction_multiplot_captures_telemetry.png"), interaction_multiplot_captures_telemetry, dpi = 300, units = "in", width = 9, height = 9, bg = "white")
+ggsave(file.path(path_name, "Interaction_multiplot_pollination.png"), interaction_multiplot_pollination, dpi = 300, units = "in", width = 9, height = 6, bg = "white")
+ggsave(file.path(path_name, "Interaction_multiplot_body_mass.png"), interaction_multiplot_body_mass, dpi = 300, units = "in", width = 9, height = 6, bg = "white")
+ggsave(file.path(path_name, "Contrast_multiplot_hummingbird_analyses.png"), contrast_multiplot_hbird_analyses, dpi = 300, units = "in", width = 9, height = 9, bg = "white")
+ggsave(file.path(path_name, "Contrast_plot_pollination_analyses.png"), contrast_plot_pollination, dpi = 300, units = "in", width = 9, height = 9, bg = "white")
+```
+
