@@ -400,8 +400,8 @@ telemetry_label <- c(expression(atop(bold("Radio telemetry"), atop(textstyle("% 
 camera_heto_label <- c(expression(atop(bold("Flower visitation"), atop(textstyle("focal"~italic(Heliconia)), atop(scriptscriptstyle(""), textstyle("visits/hr"))))))
 camera_nonheto_label <- c(expression(atop(bold("Flower visitation"), atop(textstyle("non-"*italic(Heliconia)), atop(scriptscriptstyle(""), textstyle("visits/hr"))))))
 
-camera_heto_marked_label <- c(expression(atop(bold("Flower visitation"), atop(textstyle("focal"~italic(Heliconia)), atop(scriptscriptstyle(""), atop(textstyle("visits/hr"), atop(scriptscriptstyle(""), textstyle("(marked birds)"))))))))
-camera_nonheto_marked_label <- c(expression(atop(bold("Flower visitation"), atop(textstyle("non-"*italic(Heliconia)), atop(scriptscriptstyle(""), atop(textstyle("visits/hr"), atop(scriptscriptstyle(""), textstyle("(marked birds)"))))))))
+camera_heto_marked_label <- c(expression(atop(bold("Flower visitation"), atop(textstyle("focal"~italic(Heliconia)~"visits/hr"), atop(scriptscriptstyle(""), textstyle("(marked birds)"))))))
+camera_nonheto_marked_label <- c(expression(atop(bold("Flower visitation"), atop(textstyle("non-"*italic(Heliconia)~"visits/hr"), atop(scriptscriptstyle(""), textstyle("(marked birds)"))))))
 
 pollination_heto_label <- c(expression(atop(bold("Pollination"), atop(textstyle("focal"~italic(Heliconia)), atop(scriptscriptstyle(""), textstyle("% flowers pollinated"))))))
 pollination_hapa_label <- c(expression(atop(bold("Pollination"), atop(textstyle(italic(Hamelia)), atop(scriptscriptstyle(""), textstyle("% flowers pollinated"))))))
@@ -426,7 +426,7 @@ contrast_plot_main <- contrasts_of_contrasts_df %>%
     coord_cartesian(ylim = c(0, 3), xlim = c(1, 4), clip = "off") +
     theme(legend.position = "none")
 
-contrast_plot_main
+#contrast_plot_main
 
 #POLLEN TUBES
 contrast_plot_pollination <- contrasts_of_contrasts_df %>%
@@ -440,7 +440,7 @@ contrast_plot_pollination <- contrasts_of_contrasts_df %>%
     coord_cartesian(ylim = c(0, 7), xlim = c(1, 2), clip = "off") +
     theme(legend.position = "none")
 
-contrast_plot_pollination
+#contrast_plot_pollination
 
 #MARKED BIRDS + RECAPTURES
 contrast_plot_marked_and_recaps <- contrasts_of_contrasts_df %>%
@@ -456,7 +456,7 @@ contrast_plot_marked_and_recaps <- contrasts_of_contrasts_df %>%
     coord_cartesian(ylim = c(0, 3), xlim = c(1, 3), clip = "off") +
     theme(legend.position = "none")
 
-contrast_plot_marked_and_recaps 
+#contrast_plot_marked_and_recaps 
 
 #BODY MASS
 contrast_plot_body_mass <- contrasts_of_contrasts_df %>%
@@ -469,11 +469,11 @@ contrast_plot_body_mass <- contrasts_of_contrasts_df %>%
     coord_cartesian(ylim = c(-0.1, 0.1), xlim = c(1, 1), clip = "off") +
     theme(legend.position = "none")
 
-contrast_plot_body_mass
+#contrast_plot_body_mass
 ```
 
 Combine contrast plots
-```{r}
+```{r, fig.height = 6, fig.width = 14}
 #Results for "primary response variables"
 contrast_multiplot_main_analyses <- ggarrange(contrast_plot_main,
                                               contrast_plot_pollination,
@@ -494,7 +494,7 @@ contrast_multiplot_supp_analyses
 contrast_multiplot_hbird_analyses <- ggarrange(contrast_plot_main,
                                                contrast_plot_marked_and_recaps,
                                                common.legend = TRUE, ncol = 1, nrow = 2, align = "hv", legend = "bottom")
-contrast_multiplot_hbird_analyses
+#contrast_multiplot_hbird_analyses
 ```
 
 ## Step 6: Export results 
