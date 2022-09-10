@@ -389,7 +389,7 @@ body_mass_label <- c(expression(atop(bold("Bird condition"), atop(textstyle("rel
 recapture_label <- c(expression(atop(bold("Mist net recaptures"), atop(textstyle("% birds recaptured")))))
 ```
 
-```{r, message = FALSE, warning = FALSE}
+```{r}
 #Labels with same-sized text in each line, following: https://stackoverflow.com/questions/40577023/r-ggplot-annotated-with-atop-using-three-values-and-bgroup
 #textstyle(x)	draw x in normal size
 #scriptstyle(x)	draw x in small size
