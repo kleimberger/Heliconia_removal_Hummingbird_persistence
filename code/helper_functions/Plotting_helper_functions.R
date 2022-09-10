@@ -10,8 +10,8 @@ make_interaction_plot <- function(ggeffects_df, yvar, ymin, ymax, ybreak, yaccur
   shapes <- c(16, 17) #circle, triangle (filled)
   
   #Label for y-axis
-  if(yvar == "sightings"){ylabel <- c("Visitation rate (visits/day)")}
-  if(yvar == "num_birds"){ylabel <-  c("# birds captured")}
+  if(yvar == "sightings"){ylabel <- c("Visits/day")}
+  if(yvar == "num_birds"){ylabel <-  c("Birds captured")}
   if(yvar == "prop_time_in_patch"){ylabel <- c("Proportion time in focal area")}
   if(yvar == "prop_with_tubes"){ylabel <- c("Proportion flowers pollinated")}
   if(yvar == "relative_mass"){ylabel <- c("Relative body mass")}
@@ -95,7 +95,7 @@ make_control_vs_treatment_plot <- function(ggeffects_df, yvar, ymin, ymax, ybrea
     geom_point(aes(x = x, y = predicted), position = position_dodge(width = 0.25), size = 4) +
     geom_errorbar(aes(ymin = conf.low, ymax = conf.high), position = position_dodge(width = 0.25), width = 0.0, size = 1) +
     scale_y_continuous(limits = c(ymin, ymax), breaks = seq(from = ymin, to = ymax, by = ybreak), labels = scales::number_format(accuracy = yaccuracy)) +
-    theme_bw(base_size = 20) +
+    theme_bw(base_size = 18) +
     theme(legend.position = "none",
           legend.direction = "horizontal",
           panel.grid.major = element_blank(),
@@ -116,6 +116,8 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
   
   legend_text_labels <- c(expression("All species"), expression(paste(italic("Heliconia "), "specialists", sep = "")))
   
+  size = 18 #base size
+  
   plot_data <- contrasts_df %>%
     mutate(order = seq.int(nrow(.)))
   
@@ -128,7 +130,7 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
       geom_point(aes(shape = bird_group), position = position_dodge(.5), size = 3) +
       geom_errorbar(aes(ymax = upper.CL, ymin = lower.CL, group = bird_group), position = position_dodge(.5), width = 0.25, size = 1) + # error bars show 95% confidence intervals
       geom_hline(yintercept = 0, color = "black", linetype = "dashed", alpha = 0.8) + # add a line at 0 (no effect)
-      theme_bw(base_size = 18) +
+      theme_bw(base_size = size) +
       scale_shape_manual(values = c(16, 17), labels = legend_text_labels, limits = c("all_spp", "greh_visa")) +
       theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
             panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
@@ -167,7 +169,7 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
       geom_point(position = position_dodge(.5), size = 3) + 
       geom_errorbar(position = position_dodge(.5), aes(ymax = upper.CL, ymin = lower.CL), width = 0.25, size = 1) + # error bars show 95% confidence intervals
       geom_hline(yintercept = 1, color = "black", linetype = "dashed", alpha = 0.8) + # add a line at 1 (no effect)
-      theme_bw(base_size = 18) +
+      theme_bw(base_size = size) +
       scale_shape_manual(values = c(16)) +
       theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
             panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
@@ -184,7 +186,7 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
       geom_point(aes(shape = bird_group), position = position_dodge(.5), size = 3) +
       geom_errorbar(aes(ymax = upper.CL, ymin = lower.CL, group = bird_group), position = position_dodge(.5), width = 0.25, size = 1) + # error bars show 95% confidence intervals
       geom_hline(yintercept = 1, color = "black", linetype = "dashed", alpha = 0.8) + # add a line at 1 (no effect)
-      theme_bw(base_size = 18) +
+      theme_bw(base_size = size) +
       scale_shape_manual(values = c(16, 17), labels = legend_text_labels, limits = c("all_spp", "greh_visa")) +
       theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
             panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
