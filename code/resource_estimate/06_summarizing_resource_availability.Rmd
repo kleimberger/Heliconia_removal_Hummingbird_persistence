@@ -474,7 +474,7 @@ write.csv(proportion_calories_removed_tailored_sum, "../../data/export/supp_tabl
 
 #Figures
 path_name <- c("../../results/resource_estimate/figures")
-ggsave(file.path(path_name, "Weights_for_resource_estimate_barplot.png"), weights_barplot_multiplot, height = 12, width = 16, units = "in")
+ggsave(file.path(path_name, "Weights_for_resource_estimate_barplot.png"), weights_barplot_multiplot, height = 10, width = 16, units = "in")
 ggsave(file.path(path_name, "Proportion_calories_removed_boxplots.png"), proportion_calories_removed_boxplots, height = 8, width = 18, units = "in")
 ```
 
