@@ -11,7 +11,7 @@
 
 
 
-<title>Calculating capture &amp; recapture rates</title>
+<title>Analyzing capture data</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -361,408 +361,336 @@ pre code {
 
 
 
-<h1 class="title toc-ignore">Calculating capture &amp; recapture
-rates</h1>
+<h1 class="title toc-ignore">Analyzing capture data</h1>
 
 </div>
 
 
-<p><strong>Overall goal</strong></p>
-<p>Calculate two response variables:</p>
-<ol style="list-style-type: decimal">
-<li>Capture rates: number of hummingbirds caught per net-hour</li>
-</ol>
+<p><strong>Goals</strong></p>
+<p>Analyze how experimental <em>Heliconia</em> removal influences:</p>
 <ul>
-<li>Will keep these columns separate so can model rate with an offset
-using GLMM</li>
+<li>Number of hummingbirds captured</li>
+<li>Hummingbird recapture rate (number of birds tagged ‘pre’ that were
+recaptured ‘post’)</li>
 </ul>
-<ol start="2" style="list-style-type: decimal">
-<li>Recapture rates: proportion of birds captured (and tagged) during
-the ‘pre’ period that were recaptured during the ‘post’ period</li>
-</ol>
-<ul>
-<li>Will keep these columns separate so can model rate as counted
-proportion using GLMM</li>
-</ul>
-<p><strong>Additional goals</strong></p>
-<p>Explore capture data and summarize for results/methods. How many
-total hummingbirds captured? Recaptures? etc.</p>
 <div id="step-1-import-data-and-functions" class="section level2">
 <h2>Step 1: Import data and functions</h2>
-<pre class="r"><code>#Capture data. This is all capture data, spanning all years of the project.
-#1. Subset just to data for the experiment (2016-2018)
-#2. Remove data from establishment period (initial failed capture in p200)
-#3. Remove day recaptures
-#4. Remove bird that died during first capture (not around to be recaptured in post)
-#5. Add column for bird ID, because birds were sometimes not banded. Using colors instead in those cases. This ID will allow me to identify recaps between pre/post a given patch/year
-captures &lt;- read.csv(&quot;../../data/import/Hummingbird_captures_2010-2018_20220713.csv&quot;) %&gt;%
-  rename(patch = site) %&gt;%
-  filter(year &gt;= 2016) %&gt;%
-  filter(exp_phase == &quot;capture_1&quot; | exp_phase == &quot;capture_2&quot;) %&gt;% 
-  filter(status != &quot;DR&quot;) %&gt;%
-  filter(!(grepl(&quot;died&quot;, notes))) %&gt;%
-  mutate(bird_id = ifelse(is.na(band_number), paste(year, patch, species, colors, sep = &quot;_&quot;), paste(year, patch, species, band_number, sep = &quot;_&quot;))) %&gt;%
-  mutate(date = lubridate::mdy(date)) %&gt;%
-  mutate(across(c(year, patch), as.character)) %&gt;% 
-  mutate(trap_id = as.integer(trap_id))
+<p><strong>Data for analysis</strong></p>
+<pre class="r"><code>#Capture data. Number of birds captured per capture session, with capture effort
+capture_data &lt;- read.csv(&quot;../../data/export/for_analysis/Capture_rates.csv&quot;) %&gt;%
+  mutate(subanalysis = &quot;captures&quot;) %&gt;%
+  select(-X, -date)
 
-#Capture effort (net-hours)
-net_hours &lt;- read.csv(&quot;../../data/export/intermediate/Net-hours_2016-2018.csv&quot;) %&gt;%
-  select(-X) %&gt;%
-  rename(control_treatment = control_trmt) %&gt;%
-  mutate(net_hours = round(net_hours_adjusted, digits = 4)) %&gt;%
-  mutate(date = lubridate::ymd(date)) %&gt;%
-  mutate(across(c(year, patch), as.character))
+head(capture_data)</code></pre>
+<pre><code>##   bird_group year patch control_treatment exp_phase net_hours num_birds
+## 1    all_spp 2016    10         treatment capture_1  75.10417        14
+## 2    all_spp 2016    10         treatment capture_2  78.81247        11
+## 3    all_spp 2016   130         treatment capture_1  80.00000         7
+## 4    all_spp 2016   130         treatment capture_2  66.00000         2
+## 5    all_spp 2016   137         treatment capture_1  80.75000         5
+## 6    all_spp 2016   137         treatment capture_2  77.20833         3
+##   capture_rate subanalysis
+## 1       0.1864    captures
+## 2       0.1396    captures
+## 3       0.0875    captures
+## 4       0.0303    captures
+## 5       0.0619    captures
+## 6       0.0389    captures</code></pre>
+<pre class="r"><code>#Recapture data
+#1. Remove patches without data (no birds caught during pre)
+#2. Remove patch without constant capture effort pre &amp; post. So can avoid including covariates for effort
+recapture_data &lt;- read.csv(&quot;../../data/export/for_analysis/Recapture_rates.csv&quot;) %&gt;%
+  mutate(subanalysis = &quot;recaptures&quot;) %&gt;%
+  filter(!is.na(recap_rate)) %&gt;%  
+  filter(!(patch == &quot;203&quot; &amp; year == &quot;2017&quot;)) %&gt;%
+  select(-X)
 
-#Scientific names
-bird_species_names &lt;- read.csv(&quot;../../data/import/Hummingbird_codes_species_list.csv&quot;) %&gt;%
-  rename(species = code)
+head(recapture_data)</code></pre>
+<pre><code>##   bird_group year patch control_treatment num_birds_pre num_birds_post
+## 1    all_spp 2016    10         treatment            14             11
+## 2    all_spp 2016   130         treatment             7              2
+## 3    all_spp 2016   137         treatment             5              3
+## 4    all_spp 2016   200           control             1              2
+## 5    all_spp 2016   201           control            10              9
+## 6    all_spp 2016   203           control             5              2
+##   num_recaps_post recap_rate subanalysis
+## 1               1 0.07142857  recaptures
+## 2               0 0.00000000  recaptures
+## 3               1 0.20000000  recaptures
+## 4               0 0.00000000  recaptures
+## 5               1 0.10000000  recaptures
+## 6               1 0.20000000  recaptures</code></pre>
+<pre class="r"><code>#Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
+heto_removed &lt;- read.csv(&quot;../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv&quot;) %&gt;%
+  select(-X, -area)
 
-#Functions
+##1. Combine data
+#2. Log-transform HETO calories removed
+#3. Remove plants without flower counts (GINGY and MARA-VER)
+capture_data_for_analysis &lt;- capture_data %&gt;%
+  bind_rows(recapture_data) %&gt;%
+  left_join(heto_removed) %&gt;%
+  mutate(exp_phase = factor(exp_phase, levels = c(&quot;capture_1&quot;, &quot;capture_2&quot;), labels = c(&quot;pre&quot;, &quot;post&quot;))) %&gt;%
+  mutate(control_treatment = factor(control_treatment, levels = c(&quot;control&quot;, &quot;treatment&quot;))) %&gt;%
+  mutate(year_patch = paste(year, patch, sep = &quot;_&quot;)) %&gt;%
+  mutate(log_calories_removed_per_ha = log(calories_removed_per_ha + 1)) %&gt;%
+  mutate(analysis = &quot;captures&quot;) %&gt;%
+  select(analysis, subanalysis, bird_group, year, patch, year_patch, control_treatment, exp_phase, net_hours, starts_with(&quot;num_birds&quot;), starts_with(&quot;num_recaps&quot;), everything())</code></pre>
+<p><strong>Import functions</strong></p>
+<pre class="r"><code>source(&quot;../../code/helper_functions/Modeling_helper_functions.R&quot;)
+source(&quot;../../code/helper_functions/Plotting_helper_functions.R&quot;)
+source(&quot;../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R&quot;)
 source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)</code></pre>
-</div>
-<div id="step-2-explore-capture-data-totals" class="section level2">
-<h2>Step 2: Explore capture data (totals)</h2>
-<p>Calculate the following for the results/Supp material.</p>
-<ul>
-<li>Total number of captures, omitting day recaptures</li>
-<li>Total number of individuals captured</li>
-</ul>
-<p>First, double check to make sure day recaptures have been removed. I
-filtered them out above (status != “DR”), but it’s possible some could
-have slipped through.</p>
-<pre class="r"><code>recaps_within_day &lt;- captures %&gt;%
-  distinct(patch, date, species, band_number) %&gt;%
-  filter(!is.na(band_number)) %&gt;% #NA for birds not banded
-  group_by(date, species, band_number) %&gt;%
-  summarise(num_captures = n()) %&gt;%
-  filter(num_captures &gt; 1)
+<p><strong>Explore recap data: what is average recapture
+rate?</strong></p>
+<pre class="r"><code>#What is average recap rate per site/year?
+recap_sum01 &lt;- recapture_data %&gt;%
+  group_by(bird_group) %&gt;%
+  calculate_basic_summary_stats(variable = recap_rate)
 
-#Yes, they have all been removed.</code></pre>
-<p>Total of number of captures and individuals</p>
-<pre class="r"><code>#Total number of captures (omitting day recaptures)
-total_captures &lt;- captures %&gt;%
-  summarise(total_birds = n())
-
-total_captures</code></pre>
-<pre><code>##   total_birds
-## 1         383</code></pre>
-<pre class="r"><code>#Total captures by species
-total_captures_per_species &lt;- captures %&gt;%
-  group_by(species) %&gt;%
-  summarise(num_captures = n()) %&gt;%
-  arrange(desc(num_captures))
-
-total_captures_per_species</code></pre>
-<pre><code>## # A tibble: 17 × 2
-##    species num_captures
-##    &lt;chr&gt;          &lt;int&gt;
-##  1 GREH             110
-##  2 RTAH              95
-##  3 VISA              50
-##  4 STRH              43
-##  5 GCBR              22
-##  6 WTEM              19
-##  7 WTMG              11
-##  8 WTSI              11
-##  9 CHHU               4
-## 10 GAEM               4
-## 11 SBEH               3
-## 12 SBRH               3
-## 13 CRWO               2
-## 14 GFRL               2
-## 15 LBST               2
-## 16 BRHE               1
-## 17 BTRG               1</code></pre>
-<pre class="r"><code>#Total number of individuals captured and banded
-banded_individuals &lt;- captures %&gt;%
-  distinct(species, band_number) %&gt;%
-  filter(!is.na(band_number))
-
-num_banded_individuals &lt;- banded_individuals$band_number %&gt;% length() + 2
-
-#318 birds banded + 2 birds that were probably band typos (see below) --&gt; 320 birds banded
-
-#Total number of individuals captured and not banded
-unbanded_individuals &lt;- captures %&gt;%
-  filter(is.na(band_number) | band_number == &quot;NA&quot;)
-
-num_unbanded_individuals &lt;- unbanded_individuals$band_number %&gt;% length()
-
-#Total individuals captured
-(total_captured_individuals = num_banded_individuals + num_unbanded_individuals)</code></pre>
-<pre><code>## [1] 332</code></pre>
-<pre class="r"><code>#320 BANDED + 12 UNBANDED = 332</code></pre>
-</div>
-<div id="step-3-identify-and-summarize-recaptures-on-different-levels" class="section level2">
-<h2>Step 3: Identify and summarize recaptures on different levels</h2>
-<ul>
-<li>Between sites (across years)</li>
-<li>Within sites (across years)</li>
-<li>Within sites (within year, i.e. during experiment)</li>
-</ul>
-<p>Birds recaptured in different sites</p>
-<pre class="r"><code>#Calculate number of sites/bird to get recaptures across sites
-recaps_across_sites &lt;- captures %&gt;%
-  distinct(patch, species, band_number) %&gt;%
-  filter(!is.na(band_number)) %&gt;% #NA for birds not banded
-  group_by(species, band_number) %&gt;%
-  summarise(num_sites = n()) %&gt;%
-  arrange(desc(num_sites)) %&gt;%
-  filter(num_sites &gt; 1)
-
-#There are supposedly four birds caught in different patches, but only half of these seem probable.
-
-#Possible recaptures across sites: 
-#GCBR SA3779 - transmitter frequency 131. Caught 3 times in 2017! Banded in p24, caught in pre and post, and then caught ~ 1 mo later in p203
-#GCBR SA4102 - banded in p203 in 2017, caught in 2018 in p24
-#Interestingly, both of these are GCBR going between p24 and p203, which are only ~600m apart.
-
-#Unlikely recaptures across sites
-#RTAH SA4722 - both captures in 2017, p204/p49. Confirmed data entry error for initial capture - new band, NOT a recapture. Missing datashet for supposed (new) capture on 29-Apr-17 but probably a typo in that band number.
-#STRH SA4207 - both captures in 2018, p29/p10. Suspected typo - new band in both, NOT a recapture.
-
-#Either way, birds moving between sites seems pretty rare
-length(recaps_across_sites$band_number)/total_captured_individuals</code></pre>
-<pre><code>## [1] 0.01204819</code></pre>
-<p>Birds recaptured across years</p>
-<pre class="r"><code>recaps_across_years &lt;- captures %&gt;%
-  distinct(year, species, band_number) %&gt;% #Don&#39;t bother with color marks; will have worn off.
-  filter(!is.na(band_number)) %&gt;% #NA for birds not banded
-  group_by(species, band_number) %&gt;%
-  summarise(num_years = n()) %&gt;%
-  filter(num_years &gt; 1)
-
-length(recaps_across_years$band_number)</code></pre>
-<pre><code>## [1] 15</code></pre>
-<pre class="r"><code>#15 birds caught in different years. This includes 1 bird (GCBR SA4102) recaptured across sites
-#Interestingly, the only birds caught in all three years were in p10: GREH SA4005 and STRH SA4200</code></pre>
-<p>Birds recaptured within an experiment (i.e., birds caught pre and
-post); this is what I’m interested in</p>
-<pre class="r"><code>recaps_within_experiment &lt;-  captures %&gt;%
-  distinct(year, patch, exp_phase, species, bird_id, band_number, colors) %&gt;% #Not all birds banded, so use colors marks as well.
-  group_by(year, patch, species, bird_id, band_number, colors) %&gt;%
-  summarise(num_captures = n()) %&gt;%
-  filter(num_captures &gt; 1)
-
-length(recaps_within_experiment$bird_id)</code></pre>
-<pre><code>## [1] 31</code></pre>
-<pre class="r"><code>#34 birds caught in both pre and post. Will use this later on to calculate recapture rate (proportion of birds tagged pre that were re-captured post)</code></pre>
-<p>~The Math~</p>
-<p>The breakdown in the difference between 383 total captures and 332
-unique individuals (i.e., how the 51 recaptures are partitioned)</p>
-<ul>
-<li>2 bird recaptured across sites –&gt; +2</li>
-<li>15 birds recaptured across years, but 1 of those birds already
-accounted for in birds recaptured across sites (-1). But then two birds
-were re-caught 3 times, not 2 (+2) –&gt; +16</li>
-<li>34 birds recaptured within experiment, but 1 of those birds already
-accounted for in birds recaptured across years (STRH SA4200) –&gt;
-+33</li>
-</ul>
-<p>2 + 16 + 34 = 51 recaps</p>
-</div>
-<div id="step-4-make-a-summary-table-of-bird-species-detected-per-site" class="section level2">
-<h2>Step 4: Make a summary table of bird species detected per site</h2>
-<pre class="r"><code>#Captures of unique individuals per site, by species
-species_per_site &lt;- captures %&gt;%
-  distinct(patch, species, band_number) %&gt;%
-  group_by(patch, species) %&gt;%
-  summarise(num_birds = n()) %&gt;%
-  left_join(bird_species_names)
-
-#Convert to wide form, with just an &#39;x&#39; if species was detected in the site
-species_per_site_x &lt;- species_per_site %&gt;%
-  mutate(detected = &quot;x&quot;) %&gt;%
-  select(-num_birds) %&gt;%
-  pivot_wider(names_from = patch, values_from = detected, values_fill = &quot;&quot;)
-
-#Individuals per species
-individuals_per_species &lt;- species_per_site %&gt;%
-  group_by(species) %&gt;%
-  summarise(num_birds = sum(num_birds))
-
-#Individuals per species - OMITTING BIRDS FROM &#39;POST&#39; PERIOD IN TREATMENT (i.e., for description of relative abundance/what is &#39;normal&#39; for study system)
-individuals_per_species_normal &lt;- captures %&gt;% 
-  filter(!(control_treatment == &quot;treatment&quot; &amp; exp_phase == &quot;capture_2&quot;)) %&gt;%
-  distinct(patch, species, band_number) %&gt;%
-  group_by(species) %&gt;%
-  summarise(num_birds_normal = n())
-
-#Combine data. This is a combined summary of (a) bird species included in capture data, and (b) which sites had which birds
-capture_summary_table &lt;- species_per_site_x %&gt;%
-  left_join(individuals_per_species) %&gt;%
-  left_join(individuals_per_species_normal) %&gt;%
-  left_join(total_captures_per_species) %&gt;%
-  mutate_at(vars(num_birds_normal), ~ifelse(is.na(.), 0, .)) %&gt;%
-  arrange(desc(num_birds))</code></pre>
-</div>
-<div id="step-5-summarize-capture-data-for-analysis" class="section level2">
-<h2>Step 5: Summarize capture data for analysis</h2>
-<p>I want to summarize capture numbers for:</p>
-<ul>
-<li>All species combined (‘all_spp’)</li>
-<li><em>Heliconia</em> specialists, green hermits and violet sabrewings
-(‘greh_visa’)</li>
-</ul>
-<pre class="r"><code>#All species combined
-num_birds_all_species  &lt;- captures %&gt;% 
-  group_by(year, patch, control_treatment, date, exp_phase) %&gt;% 
-  summarise(num_birds = n()) %&gt;% 
-  ungroup() %&gt;% 
-  right_join(net_hours) %&gt;% #Add info about net hours. Right join so can fill in missing data with zeroes
-  mutate(num_birds = ifelse(is.na(num_birds), 0, num_birds)) %&gt;%  #Some patches had no captures (of any species) - making these zero
-  mutate(bird_group = &quot;all_spp&quot;)
-
-#GREH/VISA only
-num_birds_greh_visa &lt;- captures %&gt;% 
-  filter(species == &quot;GREH&quot; | species == &quot;VISA&quot;) %&gt;% 
-  group_by(year, patch, control_treatment, date, exp_phase) %&gt;% 
-  summarise(num_birds = n()) %&gt;% 
-  ungroup() %&gt;% 
-  right_join(net_hours) %&gt;% #Add info about net hours. Right join so can fill in missing data with zeroes
-  mutate(num_birds = ifelse(is.na(num_birds), 0, num_birds)) %&gt;%  #Some patches had no captures (of any species) - making these zero
-  mutate(bird_group = &quot;greh_visa&quot;)
-
-#Combine, calculate capture rates
-capture_rates &lt;- num_birds_all_species %&gt;%
-  bind_rows(num_birds_greh_visa) %&gt;%
-  select(bird_group, year, patch, control_treatment, date, exp_phase, net_hours = net_hours_adjusted, num_birds) %&gt;%
-  arrange(bird_group, year, patch, control_treatment, exp_phase) %&gt;%
-  mutate(capture_rate = num_birds/net_hours,
-         capture_rate = round(capture_rate, digits = 4))</code></pre>
-<p><em>Notes</em></p>
-<p>There was 1 instance where no birds (of any species) were captured
-during pre period - 2017 p137 (control) –&gt; also no birds during post
-period</p>
-<p>There were 3 <em>additional</em> instances where no GREH or VISA were
-captured during pre period - 2016 p200 (control) - 2017 p200 (treatment)
-- 2018 p137 (control) –&gt; also no GREH/VISA during post period</p>
-<p>Need to decide whether or not to include replicates that didn’t have
-any captures during ’pre’period. Including would be biased
-<em>against</em> finding a treatment effect (decline in capture
-numbers), since you can only go up from zero.</p>
-<p>DECISION: For space use variables (captures + telemetry), remove
-replicates without confirmed presence of hummingbird(s) in focal area
-during ‘pre’ period.</p>
-<pre class="r"><code>no_birds_in_pre_replicates &lt;- capture_rates %&gt;%
-  filter(exp_phase == &quot;capture_1&quot; &amp; num_birds == 0) %&gt;%
-  mutate(birds_in_pre = &quot;no&quot;)
-
-no_birds_in_pre_replicates</code></pre>
-<pre><code>## # A tibble: 5 × 10
-##   bird_…¹ year  patch contr…² date       exp_p…³ net_h…⁴ num_b…⁵ captu…⁶ birds…⁷
-##   &lt;chr&gt;   &lt;chr&gt; &lt;chr&gt; &lt;chr&gt;   &lt;date&gt;     &lt;chr&gt;     &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt; &lt;chr&gt;  
-## 1 all_spp 2017  137   control 2017-02-28 captur…    48.1       0       0 no     
-## 2 greh_v… 2016  200   control 2016-04-07 captur…    13.4       0       0 no     
-## 3 greh_v… 2017  137   control 2017-02-28 captur…    48.1       0       0 no     
-## 4 greh_v… 2017  200   treatm… 2017-03-24 captur…    49.5       0       0 no     
-## 5 greh_v… 2018  137   control 2018-03-07 captur…    34.7       0       0 no     
-## # … with abbreviated variable names ¹​bird_group, ²​control_treatment,
-## #   ³​exp_phase, ⁴​net_hours, ⁵​num_birds, ⁶​capture_rate, ⁷​birds_in_pre</code></pre>
-<pre class="r"><code>#This is a consistent problem in p137 and p200 (across years)
-
-capture_rates_birds_in_pre_only &lt;- capture_rates %&gt;%
-  left_join(no_birds_in_pre_replicates) %&gt;%
-  filter(is.na(birds_in_pre)) %&gt;%
-  select(-birds_in_pre)</code></pre>
-</div>
-<div id="step-6-summarize-recapture-data-for-analysis" class="section level2">
-<h2>Step 6: Summarize recapture data for analysis</h2>
-<p>Here, ‘recaptures’ = birds caught during both of the capture
-sessions, pre AND post</p>
-<p>Recapture rate = proportion of birds tagged in first capture that
-were caught during second capture</p>
-<p>Filter data to be used in recapture analysis</p>
-<pre class="r"><code>#1. Remove birds without any identifying marks. Cannot ensure independence between measurements if not marked.
-#2. Remove birds with suspect band numbers (likely typos in band number are indicated by asterisk as of 1/25/2021). Need to remove these birds from recapture analysis, because recaptures based on band number match
-data_for_recaptures &lt;- captures %&gt;%
-  filter(!(grepl(&quot;*&quot;, band_number, fixed = TRUE))) %&gt;%
-  select(bird_id, everything())</code></pre>
-<p>Identify recaptures</p>
-<pre class="r"><code>#Birds that were captured during pre period
-pre_birds &lt;- data_for_recaptures %&gt;%
-  filter(exp_phase == &quot;capture_1&quot;)
-
-#Birds that were captured during post period
-post_birds &lt;- data_for_recaptures %&gt;%
-  filter(exp_phase == &quot;capture_2&quot;)
-
-#Identifying pre-post recaps (for a given patch, post %in% pre)
-#THIS IS THE SAME AS &#39;recaps_within_experiment&#39;, above
-recaptures &lt;- post_birds %&gt;%
-  filter(bird_id %in% pre_birds$bird_id) %&gt;% 
-  select(year, patch, control_treatment, bird_id, species)
-
-#What percentage of birds captured during pre were recaptured during post?
-(num_pre_birds &lt;- pre_birds$band_number %&gt;% length())</code></pre>
-<pre><code>## [1] 203</code></pre>
-<pre class="r"><code>(num_recaptures &lt;- recaptures$bird_id %&gt;% length())</code></pre>
-<pre><code>## [1] 34</code></pre>
-<pre class="r"><code>num_recaptures/num_pre_birds</code></pre>
-<pre><code>## [1] 0.1674877</code></pre>
-<p><em>Of 203 birds [without suspected band typos] captured during the
-‘pre’ period, 34 were captured during the post (~17% overall recapture
-rate)</em></p>
-<p>Add column (0/1) to dataset of birds captured during pre, indicating
-whether they were they recaptured during post. This is for if I want to
-incorporate individual covariates that might determine whether a bird
-was recaptured later on.</p>
-<pre class="r"><code>pre_birds_with_recap_status &lt;- pre_birds %&gt;%
-  mutate(recaptured_post = ifelse(bird_id %in% recaptures$bird_id, 1, 0)) %&gt;%
-  select(bird_id, recaptured_post, everything())</code></pre>
-<p>Now, summarize # of birds re-captured for:</p>
-<ul>
-<li>All species combined (‘all_spp’)</li>
-<li><em>Heliconia</em> specialists, green hermits and violet sabrewings
-(‘greh_visa’)</li>
-</ul>
-<pre class="r"><code>#All species
-num_recaptures_all_species  &lt;- recaptures %&gt;% 
-  group_by(year, patch, control_treatment) %&gt;% 
-  summarise(num_birds = n()) %&gt;% 
+recap_sum01</code></pre>
+<pre><code>## # A tibble: 2 × 7
+##   bird_group   min   max  mean    sd median     n
+##   &lt;chr&gt;      &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1 all_spp        0   0.5 0.156 0.154  0.111    28
+## 2 greh_visa      0   1   0.208 0.271  0        25</code></pre>
+<pre class="r"><code>#Summary in a slightly different way: out of all birds captured, across sites/years, what percentage were recaptured?
+recap_sum02 &lt;- recapture_data %&gt;%
+  group_by(bird_group) %&gt;%
+  summarise(total_birds_pre = sum(num_birds_pre),
+            total_recaps_post = sum(num_recaps_post)) %&gt;%
   ungroup() %&gt;%
-  mutate(bird_group = &quot;all_spp&quot;)
+  mutate(overall_recap_rate = total_recaps_post/total_birds_pre)
 
-#GREH/VISA only
-num_recaptures_greh_visa &lt;- recaptures %&gt;% 
-  filter(species == &quot;GREH&quot; | species == &quot;VISA&quot;) %&gt;% 
-  group_by(year, patch, control_treatment) %&gt;% 
-  summarise(num_birds = n()) %&gt;% 
-  ungroup() %&gt;%
-  mutate(bird_group = &quot;greh_visa&quot;)
+recap_sum02</code></pre>
+<pre><code>## # A tibble: 2 × 4
+##   bird_group total_birds_pre total_recaps_post overall_recap_rate
+##   &lt;chr&gt;                &lt;int&gt;             &lt;int&gt;              &lt;dbl&gt;
+## 1 all_spp                182                29              0.159
+## 2 greh_visa               92                18              0.196</code></pre>
+</div>
+<div id="step-2-create-datasets-for-each-analysis" class="section level2">
+<h2>Step 2: Create datasets for each analysis</h2>
+<p><strong>Get organized</strong></p>
+<pre class="r"><code>#Create tables that will be filled in with models and model results
+analysis = c(&quot;captures&quot;)
+subanalysis = c(&quot;captures&quot;, &quot;recaptures&quot;)
+bird_group = c(&quot;all_spp&quot;, &quot;greh_visa&quot;)
+model_type = c(&quot;categorical&quot;, &quot;quantitative&quot;)
+model_name = c(&quot;control/treatment * pre/post&quot;, &quot;calories removed/ha * pre/post&quot;)
+treatment_variable = c(&quot;control_treatment&quot;, &quot;log_calories_removed_per_ha&quot;)
+model_types_names = data.frame(model_type = model_type, model_name = model_name, treatment_variable = treatment_variable)
 
-#Combine data
-num_recaptures &lt;- num_recaptures_all_species %&gt;%
-  bind_rows(num_recaptures_greh_visa) %&gt;%
-  rename(num_recaps_post = num_birds)
+base_table &lt;- crossing(analysis, subanalysis, bird_group, model_type) %&gt;% 
+  left_join(model_types_names) %&gt;%
+  mutate(yvar = ifelse(subanalysis == &quot;captures&quot;, &quot;num_birds&quot;, &quot;recap_rate&quot;)) %&gt;%
+  arrange(analysis, subanalysis, model_type, bird_group) %&gt;%
+  mutate(model_number = 1:length(yvar)) %&gt;%
+  mutate(title = paste(analysis, subanalysis, bird_group, sep = &quot;_&quot;)) %&gt;%
+  mutate(subtitle = yvar) %&gt;%
+  select(model_number, analysis, yvar, subanalysis, everything())</code></pre>
+<p><strong>Filter master dataset to relevant sub-dataset &amp; scale
+continuous predictors</strong></p>
+<pre class="r"><code>subset_data &lt;- function(dataset, analysis, subanalysis, bird_group){
   
-recapture_rates &lt;- capture_rates %&gt;%
-  select(bird_group, year, patch, control_treatment, exp_phase, num_birds) %&gt;%
-  pivot_wider(names_from = exp_phase, values_from = num_birds) %&gt;%
-  rename(num_birds_pre = capture_1, num_birds_post = capture_2) %&gt;%
-  left_join(num_recaptures) %&gt;%
-  mutate(num_recaps_post = ifelse(is.na(num_recaps_post), 0, num_recaps_post)) %&gt;% #Fill in zeroes for no recaps
-  mutate(recap_rate = num_recaps_post / num_birds_pre) #Will be NaN if denominator is zero (no birds caught during pre)</code></pre>
+  dataset &lt;- dataset %&gt;%
+    filter(analysis == {{ analysis }}) %&gt;%
+    filter(subanalysis == {{ subanalysis}}) %&gt;%
+    filter(bird_group == {{ bird_group }}) %&gt;%
+    mutate(across(c(log_calories_removed_per_ha, net_hours), ~c(scale(.))))
+      
+  return(dataset)
+  
+}
+
+#Create datasets (will add models in later step)
+data &lt;- base_table %&gt;%
+    mutate(data = pmap(list(analysis, subanalysis, bird_group), ~subset_data(dataset = capture_data_for_analysis, analysis = ..1, subanalysis = ..2, bird_group = ..3)))</code></pre>
 </div>
-<div id="step-7-export-data" class="section level2">
-<h2>Step 7: Export data</h2>
-<pre class="r"><code>#CAPTURES
-#For main analysis
-write.csv(capture_rates_birds_in_pre_only, &quot;../../data/export/for_analysis/Capture_rates.csv&quot;)
+<div id="step-3-initial-model-fitting" class="section level2">
+<h2>Step 3: Initial model fitting</h2>
+<p>For count data, there multiple possible distributions. I need to
+choose between Poisson and negative binomial (nbinom1 and nbinom2) and
+also see if there is support for zero-inflation or not. Will check
+assumptions for all models again later on.</p>
+<p><strong>Captures</strong></p>
+<p><strong>Recaptures</strong></p>
+</div>
+<div id="step-4-fit-models" class="section level2">
+<h2>Step 4: Fit models</h2>
+<pre class="r"><code>#Function to make model for given analysis
+#Alternative optimizer (default is nlminb)
+#control = glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;))
+create_model &lt;- function(dataset, analysis, subanalysis, treatment_variable){
 
-#For Supp table
-write.csv(capture_summary_table, &quot;../../data/export/supp_tables/Captured_species_per_site_summary_table.csv&quot;)
+  #Make models for each analysis
+  if(subanalysis == &quot;captures&quot;){
+    
+      model &lt;- glmmTMB(as.formula(paste0(&quot;num_birds ~ &quot;, treatment_variable, &quot; * exp_phase + net_hours + (1|patch/year_patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;poisson&quot;, ziformula = ~0)
+      
+    }
+  
+  if(subanalysis == &quot;recaptures&quot;){
+    
+    #Recap rate = # recaps post/# birds pre
+    model &lt;- glmmTMB(as.formula(paste0(&quot;recap_rate ~ &quot;, treatment_variable, &quot; + (1|patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;binomial&quot;, weights = num_birds_pre, ziformula = ~0)
+    
+  }
+   
+  return(model)
+  
+}
 
-#RECAPTURES
-#For main analysis
-write.csv(recapture_rates, &quot;../../data/export/for_analysis/Recapture_rates.csv&quot;)
+#Create models
+models &lt;- data %&gt;%
+   mutate(model_quietly = pmap(list(data, analysis, subanalysis, treatment_variable), quietly(function(a, b, c, d){model &lt;- create_model(dataset = a, analysis = b, subanalysis = c, treatment_variable = d)})),
+          model = map(model_quietly, get_result),
+          warning = map(model_quietly, get_warning), 
+          convergence = map(model, check_convergence)) %&gt;%
+  mutate(xvar_table = map(model, ~data.frame(xvar = all.vars(terms(.))[-1])))
 
-#For analysis of pre-post changes in body condition
-write.csv(recaptures, &quot;../../data/export/intermediate/Birds_recaptured_post.csv&quot;)
+#Make sure there weren&#39;t any problems + check to make sure table of predictor variables is correct
+models$warning</code></pre>
+<pre><code>## [[1]]
+## character(0)
+## 
+## [[2]]
+## character(0)
+## 
+## [[3]]
+## character(0)
+## 
+## [[4]]
+## character(0)
+## 
+## [[5]]
+## character(0)
+## 
+## [[6]]
+## character(0)
+## 
+## [[7]]
+## character(0)
+## 
+## [[8]]
+## character(0)</code></pre>
+<pre class="r"><code>models$convergence</code></pre>
+<pre><code>## [[1]]
+## [1] 0
+## 
+## [[2]]
+## [1] 0
+## 
+## [[3]]
+## [1] 0
+## 
+## [[4]]
+## [1] 0
+## 
+## [[5]]
+## [1] 0
+## 
+## [[6]]
+## [1] 0
+## 
+## [[7]]
+## [1] 0
+## 
+## [[8]]
+## [1] 0</code></pre>
+<pre class="r"><code>models$xvar_table</code></pre>
+<pre><code>## [[1]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3         net_hours
+## 
+## [[2]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3         net_hours
+## 
+## [[3]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                   net_hours
+## 
+## [[4]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                   net_hours
+## 
+## [[5]]
+##                xvar
+## 1 control_treatment
+## 
+## [[6]]
+##                xvar
+## 1 control_treatment
+## 
+## [[7]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 
+## [[8]]
+##                          xvar
+## 1 log_calories_removed_per_ha</code></pre>
+</div>
+<div id="step-5-check-assumptions" class="section level2">
+<h2>Step 5: Check assumptions</h2>
+<pre class="r"><code>assumption_checks &lt;- models %&gt;%
+  mutate(re_plot = pmap(list(model, title, subtitle), ~check_re(model = ..1, plot_title = ..2, plot_subtitle = ..3))) %&gt;%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %&gt;%
+  mutate(dharma_plot_safely = pmap(list(dharma_object, title, subtitle),
+                                   safely(function(a, b, c){make_dharma_plot(dharma_object = a, plot_title = b, plot_subtitle = c, plot_type = &quot;basic&quot;)})),
+         dharma_plot = map(dharma_plot_safely, get_result),
+         dharma_plot_error = map(dharma_plot_safely, get_error)) %&gt;%
+  mutate(dharma_xvar_plot_safely = pmap(list(xvar_table, data, dharma_object, title, subtitle),
+                                        safely(function(a, b, c, d, e){make_dharma_xvar_plot(predictor_table = a, dataset = b, dharma_object = c, plot_title = d, plot_subtitle = e)})),
+         dharma_xvar_plot = map(dharma_xvar_plot_safely, get_result),
+         dharma_xvar_plot_error = map(dharma_xvar_plot_safely, get_error)) %&gt;%
+  mutate(dharma_zeroinfl_plot = pmap(list(dharma_object, title, subtitle), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2, plot_subtitle = ..3, plot_type = &quot;zeroinflation&quot;)),
+         dharma_overdisp_plot = pmap(list(dharma_object, title, subtitle),  ~make_dharma_plot(dharma_object = ..1, plot_title = ..2, plot_subtitle = ..3, plot_type = &quot;overdispersion&quot;))) %&gt;%
+  mutate(plotname1 = paste(&quot;re_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
+  mutate(plotname2 = paste(&quot;dharma_overall_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
+  mutate(plotname3 = paste(&quot;dharma_xvar_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
+  mutate(plotname4 = paste(&quot;dharma_zeroinfl_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
+  mutate(plotname5 = paste(&quot;dharma_overdisp_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))</code></pre>
+<pre class="r"><code>#Export diagnostic plots because they load very slowly in RStudio
+path_name &lt;- c(&quot;../../results/statistical_analysis/assumption_checks/captures&quot;)
+walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;, bg = &quot;white&quot;))
+walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
+walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
+walk2(assumption_checks$plotname4, assumption_checks$dharma_zeroinfl_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
+walk2(assumption_checks$plotname5, assumption_checks$dharma_overdisp_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
 
-#For potential future analysis of whether individual attributes influence recapture (0/1 for each bird)
-write.csv(pre_birds_with_recap_status, &quot;../../data/export/intermediate/Birds_captured_pre_with_recap_status.csv&quot;) </code></pre>
+#Check for highly influential replicates
+#Make plots of DFBETAS and Cook&#39;s distance
+influence_checks &lt;- models %&gt;%
+  mutate(influence_plot = pmap(list(model, data, title, subtitle), ~make_influence_plot(model = ..1, dataset = ..2, plot_title = ..3, plot_subtitle = ..4, group_id = &quot;year_patch&quot;))) %&gt;%
+  mutate(plotname6 = paste(&quot;influence_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))</code></pre>
+<pre class="r"><code>#Export plots
+walk2(influence_checks$plotname6, influence_checks$influence_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;, bg = &quot;white&quot;))</code></pre>
+</div>
+<div id="step-6-create-results-for-export" class="section level2">
+<h2>Step 6: Create results for export</h2>
+<pre class="r"><code>#Will also add information about sample size: total # of observations (rows), number of levels per random effect, and the number of replicates (split into &#39;control&#39; vs. &#39;treatment&#39;)
+results &lt;- models %&gt;%
+  mutate(summary = map(model, summary),
+         summary_tidy = map(model, broom.mixed::tidy),
+         confint_wald = map(model, ~calculate_ci(., method_name = &quot;wald&quot;))) %&gt;%
+  mutate(num_obs = map(model, get_number_obs),
+         num_levels = map(model, get_number_re_levels),
+         num_reps = map(data, ~get_sample_size(data = ., vars = c(&quot;year&quot;, &quot;patch&quot;, &quot;control_treatment&quot;), grouping_var = &quot;control_treatment&quot;)))</code></pre>
+</div>
+<div id="step-7-export-results-as-rds-file" class="section level2">
+<h2>Step 7: Export results as rds file</h2>
+<pre class="r"><code>saveRDS(results, &quot;../../results/statistical_analysis/rds_files/Capture_results.rds&quot;)</code></pre>
+<p><em>WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM
+RDS FILES IN ONE MASTER SCRIPT</em></p>
 </div>
 
 

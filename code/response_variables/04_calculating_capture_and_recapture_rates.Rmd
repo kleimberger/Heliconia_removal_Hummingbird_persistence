@@ -277,7 +277,23 @@ There were 3 *additional* instances where no GREH or VISA were captured during p
 - 2017 p200 (treatment)
 - 2018 p137 (control) --> also no GREH/VISA during post period
 
-Will need to decide whether or not to include sites that didn't have any captures during 'pre'. Including would be biased *against* finding a treatment effect (decline in capture numbers), since you can only go up from zero.
+Need to decide whether or not to include replicates that didn't have any captures during 'pre'period. Including would be biased *against* finding a treatment effect (decline in capture numbers), since you can only go up from zero. 
+
+DECISION: For space use variables (captures + telemetry), remove replicates without confirmed presence of hummingbird(s) in focal area during 'pre' period.
+```{r}
+no_birds_in_pre_replicates <- capture_rates %>%
+  filter(exp_phase == "capture_1" & num_birds == 0) %>%
+  mutate(birds_in_pre = "no")
+
+no_birds_in_pre_replicates
+
+#This is a consistent problem in p137 and p200 (across years)
+
+capture_rates_birds_in_pre_only <- capture_rates %>%
+  left_join(no_birds_in_pre_replicates) %>%
+  filter(is.na(birds_in_pre)) %>%
+  select(-birds_in_pre)
+```
 
 ## Step 6: Summarize recapture data for analysis
 
@@ -366,7 +382,7 @@ recapture_rates <- capture_rates %>%
 ```{r step7}
 #CAPTURES
 #For main analysis
-write.csv(capture_rates, "../../data/export/for_analysis/Capture_rates.csv")
+write.csv(capture_rates_birds_in_pre_only, "../../data/export/for_analysis/Capture_rates.csv")
 
 #For Supp table
 write.csv(capture_summary_table, "../../data/export/supp_tables/Captured_species_per_site_summary_table.csv")

@@ -49,7 +49,7 @@ set.seed(1)
 **Data for analysis**
 ```{r}
 #Capture data. Number of birds captured per capture session, with capture effort
-capture_data <- read.csv("data/export/for_analysis/Capture_rates.csv") %>%
+capture_data <- read.csv("../../data/export/for_analysis/Capture_rates.csv") %>%
   mutate(subanalysis = "captures") %>%
   select(-X, -date)
 
@@ -58,7 +58,7 @@ head(capture_data)
 #Recapture data
 #1. Remove patches without data (no birds caught during pre)
 #2. Remove patch without constant capture effort pre & post. So can avoid including covariates for effort
-recapture_data <- read.csv("data/export/for_analysis/Recapture_rates.csv") %>%
+recapture_data <- read.csv("../../data/export/for_analysis/Recapture_rates.csv") %>%
   mutate(subanalysis = "recaptures") %>%
   filter(!is.na(recap_rate)) %>%  
   filter(!(patch == "203" & year == "2017")) %>%
@@ -67,7 +67,7 @@ recapture_data <- read.csv("data/export/for_analysis/Recapture_rates.csv") %>%
 head(recapture_data)
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
-heto_removed <- read.csv("data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
+heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
   select(-X, -area)
 
 ##1. Combine data
@@ -86,10 +86,10 @@ capture_data_for_analysis <- capture_data %>%
 
 **Import functions**
 ```{r step1a}
-source("code/helper_functions/Modeling_helper_functions.R")
-source("code/helper_functions/Plotting_helper_functions.R")
-source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
-source("code/helper_functions/Calculate_basic_summary_stats.R")
+source("../../code/helper_functions/Modeling_helper_functions.R")
+source("../../code/helper_functions/Plotting_helper_functions.R")
+source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 ```
 
 **Explore recap data: what is average recapture rate?**
@@ -282,7 +282,7 @@ models$xvar_table
 ```
 
 ## Step 5: Check assumptions
-```{r, fig.show = 'hide', results = 'hide', eval = FALSE}
+```{r, fig.show = 'hide', results = 'hide'}
 assumption_checks <- models %>%
   mutate(re_plot = pmap(list(model, title, subtitle), ~check_re(model = ..1, plot_title = ..2, plot_subtitle = ..3))) %>%
   mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
@@ -304,7 +304,7 @@ assumption_checks <- models %>%
 
 
 #Export diagnostic plots because they load very slowly in RStudio
-path_name <- c("results/statistical_analysis/assumption_checks/captures")
+path_name <- c("../../results/statistical_analysis/assumption_checks/captures")
 walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
 walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
 walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
@@ -335,7 +335,7 @@ results <- models %>%
 
 ## Step 7: Export results as rds file
 ```{r}
-saveRDS(results, "results/statistical_analysis/rds_files/Capture_results.rds")
+saveRDS(results, "../../results/statistical_analysis/rds_files/Capture_results.rds")
 ```
 
 *WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES IN ONE MASTER SCRIPT*
