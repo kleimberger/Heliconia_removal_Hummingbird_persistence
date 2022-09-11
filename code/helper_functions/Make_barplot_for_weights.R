@@ -4,9 +4,8 @@ make_barplot <- function(data, xvar, yvar, xlabel, ylabel, highlight_column, tit
     ggplot(aes(x = reorder(.data[[xvar]], -.data[[yvar]]), y = .data[[yvar]], fill = .data[[highlight_column]]))+
     geom_bar(stat = "identity", width = c(0.6))+
     labs(x = xlabel, y = ylabel, title = titlelabel)+
-    #facet_grid(year~.) +
-    theme_bw(base_size = 20)+ #Increase text size for AOS talk
-    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 11, face = "italic"),
+    theme_bw(base_size = 20) + 
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = 16, face = "italic"),
           panel.grid.major = element_blank(),
           panel.grid.minor = element_blank())+
     scale_fill_manual(values = c("dark grey", "#BA0022"), guide = "none")
@@ -15,10 +14,10 @@ make_barplot <- function(data, xvar, yvar, xlabel, ylabel, highlight_column, tit
     
     plot <- data %>% 
       ggplot(aes(x = reorder(.data[[xvar]], .data[[yvar]]), y = .data[[yvar]], fill = .data[[highlight_column]]))+
-      geom_bar(stat = "identity", width = c(0.6))+
+      geom_bar(stat = "identity", width = c(0.6)) +
       labs(x = xlabel, y = ylabel, title = titlelabel)+
       theme_bw(base_size = 20)+ #Increase text size for AOS talk
-      theme(axis.text.y = element_text(size = 11, face = "italic"),
+      theme(axis.text.y = element_text(size = 16, face = "italic"),
             panel.grid.major = element_blank(),
             panel.grid.minor = element_blank())+
       scale_fill_manual(values = c("dark grey", "#BA0022"), guide = "none") +
