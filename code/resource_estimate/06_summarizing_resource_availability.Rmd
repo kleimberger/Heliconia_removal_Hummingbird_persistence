@@ -354,7 +354,8 @@ weights_barplot_all_spp <- data_for_barplots %>%
 #GREH/VISA
 weights_barplot_gv <- data_for_barplots %>%
   filter(bird_group == "greh_visa") %>% 
-  make_barplot(xvar = "plant_scientific_name", yvar = "weight", xlabel = "Plant species", ylabel = "Weight", highlight_column = "heto_color", titlelabel = "All hummingbird species", flip_axes = TRUE)
+  make_barplot(xvar = "plant_scientific_name", yvar = "weight", xlabel = "Plant species", ylabel = "Weight", highlight_column = "heto_color", titlelabel = "", flip_axes = TRUE) +
+  labs(title = expression(italic(Heliconia)~"specialists"))
 
 #weights_barplot_gv
 
@@ -436,10 +437,14 @@ plot_theme =
         axis.text.x = ggtext::element_markdown(size = 24)) #ggtext is to italicize "Heliconia"
 
 #Make plot (technically % removed)
+all_species_label <- c(expression("All species"))
+greh_visa_label <- c(expression(italic(Heliconia)~"specialists"))
+
+#Get data ready for plotting
 proportion_calories_removed_boxplots <- proportion_calories_removed_tailored %>%
   filter(count_estimate_high_low == "high") %>%
   mutate(bird_group = ifelse(subset == "none", "all_spp", bird_group)) %>%
-  mutate(bird_group = factor(bird_group, levels = c("all_spp", "greh_visa"), labels = c("All species", "Heliconia specialists"))) %>%
+  mutate(bird_group = factor(bird_group, levels = c("all_spp", "greh_visa"))) %>%
   mutate(subset = factor(subset, levels = c("none", "subset", "subset_and_weighted"), labels = c("No tailoring", "Subset", "Weighted"))) %>%
   ggplot(data = ., aes(x = bird_group, y = proportion_removed * 100)) +
     facet_grid(.~subset) +
@@ -449,7 +454,8 @@ proportion_calories_removed_boxplots <- proportion_calories_removed_tailored %>%
     stat_summary(fun = mean, geom = "point", shape = 23, size = 4, color = "#BA0022", fill = "#BA0022") +
     scale_y_continuous(breaks = c(0, 20, 40, 60, 80, 100)) +
     plot_theme +
-    scale_x_discrete(labels = c("All species", paste0("*Heliconia* specialists"))) #Need to italicize "Heliconia"
+    #scale_x_discrete(labels = c(all_species_label, greh_visa_label)) #Need to italicize "Heliconia" but expression is currently not working
+    scale_x_discrete(labels = c("All species", "Heliconia specialists"))
 
 proportion_calories_removed_boxplots
 ```
@@ -468,7 +474,7 @@ write.csv(proportion_calories_removed_tailored_sum, "../../data/export/supp_tabl
 
 #Figures
 path_name <- c("../../results/resource_estimate/figures")
-ggsave(file.path(path_name, "Weights_for_resource_estimate_barplot.png"), weights_barplot_multiplot, height = 8, width = 14, units = "in")
-ggsave(file.path(path_name, "Proportion_calories_removed_boxplots.png"), proportion_calories_removed_boxplots, height = 8, width = 14, units = "in")
+ggsave(file.path(path_name, "Weights_for_resource_estimate_barplot.png"), weights_barplot_multiplot, height = 8, width = 16, units = "in")
+ggsave(file.path(path_name, "Proportion_calories_removed_boxplots.png"), proportion_calories_removed_boxplots, height = 8, width = 18, units = "in")
 ```
 
