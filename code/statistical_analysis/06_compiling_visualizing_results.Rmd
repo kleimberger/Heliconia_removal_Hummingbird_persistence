@@ -416,7 +416,7 @@ contrast_plot_main <- contrasts_of_contrasts_df %>%
   filter((analysis == "camera_HETO" & subanalysis == "all_birds") |
            (analysis == "camera_non-HETO" & subanalysis == "all_birds") |
            (analysis == "captures" & subanalysis == "captures") |
-           (analysis == "telemetry" & subanalysis == "without_outlier")) %>%
+           (analysis == "telemetry" & subanalysis == "all_replicates")) %>%
   mutate(analysis = factor(analysis, levels = c("captures", "telemetry", "camera_HETO", "camera_non-HETO"), ordered = TRUE)) %>%
   arrange(analysis) %>%
   mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%

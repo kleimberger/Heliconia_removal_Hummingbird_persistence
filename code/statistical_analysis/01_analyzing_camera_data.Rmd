@@ -56,18 +56,18 @@ set.seed(1)
 **Get data**
 ```{r}
 #Camera data, visits summarized across birds
-visit_data <- read.csv("data/export/for_analysis/Camera_visitation_rates.csv") %>%
+visit_data <- read.csv("../../data/export/for_analysis/Camera_visitation_rates.csv") %>%
   mutate(subanalysis = "all_birds") %>%
   select(-X)
 
 #Camera data, visits by individual birds
 #Decided not to exclude birds that have no visits during the pre period (determined for HETO and non-HETO separately)
-visit_data_marked <- read.csv("data/export/for_analysis/Camera_visitation_rates_marked_birds.csv") %>%
+visit_data_marked <- read.csv("../../data/export/for_analysis/Camera_visitation_rates_marked_birds.csv") %>%
   mutate(subanalysis = "marked_birds") %>%
   select(-present_during_pre, -X)
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
-heto_removed <- read.csv("data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
+heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
   select(-X, -area)
 
 ##1. Combine data
@@ -86,9 +86,9 @@ visit_data_for_analysis <- visit_data_marked %>%
 
 **Import functions**
 ```{r step1a}
-source("code/helper_functions/Modeling_helper_functions.R")
-source("code/helper_functions/Plotting_helper_functions.R")
-source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("../../code/helper_functions/Modeling_helper_functions.R")
+source("../../code/helper_functions/Plotting_helper_functions.R")
+source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
 ```
 
 ## Step 2: Create datasets for each analysis 
@@ -361,7 +361,7 @@ models$xvar_table
 ```
 
 ## Step 5: Check assumptions
-```{r, fig.show = 'hide', results = 'hide', eval = FALSE}
+```{r, fig.show = 'hide', results = 'hide'}
 assumption_checks <- models %>%
   mutate(re_plot = pmap(list(model, title, subtitle), ~check_re(model = ..1, plot_title = ..2, plot_subtitle = ..3))) %>%
   mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
@@ -383,7 +383,7 @@ assumption_checks <- models %>%
 
 
 #Export diagnostic plots because they load very slowly in RStudio
-path_name <- c("results/statistical_analysis/assumption_checks/cameras")
+path_name <- c("../../results/statistical_analysis/assumption_checks/cameras")
 walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
 walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
 walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
@@ -418,7 +418,7 @@ results <- models %>%
 
 ## Step 7: Export results as rds file
 ```{r}
-saveRDS(results, "results/statistical_analysis/rds_files/Camera_results.rds")
+saveRDS(results, "../../results/statistical_analysis/rds_files/Camera_results.rds")
 ```
 
 *WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES IN ONE MASTER SCRIPT*

@@ -57,12 +57,12 @@ library(emmeans)
 **Import data**
 ```{r}
 #Hummingbirds codes --> hummingbird species names
-bird_species_names <- read.csv("data/import/Hummingbird_codes_species_list.csv") %>%
+bird_species_names <- read.csv("../../data/import/Hummingbird_codes_species_list.csv") %>%
   rename(species = code)
 
 #Get all capture data (2010-2018)
 #Add color_id column because sometimes birds were not banded. Using colors instead in those cases. This ID will allow me to identify recaps between pre/post a given patch/year
-captures_all_years <- read.csv("data/import/Hummingbird_captures_2010-2018_20220713.csv") %>%
+captures_all_years <- read.csv("../../data/import/Hummingbird_captures_2010-2018_20220713.csv") %>%
   left_join(bird_species_names) %>%
   rename(patch = site) %>%
   filter(status != "DR") %>% #Remove day recaptures
@@ -71,12 +71,12 @@ captures_all_years <- read.csv("data/import/Hummingbird_captures_2010-2018_20220
   select(bird_id, everything())
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
-heto_removed <- read.csv("data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
+heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
   select(-X, -area) %>%
   mutate(patch = as.character(patch))
 
 #Hummingbirds captured pre AND post during Heliconia removal experiment (2016-2018)
-recap_list <- read.csv("data/export/intermediate/Birds_recaptured_post.csv")
+recap_list <- read.csv("../../data/export/intermediate/Birds_recaptured_post.csv")
 
 #Subset capture data to hummingbirds recaptured during Heliconia removal experiment (2016-2018)
 #Add info about quantitative treatment (calories removed/ha)
@@ -97,10 +97,10 @@ recaptures_experiment_sunrise <- recaptures_experiment %>%
 
 **Import functions**
 ```{r}
-source("code/helper_functions/Modeling_helper_functions.R")
-source("code/helper_functions/Plotting_helper_functions.R")
-source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
-source("code/helper_functions/Calculate_basic_summary_stats.R")
+source("../../code/helper_functions/Modeling_helper_functions.R")
+source("../../code/helper_functions/Plotting_helper_functions.R")
+source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 ```
 
 ## Step 2: Make sure recaptured birds have morphometric measuremets
@@ -449,14 +449,14 @@ results <- models %>%
 ## Step 6: Export results
 ```{r}
 #Data that I analyzed here
-write.csv(data_for_analysis, "data/export/for_analysis/Relative_body_mass_for_analysis.csv")
+write.csv(data_for_analysis, "../../data/export/for_analysis/Relative_body_mass_for_analysis.csv")
 
 #Multiplot of log(mass) ~ log(wing length) regressions
-path_name <- c("results/response_variables/figures")
+path_name <- c("../../results/response_variables/figures")
 ggsave(filename = file.path(path_name, "Allometric_regression_plots.png"), plot = mass_wing_regressions_multiplot, height = 11.5, width = 15)
 
 #Responses to Heliconia removal
-saveRDS(results, "results/statistical_analysis/rds_files/Body_mass_results.rds")
+saveRDS(results, "../../results/statistical_analysis/rds_files/Body_mass_results.rds")
 ```
 
 

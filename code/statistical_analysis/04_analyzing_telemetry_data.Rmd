@@ -46,7 +46,7 @@ set.seed(1)
 **Data for analysis**
 ```{r}
 #Telemetry data, all hummingbird species
-telem_data <- read.csv("data/export/for_analysis/Telemetry_proportion_time_in_patch.csv") %>%
+telem_data <- read.csv("../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv") %>%
   mutate(bird_group = "all_spp") %>%
   select(-X)
 
@@ -58,7 +58,7 @@ telem_data_greh_visa <- telem_data %>%
   mutate(bird_group = "greh_visa")
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
-heto_removed <- read.csv("data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
+heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
   select(-X)
 
 ##1. Combine data
@@ -80,10 +80,10 @@ telem_data_for_analysis <- telem_data %>%
 
 **Import functions**
 ```{r step1a}
-source("code/helper_functions/Modeling_helper_functions.R")
-source("code/helper_functions/Plotting_helper_functions.R")
-source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
-source("code/helper_functions/Calculate_basic_summary_stats.R")
+source("../../code/helper_functions/Modeling_helper_functions.R")
+source("../../code/helper_functions/Plotting_helper_functions.R")
+source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 ```
 
 # Step 2: Create datasets for each analysis 
@@ -198,7 +198,7 @@ models <- data %>%
 ```
 
 ## Step 5: Check assumptions
-```{r, fig.show = 'hide', results = 'hide', eval = FALSE}
+```{r, fig.show = 'hide', results = 'hide'}
 assumption_checks <- models %>%
   mutate(re_plot = pmap(list(model, title, subtitle), ~check_re(model = ..1, plot_title = ..2, plot_subtitle = ..3))) %>%
   mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
@@ -220,7 +220,7 @@ assumption_checks <- models %>%
 
 
 #Export diagnostic plots because they load very slowly in RStudio
-path_name <- c("results/statistical_analysis/assumption_checks/telemetry")
+path_name <- c("../../results/statistical_analysis/assumption_checks/telemetry")
 walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
 walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
 walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
@@ -251,7 +251,7 @@ results <- models %>%
 
 ## Step 7: Export results as rds file
 ```{r}
-saveRDS(results, "results/statistical_analysis/rds_files/Telemetry_results.rds")
+saveRDS(results, "../../results/statistical_analysis/rds_files/Telemetry_results.rds")
 ```
 
 *WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES IN ONE MASTER SCRIPT*
