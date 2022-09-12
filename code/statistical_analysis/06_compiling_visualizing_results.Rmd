@@ -315,7 +315,7 @@ interaction_plots_cameras_all <- interaction_plots %>%
   filter(subanalysis == "all_birds") %>%
   arrange(yvar, analysis, bird_group)
 
-interaction_multiplot_cameras_all <- ggarrange(plotlist = interaction_plots_cameras_all$interaction_plot, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom")
+interaction_multiplot_cameras_all <- ggarrange(plotlist = interaction_plots_cameras_all$interaction_plot, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom", align = "hv", labels = "AUTO", font.label = list(size = 16, face = "plain"))
 interaction_multiplot_cameras_all
 
 #CAMERAS (MARKED BIRDS)
@@ -324,7 +324,7 @@ interaction_plots_cameras_marked <- interaction_plots %>%
   filter(subanalysis == "marked_birds") %>%
   arrange(yvar, analysis, bird_group)
 
-interaction_multiplot_cameras_marked <- ggarrange(plotlist = interaction_plots_cameras_marked$interaction_plot, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom")
+interaction_multiplot_cameras_marked <- ggarrange(plotlist = interaction_plots_cameras_marked$interaction_plot, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom", align = "hv", labels = "AUTO", font.label = list(size = 16, face = "plain"))
 interaction_multiplot_cameras_marked
 
 #CAPTURES + TELEMETRY
@@ -333,15 +333,16 @@ interaction_plots_captures_telemetry <- interaction_plots %>%
   filter(subanalysis != "all_replicates") %>%
   arrange(yvar, analysis, bird_group)
 
-interaction_multiplot_captures_telemetry <- ggarrange(plotlist = interaction_plots_captures_telemetry$interaction_plot, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom")
+interaction_multiplot_captures_telemetry <- ggarrange(plotlist = interaction_plots_captures_telemetry$interaction_plot, nrow = 2, ncol = 2, common.legend = TRUE, legend = "bottom", align = "hv", labels = "AUTO", font.label = list(size = 16, face = "plain"))
 interaction_multiplot_captures_telemetry
 
 #POLLEN TUBES
 interaction_plots_pollination <- interaction_plots %>%
   filter(analysis == "pollen_tubes") %>%
-  arrange(yvar, analysis)
+  mutate(subanalysis = factor(subanalysis, levels = c("HETO", "HAPA"), ordered = TRUE)) %>%
+  arrange(yvar, subanalysis)
 
-interaction_multiplot_pollination <- ggarrange(plotlist = interaction_plots_pollination$interaction_plot, nrow = 1, ncol = 2, common.legend = TRUE, legend = "bottom")
+interaction_multiplot_pollination <- ggarrange(plotlist = interaction_plots_pollination$interaction_plot, nrow = 1, ncol = 2, common.legend = TRUE, legend = "bottom", align = "hv", labels = "AUTO", font.label = list(size = 16, face = "plain"))
 interaction_multiplot_pollination
 
 #BODY MASS
@@ -349,7 +350,7 @@ interaction_plots_body_mass <- interaction_plots %>%
   filter(analysis == "body_mass") %>%
   arrange(yvar, analysis)
 
-interaction_multiplot_body_mass <- ggarrange(plotlist = interaction_plots_body_mass$interaction_plot, nrow = 1, ncol = 2, common.legend = TRUE, legend = "bottom")
+interaction_multiplot_body_mass <- ggarrange(plotlist = interaction_plots_body_mass$interaction_plot, nrow = 1, ncol = 2, common.legend = TRUE, legend = "bottom", align = "hv", labels = "AUTO", font.label = list(size = 16, face = "plain"))
 interaction_multiplot_body_mass
 ```
 
