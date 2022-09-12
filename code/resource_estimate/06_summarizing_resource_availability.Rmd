@@ -51,7 +51,8 @@ library(ggpubr)
 ```{r step1}
 #Resource survey data. Use this unfiltered dataset for any calculations of species richness. Note that there are 'low' and 'high' estimates based on counting units.
 resource_data <- read.csv("../../data/export/intermediate/Resource_counts_2016-2018_with_calories.csv") %>% 
-  select(-X, -calories, -flowers_per)
+  select(-X, -calories, -flowers_per) %>%
+  mutate(year_patch = paste(year, patch, sep = "_"))
 
 #Info about focal area size
 focal_area_sizes <- read.csv("../../data/export/intermediate/Focal_area_sizes_and_centroids.csv") %>%
@@ -130,15 +131,17 @@ focal_area_sizes_to_join <- focal_area_sizes %>%
 ```{r step4}
 #At level of CALORIES
 resource_data_sum_calories <- resource_data_to_summarize %>%
-  group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %>%
+  group_by(count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_calories = sum(calories_per_plant, na.rm = TRUE)) %>%
   ungroup()
 
 #At level of PLANTS, for Heliconia
 heto_inflor_removed_remaining <- resource_data_to_summarize %>%
   filter(species_code == "HETO" & count_estimate_high_low == "high") %>%
-  group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %>%
-  summarise(num_plants = n()) %>%
+  group_by(count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %>%
+  summarise(num_plants = n(),
+            num_flowers = sum(num_flowers_estimate, na.rm = TRUE),
+            num_calories = sum(calories_per_plant, na.rm = TRUE)) %>%
   ungroup()
 ```
 
@@ -230,17 +233,27 @@ proportion_heto_removed_sum
 ```{r step7}
 #Summarize across removed and remaining, since I am interested all Heliconia plants (including those that were removed as part of treatment)
 heto_densities <- heto_inflor_removed_remaining %>%
-  group_by(count_estimate_high_low, year, patch, control_treatment, heto_nonheto) %>%
-  summarise(num_plants = sum(num_plants)) %>%
+  group_by(count_estimate_high_low, year, patch, year_patch, control_treatment, heto_nonheto) %>%
+  summarise(num_plants = sum(num_plants),
+            num_flowers = sum(num_flowers),
+            num_calories = sum(num_calories)) %>%
   ungroup() %>%
   filter(heto_nonheto == "heto_only") %>%
   filter(count_estimate_high_low == "high") %>%
   left_join(focal_area_sizes_to_join) %>%
-  mutate(heto_per_ha = num_plants/area) %>%
-  select(-heto_nonheto, -count_estimate_high_low)
+  mutate(inflors_per_ha = num_plants/area,
+         flowers_per_ha = num_flowers/area,
+         calories_per_ha = num_calories/area) %>%
+  select(-heto_nonheto, -count_estimate_high_low) %>%
+  mutate(across(c(contains("per_ha"), "num_calories"), ~round(., digits = 0))) %>%
+  arrange(patch, year_patch)
 
 heto_densities_sum <- heto_densities %>%
-  calculate_basic_summary_stats(variable = heto_per_ha)
+  select(-contains("num")) %>%
+  pivot_longer(cols = c(inflors_per_ha, flowers_per_ha, calories_per_ha), values_to = "value", names_to = "unit") %>%
+  group_by(unit) %>%
+  calculate_basic_summary_stats(variable = c(value)) %>%
+  mutate(across(where(is.numeric), ~round(., digits = 0)))
 
 heto_densities_sum
 ```
@@ -254,10 +267,12 @@ proportion_calories_removed <- resource_data_sum_calories %>%
   ungroup() %>%
   pivot_wider(names_from = removed_remaining, values_from = num_calories) %>%
   filter(control_treatment == "treatment") %>%
-  mutate(proportion_removed = removed/(removed + remaining))
+  mutate(proportion_removed = removed/(removed + remaining)) %>%
+  mutate(across(where(is.numeric), ~round(., digits = 1)))
 
 proportion_calories_removed_sum <- proportion_calories_removed %>%
-  calculate_basic_summary_stats(variable = proportion_removed)
+  calculate_basic_summary_stats(variable = proportion_removed) %>%
+  mutate(across(where(is.numeric), ~round(., digits = 1)))
 
 proportion_calories_removed_sum
 
@@ -413,11 +428,23 @@ proportion_calories_removed_tailored <- resource_data_sum_calories %>%
   ungroup() %>%
   pivot_wider(names_from = removed_remaining, values_from = num_calories) %>%
   filter(control_treatment == "treatment") %>%
-  mutate(proportion_removed = removed/(removed + remaining))
+  mutate(proportion_removed = removed/(removed + remaining)) %>%
+  mutate(percentage_removed = proportion_removed * 100) %>%
+  mutate(across(c(percentage_removed), ~round(., digits = 1)))
 
+#Get into format of Supp table
+proportion_calories_removed_tailored_supp <- proportion_calories_removed_tailored %>%
+  select(subset, count_estimate_high_low, bird_group, year, patch, control_treatment, percentage_removed) %>% 
+  filter(count_estimate_high_low == "high") %>%
+  pivot_wider(names_from = c(subset, bird_group), values_from = percentage_removed) %>%
+  arrange(none_NA)
+
+#Summary stats
 proportion_calories_removed_tailored_sum <- proportion_calories_removed_tailored %>%
-  group_by(count_estimate_high_low, subset, bird_group) %>%
-  calculate_basic_summary_stats(variable = proportion_removed)
+  filter(count_estimate_high_low == "high") %>%
+  group_by(subset, bird_group) %>%
+  calculate_basic_summary_stats(variable = percentage_removed) %>%
+  mutate(across(where(is.numeric), ~round(., digits = 1)))
 
 proportion_calories_removed_tailored_sum
 ```
@@ -469,8 +496,10 @@ write.csv(heto_removed_as_treatment, "../../data/export/for_analysis/Heliconia_r
 write.csv(heto_removed, "../../data/export/supp_tables/Heliconia_resources_removed.csv")
 write.csv(heto_removed_sum, "../../data/export/supp_tables/Heliconia_resources_removed_sum.csv")
 write.csv(weights, "../../data/export/supp_tables/Weights_for_resource_estimate.csv")
-write.csv(proportion_calories_removed_tailored, "../../data/export/supp_tables/Proportion_calories_removed.csv")
+write.csv(proportion_calories_removed_tailored_supp, "../../data/export/supp_tables/Proportion_calories_removed.csv")
 write.csv(proportion_calories_removed_tailored_sum, "../../data/export/supp_tables/Proportion_calories_removed_sum.csv")
+write.csv(heto_densities, "../../data/export/supp_tables/Heliconia_densities.csv")
+write.csv(heto_densities_sum, "../../data/export/supp_tables/Heliconia_densities_sum.csv")
 
 #Figures
 path_name <- c("../../results/resource_estimate/figures")

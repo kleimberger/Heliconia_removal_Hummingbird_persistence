@@ -424,7 +424,8 @@ and 1 (weight of 1 = most frequently visited species).</p></li>
 <h2>Step 1: Import data and helper functions</h2>
 <pre class="r"><code>#Resource survey data. Use this unfiltered dataset for any calculations of species richness. Note that there are &#39;low&#39; and &#39;high&#39; estimates based on counting units.
 resource_data &lt;- read.csv(&quot;../../data/export/intermediate/Resource_counts_2016-2018_with_calories.csv&quot;) %&gt;% 
-  select(-X, -calories, -flowers_per)
+  select(-X, -calories, -flowers_per) %&gt;%
+  mutate(year_patch = paste(year, patch, sep = &quot;_&quot;))
 
 #Info about focal area size
 focal_area_sizes &lt;- read.csv(&quot;../../data/export/intermediate/Focal_area_sizes_and_centroids.csv&quot;) %&gt;%
@@ -512,15 +513,17 @@ focal_area_sizes_to_join &lt;- focal_area_sizes %&gt;%
 <h2>Step 4: Calculate resources removed and resources remaining</h2>
 <pre class="r"><code>#At level of CALORIES
 resource_data_sum_calories &lt;- resource_data_to_summarize %&gt;%
-  group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %&gt;%
+  group_by(count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %&gt;%
   summarise(num_calories = sum(calories_per_plant, na.rm = TRUE)) %&gt;%
   ungroup()
 
 #At level of PLANTS, for Heliconia
 heto_inflor_removed_remaining &lt;- resource_data_to_summarize %&gt;%
   filter(species_code == &quot;HETO&quot; &amp; count_estimate_high_low == &quot;high&quot;) %&gt;%
-  group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %&gt;%
-  summarise(num_plants = n()) %&gt;%
+  group_by(count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %&gt;%
+  summarise(num_plants = n(),
+            num_flowers = sum(num_flowers_estimate, na.rm = TRUE),
+            num_calories = sum(calories_per_plant, na.rm = TRUE)) %&gt;%
   ungroup()</code></pre>
 </div>
 <div id="step-5-calculate-heliconia-removed-in-all-sites-and-years-quantitative-version-of-treatment" class="section level2">
@@ -618,30 +621,42 @@ proportion_heto_removed_sum</code></pre>
 <pre><code>## # A tibble: 1 × 6
 ##     min   max  mean     sd median     n
 ##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1   0.8 0.996 0.959 0.0545  0.983    16</code></pre>
+## 1   0.8 0.996 0.969 0.0492  0.986    16</code></pre>
 </div>
 <div id="step-7-calculate-natural-density-of-heliconia-in-all-sites" class="section level2">
 <h2>Step 7: Calculate natural density of <em>Heliconia</em> in all
 sites</h2>
 <pre class="r"><code>#Summarize across removed and remaining, since I am interested all Heliconia plants (including those that were removed as part of treatment)
 heto_densities &lt;- heto_inflor_removed_remaining %&gt;%
-  group_by(count_estimate_high_low, year, patch, control_treatment, heto_nonheto) %&gt;%
-  summarise(num_plants = sum(num_plants)) %&gt;%
+  group_by(count_estimate_high_low, year, patch, year_patch, control_treatment, heto_nonheto) %&gt;%
+  summarise(num_plants = sum(num_plants),
+            num_flowers = sum(num_flowers),
+            num_calories = sum(num_calories)) %&gt;%
   ungroup() %&gt;%
   filter(heto_nonheto == &quot;heto_only&quot;) %&gt;%
   filter(count_estimate_high_low == &quot;high&quot;) %&gt;%
   left_join(focal_area_sizes_to_join) %&gt;%
-  mutate(heto_per_ha = num_plants/area) %&gt;%
-  select(-heto_nonheto, -count_estimate_high_low)
+  mutate(inflors_per_ha = num_plants/area,
+         flowers_per_ha = num_flowers/area,
+         calories_per_ha = num_calories/area) %&gt;%
+  select(-heto_nonheto, -count_estimate_high_low) %&gt;%
+  mutate(across(c(contains(&quot;per_ha&quot;), &quot;num_calories&quot;), ~round(., digits = 0))) %&gt;%
+  arrange(patch, year_patch)
 
 heto_densities_sum &lt;- heto_densities %&gt;%
-  calculate_basic_summary_stats(variable = heto_per_ha)
+  select(-contains(&quot;num&quot;)) %&gt;%
+  pivot_longer(cols = c(inflors_per_ha, flowers_per_ha, calories_per_ha), values_to = &quot;value&quot;, names_to = &quot;unit&quot;) %&gt;%
+  group_by(unit) %&gt;%
+  calculate_basic_summary_stats(variable = c(value)) %&gt;%
+  mutate(across(where(is.numeric), ~round(., digits = 0)))
 
 heto_densities_sum</code></pre>
-<pre><code>## # A tibble: 1 × 6
-##     min   max  mean    sd median     n
-##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1  3.24 1131.  186.  228.   145.    26</code></pre>
+<pre><code>## # A tibble: 3 × 7
+##   unit              min   max  mean    sd median     n
+##   &lt;chr&gt;           &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;
+## 1 calories_per_ha   134 20481  5731  5729   4001    26
+## 2 flowers_per_ha      2   372   104   104     72    26
+## 3 inflors_per_ha      3  1131   186   228    144    26</code></pre>
 </div>
 <div id="step-8-calculate-proportion-of-calories-removed-in-treatment-areas" class="section level2">
 <h2>Step 8: Calculate proportion of calories removed in treatment
@@ -653,16 +668,18 @@ proportion_calories_removed &lt;- resource_data_sum_calories %&gt;%
   ungroup() %&gt;%
   pivot_wider(names_from = removed_remaining, values_from = num_calories) %&gt;%
   filter(control_treatment == &quot;treatment&quot;) %&gt;%
-  mutate(proportion_removed = removed/(removed + remaining))
+  mutate(proportion_removed = removed/(removed + remaining)) %&gt;%
+  mutate(across(where(is.numeric), ~round(., digits = 1)))
 
 proportion_calories_removed_sum &lt;- proportion_calories_removed %&gt;%
-  calculate_basic_summary_stats(variable = proportion_removed)
+  calculate_basic_summary_stats(variable = proportion_removed) %&gt;%
+  mutate(across(where(is.numeric), ~round(., digits = 1)))
 
 proportion_calories_removed_sum</code></pre>
 <pre><code>## # A tibble: 1 × 6
-##       min   max  mean    sd median     n
-##     &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1 0.00181 0.779 0.230 0.246  0.134    32</code></pre>
+##     min   max  mean    sd median     n
+##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;
+## 1     0   0.8   0.2   0.3    0.2    32</code></pre>
 <pre class="r"><code>#This summary has not yet been tailored to any hummingbird species! See steps below...</code></pre>
 </div>
 <div id="step-9-tailor-estimates-to-hummingbird-species-groups-part-i-calculate-weights" class="section level2">
@@ -813,28 +830,34 @@ calculate proportion calories removed using the tailored estimate</h2>
   ungroup() %&gt;%
   pivot_wider(names_from = removed_remaining, values_from = num_calories) %&gt;%
   filter(control_treatment == &quot;treatment&quot;) %&gt;%
-  mutate(proportion_removed = removed/(removed + remaining))
+  mutate(proportion_removed = removed/(removed + remaining)) %&gt;%
+  mutate(percentage_removed = proportion_removed * 100) %&gt;%
+  mutate(across(c(percentage_removed), ~round(., digits = 1)))
 
+#Get into format of Supp table
+proportion_calories_removed_tailored_supp &lt;- proportion_calories_removed_tailored %&gt;%
+  select(subset, count_estimate_high_low, bird_group, year, patch, control_treatment, percentage_removed) %&gt;% 
+  filter(count_estimate_high_low == &quot;high&quot;) %&gt;%
+  pivot_wider(names_from = c(subset, bird_group), values_from = percentage_removed) %&gt;%
+  arrange(none_NA)
+
+#Summary stats
 proportion_calories_removed_tailored_sum &lt;- proportion_calories_removed_tailored %&gt;%
-  group_by(count_estimate_high_low, subset, bird_group) %&gt;%
-  calculate_basic_summary_stats(variable = proportion_removed)
+  filter(count_estimate_high_low == &quot;high&quot;) %&gt;%
+  group_by(subset, bird_group) %&gt;%
+  calculate_basic_summary_stats(variable = percentage_removed) %&gt;%
+  mutate(across(where(is.numeric), ~round(., digits = 1)))
 
 proportion_calories_removed_tailored_sum</code></pre>
-<pre><code>## # A tibble: 10 × 9
-## # Groups:   count_estimate_high_low, subset [6]
-##    count_estimate_high_low subset bird_…¹     min   max  mean    sd median     n
-##    &lt;chr&gt;                   &lt;chr&gt;  &lt;chr&gt;     &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-##  1 high                    none   &lt;NA&gt;    0.00181 0.774 0.186 0.238 0.0602    16
-##  2 high                    subset all_spp 0.00441 0.865 0.298 0.252 0.260     16
-##  3 high                    subset greh_v… 0.00442 0.943 0.371 0.284 0.295     16
-##  4 high                    subse… all_spp 0.00414 0.903 0.424 0.309 0.430     16
-##  5 high                    subse… greh_v… 0.00975 0.980 0.650 0.314 0.749     16
-##  6 low                     none   &lt;NA&gt;    0.00255 0.779 0.274 0.254 0.245     16
-##  7 low                     subset all_spp 0.00444 0.872 0.359 0.271 0.392     16
-##  8 low                     subset greh_v… 0.0145  0.951 0.460 0.297 0.465     16
-##  9 low                     subse… all_spp 0.0135  0.928 0.485 0.307 0.534     16
-## 10 low                     subse… greh_v… 0.0381  0.988 0.707 0.317 0.797     16
-## # … with abbreviated variable name ¹​bird_group</code></pre>
+<pre><code>## # A tibble: 5 × 8
+## # Groups:   subset [3]
+##   subset              bird_group   min   max  mean    sd median     n
+##   &lt;chr&gt;               &lt;chr&gt;      &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;dbl&gt;
+## 1 none                &lt;NA&gt;         0.2  77.4  18.6  23.8    6      16
+## 2 subset              all_spp      0.4  86.5  29.8  25.2   26      16
+## 3 subset              greh_visa    0.4  94.3  37.1  28.4   29.5    16
+## 4 subset_and_weighted all_spp      0.4  90.3  42.3  30.9   43      16
+## 5 subset_and_weighted greh_visa    1    98    65    31.4   74.8    16</code></pre>
 <p>Visualize percentage of calories removed</p>
 <pre class="r"><code>#Need to italicize &quot;Heliconia&quot;
 #https://stackoverflow.com/questions/67527379/how-to-italics-and-non-italics-the-part-of-y-axis-labels
@@ -881,8 +904,10 @@ write.csv(heto_removed_as_treatment, &quot;../../data/export/for_analysis/Helico
 write.csv(heto_removed, &quot;../../data/export/supp_tables/Heliconia_resources_removed.csv&quot;)
 write.csv(heto_removed_sum, &quot;../../data/export/supp_tables/Heliconia_resources_removed_sum.csv&quot;)
 write.csv(weights, &quot;../../data/export/supp_tables/Weights_for_resource_estimate.csv&quot;)
-write.csv(proportion_calories_removed_tailored, &quot;../../data/export/supp_tables/Proportion_calories_removed.csv&quot;)
+write.csv(proportion_calories_removed_tailored_supp, &quot;../../data/export/supp_tables/Proportion_calories_removed.csv&quot;)
 write.csv(proportion_calories_removed_tailored_sum, &quot;../../data/export/supp_tables/Proportion_calories_removed_sum.csv&quot;)
+write.csv(heto_densities, &quot;../../data/export/supp_tables/Heliconia_densities.csv&quot;)
+write.csv(heto_densities_sum, &quot;../../data/export/supp_tables/Heliconia_densities_sum.csv&quot;)
 
 #Figures
 path_name &lt;- c(&quot;../../results/resource_estimate/figures&quot;)
