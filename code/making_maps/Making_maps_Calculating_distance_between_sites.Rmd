@@ -1,0 +1,531 @@
+---
+title: "Making maps of study area"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+
+**Goal**
+
+Make maps illustrating the following:
+
+- The overall study area + sites in which we worked (relative to Las Cruces Biological Station)
+
+- The location of Las Cruces Biological Station within Costa Rica/central America
+
+- The concept of a "focal area" within a site
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(tidyr)
+library(purrr)
+library(ggplot2)
+
+#Spatial packages
+library(sf)
+library(sp)
+library(tmap)
+library(rnaturalearth)
+
+library(dplyr) #load last so that 'select' function does not get masked
+
+#Set up parallel processing
+library(future)
+plan(multisession)
+
+raster::removeTmpFiles(h=0) #this removes all files. If h = 24, removes all temp files more than 24 hours old, etc.
+```
+
+## Step 1: Import data
+
+Experiment data
+```{r}
+#Make variable indicating paired sites
+exp_info <- read.csv("data/import/Experiment_dates_2016-2018.csv") %>%
+  mutate(replicate_id = paste(year, replicate, sep = "_")) %>%
+  distinct(year, patch, replicate_id) %>%
+  rename(replicate = replicate_id) %>%
+  mutate_all(as.character)
+```
+
+Site markers and focal area outlines
+```{r}
+#Focal area outlines
+focal_areas <- sf::st_read("data/export/intermediate/focal_areas_2016-2018.shp")
+focal_areas <- sf::st_transform(focal_areas, crs = 32617) #crs code was somehow lost during export to shapefile. Re-adding here...
+
+proj <- st_crs(focal_areas) #projection. can use this throughout script as needed
+
+#Site markers (focal area centroids)
+centroids <- read.csv("data/export/intermediate/Focal_area_sizes_and_centroids.csv") %>%
+  select(-X, -id) %>%
+  mutate_all(as.character) %>%
+  left_join(exp_info)
+
+centroids_spatial <- st_as_sf(centroids, coords = c("x", "y"))
+centroids_spatial <- st_set_crs(centroids_spatial, value = proj)
+
+#For sites used in multiple years, take average
+mean_centroids <- centroids %>%
+  group_by(patch) %>%
+  summarise(x = mean(as.numeric(x)),
+            y = mean(as.numeric(y)))
+
+mean_centroids_spatial <- st_as_sf(mean_centroids, coords = c("x", "y"))
+mean_centroids_spatial <- st_set_crs(mean_centroids_spatial, value = proj)
+```
+
+Net and camera locations
+```{r}
+#Nets
+nets <- read.csv("data/import/Nets_2016-2018_20210909.csv") %>%
+ distinct(year, patch, net_number, net_length, x_utm, y_utm) %>%
+ arrange(year, patch, net_number) %>%
+ filter(!is.na(x_utm) & !is.na(y_utm)) #remove NAs. 'st_as_sf' cannot handle NAS
+
+nets_spatial <- st_as_sf(nets, coords = c("x_utm", "y_utm"))
+nets_spatial <- st_set_crs(nets_spatial, value = proj)
+
+#Cameras
+cameras <- read.csv("data/import/Camera_locations_2016-2018_20210705.csv") %>%
+ filter(!is.na(x) & !is.na(y)) #remove NAs for coordinates.'st_as_sf' cannot handle NAS
+
+#Cameras at stations (2/site). Some sites have multiple coordinates per station (one per camera). Take average x-y coordinates.
+cameras_stations <- cameras %>%
+    filter(station == 1 | station == 2) %>%
+    group_by(year, patch, station) %>%
+    summarise(x = mean(x),
+              y = mean(y))
+
+cameras_stations_spatial <- st_as_sf(cameras_stations, coords = c("x", "y"))
+cameras_stations_spatial <- st_set_crs(cameras_stations_spatial, value = proj)
+
+#Other cameras, not at stations.
+cameras_no_stations <- cameras %>%
+    filter(is.na(station))
+
+cameras_no_stations_spatial <- st_as_sf(cameras_no_stations, coords = c("x", "y"))
+cameras_no_stations_spatial <- st_set_crs(cameras_no_stations_spatial, value = proj)
+```
+
+Icons symbolizing cameras
+```{r}
+camera_icon_circle = tmap_icons("data/import/Camera_icon_for_map_circle.png") #class = list
+camera_icon = tmap_icons("data/import/Camera_icon_for_map_no_circle.png") #class = list
+```
+
+Coordinate for field station
+```{r}
+#Las Cruces Biological Station
+lcbs = data.frame(x = 284524.95, y = 971675.99, label = "Las Cruces Biological Station")
+lcbs_spatial = st_as_sf(lcbs, coords = c("x", "y"))
+lcbs_spatial <- st_set_crs(lcbs_spatial, value = proj)
+```
+
+Boundary of Coto Brus canton
+```{r}
+coto_brus = read_sf(dsn = "data/import/Cantones_de_Costa_Rica-shp", layer = "5894e940-8455-4376-a1bc-ab05875cd4092020329-1-vyv616.0a2l") %>%
+  filter(NOM_CANT_1 == "COTO BRUS")
+
+coto_brus_utm = sf::st_transform(coto_brus, crs = sf::st_crs(proj)) #set projection to forest projection
+coto_brus_utm_sp = sf::as_Spatial(coto_brus_utm) #sf to sp
+```
+
+Boundaries of countries
+```{r}
+countries = ne_download(scale = 10,
+                       type = "countries",
+                       category = "cultural",
+                       destdir = tempdir(),
+                       load = TRUE,
+                       returnclass = "sf")
+
+countries_subset = countries %>%
+  filter(NAME == "Costa Rica" | NAME == "Nicaragua" | NAME == "Panama")
+
+st_crs(countries_subset)$proj4string #lat/lon
+countries_subset_utm = sf::st_transform(countries_subset, crs = proj)
+```
+
+Forest/non-forest layers
+```{r, include = FALSE, eval = FALSE}
+#My hand-digitized forest/nonforest layer (generally only within 1000m radius of study sites)
+forest = raster::raster("data/import/Leimberger_GE_forest_raster_with_matrix_20200630.tif") 
+raster::crs(forest) #lat/lon
+
+#Chase Mendenhall's digitization as base map. Doesn't cover entire study area, since mostly clipped to Coto Brus boundary
+chase_forest = raster::raster("data/import/Mendenhall_GE_tree_cover_map_hand_digitized.tif")
+raster::crs(chase_forest) #lat/lon
+
+#Convert fron lat/long to UTM
+projstring <- "+proj=utm +zone=17 +ellps=WGS84 +units=m +no_defs" 
+forest = raster::projectRaster(forest, crs = projstring)
+chase_forest = raster::projectRaster(chase_forest, crs = projstring)
+
+#Export the UTM raster layers since this step takes a while to run; can just import the UTM versions moving forward
+path_name <- c("data/export/for_analysis")
+raster::writeRaster(forest, filename = file.path(path_name, "Leimberger_GE_forest_layer_UTM.tif"), overwrite=FALSE)
+raster::writeRaster(chase_forest, filename = file.path(path_name, "Mendenhall_GE_forest_layer_UTM.tif"), overwrite=FALSE)
+```
+
+```{r}
+forest = raster::raster("data/export/for_analysis/Leimberger_GE_forest_layer_UTM.tif") 
+chase_forest = raster::raster("data/export/for_analysis/Mendenhall_GE_forest_layer_UTM.tif")
+```
+
+## Step 2: Process forest layers
+
+My data: reclassify and clip to 1000m buffer around sites (1000-m buffer = "focal landscape")
+```{r}
+#Create base table to be filled in. Will consist of each patch and year combination
+base_table <- focal_areas %>%
+  select(patch, year) %>%
+  st_set_geometry(value = NULL) %>% #drop sf geometry column
+  left_join(exp_info)
+
+#Buffer all centroids to create focal landscapes
+create_landscapes <- function(patch_id, year_id, centroids){
+  
+  #Select centroids corresponding to PATCH AND YEAR
+  
+  if(!is.na(year_id)){
+    
+    centroid <- centroids %>%
+      filter(patch == patch_id & year == year_id)
+  }
+  
+  if(is.na(year_id)){
+    
+    centroid <- centroids %>%
+      filter(patch == patch_id)
+  }
+  
+  centroid_buffer <- st_buffer(centroid, dist = 1000)
+  
+  return(centroid_buffer)
+}
+
+#Run function to add buffers
+
+#One landscape per replicate
+landscapes <- base_table %>%
+  mutate(landscapes = pmap(list(patch, year), ~create_landscapes(patch_id = ..1, year_id = ..2, centroids = centroids_spatial))) %>%
+  select(-year, -patch, -replicate) %>% #Remove to avoid duplicate columns
+  unnest(col = landscapes)
+
+#class(landscapes$geometry) #geometry is a sfc_POLYGON
+
+#One landscape per focal area (for sites that were re-used, this is mean of all centroids)
+mean_landscapes <- base_table %>%
+  distinct(patch) %>%
+  mutate(landscapes = pmap(list(patch), ~create_landscapes(patch_id = ..1, year_id = NA, centroids = mean_centroids_spatial))) %>%
+  select(-patch) %>% #Remove to avoid duplicate columns
+  unnest(col = landscapes) %>%
+  st_as_sf()
+
+# Reclassify all values 
+# https://rdrr.io/cran/raster/man/reclassify.html
+rc_matrix <- matrix(c(-Inf, 1, 0, 1, Inf, 1), ncol=3, byrow=TRUE) #If > -Inf and < 1, should be ZERO. If >= 1 and < Inf, should be ONE.
+forest_reclass <- raster::reclassify(forest, rc_matrix, include.lowest = TRUE, right = FALSE)
+
+#Crop/mask forest raster to focal landscapes
+#Note: these operations seem to cause a large build-up of temp files.
+#raster::removeTmpFiles(h=0) #this removes all files. If h = 24, removes all temp files more than 24 hours old, etc.
+
+#For general study area (all 14 sites + 1000m landscapes)
+forest_landscapes_CROP <- raster::crop(forest_reclass, sf::as_Spatial(mean_landscapes$geometry)) #All focal landscapes, created using mean focal area centroid
+forest_landscapes_MASK <- raster::mask(forest_landscapes_CROP, sf::as_Spatial(mean_landscapes$geometry)) #All focal landscapes, created using mean focal area centroid
+```
+
+Get study area boundary
+```{r}
+#Function to zoom out from bounding box by certain amount. 'layer' is sf object
+zoom_out <- function(layer, adjust){
+  
+  bb = sf::st_bbox(layer)
+  
+  bb_adjust = sf::st_bbox(c(xmin = bb[[1]] - adjust, xmax = bb[[3]] + adjust, ymin = bb[[2]] - adjust, ymax = bb[[4]] + adjust), crs = proj)
+  
+  return(bb_adjust)
+  
+}
+
+#Create bounding boxes for general study area
+#Have to loop through each row
+extent_study_area <- mean_landscapes %>% 
+  mutate(bbox = map(geometry, st_bbox)) %>%
+  mutate(bbox_df = map(bbox, ~as.data.frame(as.list(.x)))) %>%
+  unnest(bbox_df) %>%
+  summarise(xmin = min(xmin),
+            xmax = max(xmax),
+            ymin = min(ymin),
+            ymax = max(ymax))
+
+adjust = 500
+bbox_study_area = sf::st_bbox(c(xmin = extent_study_area$xmin - adjust, xmax = extent_study_area$xmax + adjust, ymin = extent_study_area$ymin - adjust, ymax = extent_study_area$ymax + adjust), crs = proj)
+```
+
+Chase data: reclassify and clip to Coto Brus boundary
+```{r}
+chase_forest_reclass <- raster::reclassify(chase_forest, rc_matrix, include.lowest = TRUE, right = FALSE)
+chase_forest_CROP <- raster::crop(chase_forest_reclass, raster::extent(bbox_study_area$xmin, bbox_study_area$xmax, bbox_study_area$ymin, bbox_study_area$ymax))
+chase_forest_MASK <- raster::mask(chase_forest_CROP, coto_brus_utm_sp) #remove forest outside of canton boundary.
+```
+
+## Step 3: Process spatial data for example site
+
+Bounding boxes/extent for example site to be illustrated in figure
+```{r}
+#Create bounding boxes for example site
+example_site = 30
+example_year = 2018
+
+#Focal area, specific to a given year
+focal_area_example = focal_areas %>%
+  filter(patch == example_site & year == example_year) %>%
+  pull(geometry)
+
+bbox_focal_area_example = focal_area_example %>% zoom_out(layer = ., adjust = 25)
+bbox_focal_area_example
+```
+
+Crop/mask forest raster to focal area
+```{r}
+#Note: these operations seem to cause a large build-up of temp files.
+#raster::removeTmpFiles(h=0) #this removes all files. If h = 24, removes all temp files more than 24 hours old, etc.
+
+#For example site (zoomed in map)
+#Need to crop first (if just mask, resolution goes down A LOT)
+#Order of extent: xmin, xmax, ymin, ymax
+
+#Crop to focal area
+forest_focal_area_example_CROP <- raster::crop(forest_landscapes_MASK, raster::extent(bbox_focal_area_example$xmin, bbox_focal_area_example$xmax, bbox_focal_area_example$ymin, bbox_focal_area_example$ymax)) 
+```
+
+Subset nets, cameras to example site & year
+```{r}
+nets_example = nets_spatial %>%
+  filter(patch == example_site & year == example_year)
+
+cameras_stations_example = cameras_stations_spatial %>%
+    filter(patch == example_site & year == example_year)
+
+cameras_no_stations_example = cameras_no_stations_spatial %>%
+    filter(patch == example_site & year == example_year)
+```
+
+## Step 3: Make maps
+
+Overall study area
+```{r}
+study_area_map = 
+  
+  tm_shape(chase_forest_MASK, bbox = bbox_study_area) +
+    tm_raster(style="cat", palette = c('white', 'grey60'), alpha = 1, legend.show = FALSE) +
+  
+  # tm_shape(coto_brus) +
+  #   tm_borders(lwd = 1, col = "black") +
+
+  tm_shape(forest_landscapes_MASK) +
+    tm_raster(style = "cat", palette = c('white', 'grey60'), legend.show = FALSE) +
+  
+  tm_shape(mean_centroids_spatial) +
+    tm_symbols(shape = 19, col = "black", size = 0.25) +
+
+  tm_shape(lcbs_spatial) +
+    tm_symbols(shape = 4, col = "black", size = 1, border.lwd = 4) +
+    tm_text("label", just = "left", xmod = 0.7, ymod = 0.0, size = 1.5) +
+    
+  tm_compass(type = "arrow", position = c(0.06, 0.1), just = c("center"), size = 2.5, show.labels = 1, text.size = 1.5) + #show.labels value of 1 means only show north
+  tm_scale_bar(position = c(0.24, 0.01), just = c("center"), text.size = 1.5, breaks = c(0, 1, 2, 3, 4, 5), bg.color = "white", bg.alpha = 0) +
+  tm_layout(inner.margins = c(0,0,0,0), outer.margins=c(0,0,0,0), frame.lwd = 2)
+```
+
+Inset map of Costa Rica
+```{r}
+#Bounding box of box -- NEED TO ADJUST TO ZOOM INTO COSTA RICA MORE
+#https://www.jla-data.net/eng/adjusting-bounding-box-of-a-tmap-map/
+bbox_countries = st_bbox(countries_subset_utm)
+
+xrange <- bbox_countries$xmax - bbox_countries$xmin # range of x values
+yrange <- bbox_countries$ymax - bbox_countries$ymin # range of y values
+
+bbox_countries[1] <- bbox_countries[1] + (0.15 * xrange) # xmin - left
+bbox_countries[3] <- bbox_countries[3] - (0.45 * xrange) # xmax - right
+bbox_countries[2] <- bbox_countries[2] + (0.25 * yrange) # ymin - bottom
+bbox_countries[4] <- bbox_countries[4] - (0.35 * yrange) # ymax - top
+
+#Make inset map of countries
+countries_map = 
+  
+  tm_shape(countries_subset_utm, bbox = bbox_countries) +
+    tm_polygons(col = "NAME", palette = c("white", "white", "white"), legend.show = FALSE) + #Order of countries is CR, Nicaragua, Panama. 
+  
+   tm_shape(countries_subset_utm, bbox = bbox_countries) +
+    tm_borders(lwd = 3, col = "black") +
+  
+    #Labels for countries
+    #Origin located at the bottom left, so negative xmod move the text to the left, and negative ymod values to the bottom.
+    tm_shape(countries_subset_utm) +
+      tm_text("NAME", size = 1.5, col = "black", fontface = c("plain"), just = "center", xmod = c(1.5, 1.5, -14), ymod = c(0, -9, 1)) + #Position of country names depends on export size
+
+    #Las Cruces Biological Station
+    tm_shape(lcbs_spatial) +
+    tm_symbols(shape = 4, col = "black", size = 4, border.lwd = 10) +
+
+    tm_layout(inner.margins = c(0,0,0,0), outer.margins=c(0,0,0,0), frame.lwd = 4)
+
+countries_map
+```
+
+Zoomed-in map of focal area
+```{r}
+focal_area_map = 
+  
+  #FOREST CLASSIFICATION
+  tm_shape(forest_focal_area_example_CROP, bbox = bbox_focal_area_example, unit = "m") + #Make units m instead of km
+    tm_raster(style="cat", palette = c('white', 'grey60'), legend.show = FALSE) +
+
+  #FOCAL AREA (OUTLINED)
+  tm_shape(focal_area_example) +
+    tm_borders(lwd = 5,  col = "#BA0022") +
+  
+  #FOCAL AREA (FILLED)
+  # tm_shape(focal_area_example) +
+  #   tm_polygons(col = "#BA0022", border.col = NULL) +
+  
+  #MIST NETS
+  tm_shape(nets_example) +
+    tm_symbols(shape = 24, col = 'black', alpha = 1, size = 0.2,  border.lwd = 1, border.col = "black") +
+
+  #CAMERAS - STATIONS
+  tm_shape(cameras_stations_example) +
+    tm_symbols(shape = camera_icon_circle, border.col = NULL, size = 0.8, legend.shape.show = FALSE) +
+
+  #CAMERAS - ADDITIONAL LOCATIONS
+   tm_shape(cameras_no_stations_example) +
+    tm_symbols(shape = camera_icon, border.col = NULL, size = 0.8, legend.shape.show = FALSE) +
+
+  tm_scale_bar(position = c("left", "bottom"), text.size = 1.5, breaks = c(0, 50, 100), bg.color = "white", bg.alpha = 0) + 
+  tm_layout(inner.margins = c(0,0,0,0), outer.margins=c(0,0,0,0), frame.lwd = 4)
+```
+
+## Step 5: Make legend
+
+Export as png because sizing is super wonky otherwise (auto-adjusts, so don't have much control)
+
+https://github.com/mtennekes/tmap/issues/312
+The content of the legend will have some width, based on the content of the legend itself, and on parameters such as legend.text.size. Let me call this the normal legend width.
+
+legend.width is a a threshold value. When the normal legend width is smaller than legend.width, nothing happens, but when it is larger, the content of the legend will be shrunk by decreasing the font sizes and omitting labels if needed.
+```{r}
+#To add icon and avoid 'Error in shapes[i] - 999: non-numeric argument to binary operator'
+#https://gis.stackexchange.com/questions/389361/adding-tmap-icon-to-legend-in-r
+
+all_layers_legend = 
+  
+  #FOREST CLASSIFICATION
+  tm_shape(forest_focal_area_example_CROP, bbox = bbox_focal_area_example, unit = "km") + #Make units m instead of km
+    tm_raster(style="cat", palette = c('white', 'grey60'), title = "", legend.show = FALSE) +
+    tm_add_legend(title = "", type = "fill", labels = c("Non-forest", "Forest"), col = c('white', 'grey60'), border.lwd = 1, border.col = "black") +
+  
+  #SITE
+  tm_shape(mean_centroids_spatial) +
+    tm_symbols(shape = 21, col = 'black', size = 0.25) +
+    tm_add_legend(type = 'symbol', labels = 'Site', shape = 21, col = 'black', size = 4, border.col = "white", border.lwd = 25) +
+  
+  #FOCAL AREA (OUTLINED)
+  tm_shape(focal_area_example) +
+    tm_borders(lwd = 3,  col = "#BA0022") +
+    tm_add_legend(title = "", type = 'line', labels = 'Focal area', lwd = 5, size = 4, col = "#BA0022", legend.format = list(text.align = "left")) +
+  
+  #MIST NETS
+  tm_shape(nets_example) +
+    tm_symbols(shape = 24, col = 'black', size = 4) +
+    tm_add_legend(title = "", type = 'symbol', labels = 'Mist net', shape = 24, col = 'black', size = 4, border.col = "white", border.lwd = 25) + #Use border line width to create smaller symbol
+  
+  #CAMERAS - STATIONS
+  tm_shape(cameras_stations_example) +
+    tm_symbols(shape = camera_icon_circle, border.col = NULL, size = 1, legend.shape.show = FALSE) +
+    tm_add_legend(title = "", type = "symbol", labels = "Camera station", shape = list(camera_icon_circle), size = 4, border.col = "white") +
+
+  #CAMERAS - ADDITIONAL LOCATIONS
+   tm_shape(cameras_no_stations_example) +
+    tm_symbols(shape = camera_icon, border.col = NULL, size = 1, legend.shape.show = FALSE) +
+    tm_add_legend(title = "", type = "symbol", labels = "Additional camera", shape = list(camera_icon), size = 4, border.col = "white") +
+  
+  #Just get legend
+  tm_layout(legend.only = TRUE,
+            legend.text.size = 3, legend.title.size = 4,
+            inner.margins = c(0,0,0,0), outer.margins=c(0,0,0,0))
+
+all_layers_legend
+```
+
+## Step 6: Calculate distance between sites within replicate (for Methods/Supplemental methods)
+
+```{r}
+#Function to calculate distance between focal landscapes in same replicate
+calculate_distance <- function(data, group_id){
+  
+  #Select landscapes from same group (replicate)
+  data_same_group <- data %>%
+    filter(replicate == group_id)
+  
+  distance <- st_distance(data_same_group$geometry, by_element = FALSE)
+  return(distance[[2]]) #first element in vector is zero; second element is actual distance. 
+
+}
+  
+#Calculate distance between sites
+distances <- base_table %>%
+  mutate(distance = map(replicate, ~calculate_distance(data = centroids_spatial, group_id = .))) %>%
+  unnest(distance) %>%
+  arrange(replicate)
+
+#These are the distances between SITES. Distance between p203 & p30 cannot be calculated (shows up as zero) because there seems be very slight overlap.
+distances_sum <- distances %>%
+  distinct(replicate, distance) %>%
+  mutate(distance = units::drop_units(distance)) %>% #Remove 'unit' attributes (meters)
+  summarise(min = min(distance),
+            max = max(distance),
+            median = median(distance),
+            mean = mean(distance),
+            sd = sd(distance))
+```
+
+## Step 7: Export maps, legend, and distances between sites
+
+Maps
+```{r}
+#NEED TO EXPORT WITH ASPECT RATIO OF BOUNDING BOX TO AVOID EXTRA SPACE BEING EXPORTED
+ar_study_area <- (bbox_study_area$xmax - bbox_study_area$xmin)/(bbox_study_area$ymax - bbox_study_area$ymin) #width/height
+tmap_save(study_area_map, filename = "results/making_maps/Study_area_map.png",
+          dpi=300, height=9, width=9*ar_study_area, units="in")
+
+ar_countries <- (bbox_countries$xmax - bbox_countries$xmin)/(bbox_countries$ymax - bbox_countries$ymin) #width/height
+tmap_save(countries_map, filename = "results/making_maps/Costa_Rica_map.png",
+          dpi=300, height=5, width=5*ar_countries, units="in")
+
+#CRASHES IF TRY TO EXPORT AT 300 DPI AT SIZE LARGER THAN 5x5 :(
+ar_focal_area <- (bbox_focal_area_example$xmax - bbox_focal_area_example$xmin)/(bbox_focal_area_example$ymax - bbox_focal_area_example$ymin) #width/height
+tmap_save(focal_area_map, filename = "results/making_maps/Focal_area_map_Matching_width.png", dpi=300, height=5/ar_focal_area, width=5, units="in") #Width matches width of other small figures
+tmap_save(focal_area_map, filename = "results/making_maps/Focal_area_map_Matching_height.png", dpi=300, height=5, width=5*ar_focal_area, units="in") #Height matches height of other small figures
+```
+
+Legend
+```{r}
+tmap_save(all_layers_legend, filename = "results/making_maps/Legend.png", dpi=300, height=15, width=9, units="in")
+```
+
+Distances
+```{r}
+write.csv(distances, "results/making_maps/Distances_between_paired_sites.csv")
+write.csv(distances_sum, "results/making_maps/Distances_between_paired_sites_sum.csv")
+```
+
