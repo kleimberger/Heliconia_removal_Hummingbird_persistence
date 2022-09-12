@@ -439,6 +439,7 @@ results_tidy_confint &lt;- results_tidy %&gt;%
 
 #Extract number of reps for each dataset
 sample_size &lt;- results %&gt;%
+  filter(model_type == &quot;categorical&quot;) %&gt;% #Will be the same for both models; only need oen
   select(append(append(col_names, &quot;num_obs&quot;), &quot;num_reps&quot;)) %&gt;%
   unnest(cols = num_reps) %&gt;%
   mutate(num_obs = unlist(num_obs)) %&gt;%
