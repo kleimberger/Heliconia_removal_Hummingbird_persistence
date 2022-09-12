@@ -520,7 +520,7 @@ birds_with_data_reliability_issues &lt;- birds_tagged_time_in_patch %&gt;%
   ungroup() %&gt;%
   pivot_wider(names_from = exp_phase, values_from = time_in_patch, values_fill = 0) %&gt;%
   filter(pre == 0 | post == 0) %&gt;%
-  mutate(outcome = &quot;data_reliability_issures&quot;)
+  mutate(outcome = &quot;data_reliability_issues&quot;)
 
 unique(birds_with_data_reliability_issues$frequency) %&gt;% length</code></pre>
 <pre><code>## [1] 4</code></pre>
@@ -567,6 +567,7 @@ table</strong></p>
   bind_rows(birds_with_data_reliability_issues) %&gt;%
   bind_rows(birds_never_in_patch) %&gt;%
   bind_rows(birds_never_in_patch_during_pre) %&gt;%
+  mutate(sex = ifelse(sex == &quot;UF&quot; | sex == &quot;UM&quot;, &quot;U&quot;, sex)) %&gt;% #unknown female and unknown male = unknown sex
   distinct(outcome, species, sex, frequency)
 
 #Radio tracking outcomes, by species/sex
@@ -588,7 +589,7 @@ outcomes</code></pre>
 <pre><code>## # A tibble: 6 × 2
 ##   outcome                   num_birds
 ##   &lt;chr&gt;                         &lt;int&gt;
-## 1 data_reliability_issures          4
+## 1 data_reliability_issues           4
 ## 2 lost_transmitter                  6
 ## 3 never_found                       5
 ## 4 never_in_patch                   17

@@ -170,7 +170,7 @@ birds_with_data_reliability_issues <- birds_tagged_time_in_patch %>%
   ungroup() %>%
   pivot_wider(names_from = exp_phase, values_from = time_in_patch, values_fill = 0) %>%
   filter(pre == 0 | post == 0) %>%
-  mutate(outcome = "data_reliability_issures")
+  mutate(outcome = "data_reliability_issues")
 
 unique(birds_with_data_reliability_issues$frequency) %>% length
 ```
@@ -215,6 +215,7 @@ birds_with_outcomes <- birds_tagged %>%
   bind_rows(birds_with_data_reliability_issues) %>%
   bind_rows(birds_never_in_patch) %>%
   bind_rows(birds_never_in_patch_during_pre) %>%
+  mutate(sex = ifelse(sex == "UF" | sex == "UM", "U", sex)) %>% #unknown female and unknown male = unknown sex
   distinct(outcome, species, sex, frequency)
 
 #Radio tracking outcomes, by species/sex
