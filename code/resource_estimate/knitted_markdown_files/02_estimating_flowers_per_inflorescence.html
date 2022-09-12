@@ -875,7 +875,7 @@ atencio_estimates &lt;- read.csv(&quot;../../data/import/misc_data_for_resource_
 flowers_per_inflorescence &lt;- flowers_per_inflor_data_no_duplicates %&gt;%
   bind_rows(atencio_estimates) %&gt;%
   mutate(flowers_per = ifelse(is.na(flowers_per), median, flowers_per)) %&gt;%
-  mutate(source = factor(source, levels = c(&#39;Birkett inflorescence counts (2014)&#39;, &#39;Notes from resource counts (2016-2018)&#39;, &#39;Nectar sampling (2018)&#39;, &#39;Focal plant flower counts (2017-2018)&#39;, &#39;Estimated by experienced observer&#39;))) %&gt;%
+  mutate(source = factor(source, levels = c(&#39;Birkett inflorescence counts (2014)&#39;, &#39;Notes from resource counts (2016-2018)&#39;, &#39;Nectar sampling (2018)&#39;, &#39;Camera flower counts (2017-2018)&#39;, &#39;Estimated by experienced observer&#39;))) %&gt;%
   arrange(source, count_unit, species_name) %&gt;%
   select(species_code, species_name, source, num_inflors_sampled, num_plants_sampled, num_sampling_dates_per_plant, min:median, count_unit, flowers_per, everything(), -species_unit, -notes, -sampling_amount)</code></pre>
 </div>
@@ -915,7 +915,7 @@ total_trees &lt;- tree_plants %&gt;%
 </div>
 <div id="step-11-export-data" class="section level2">
 <h2>Step 11: Export data</h2>
-<pre class="r"><code>path_name &lt;- c(&quot;../../data/export/intermediate&quot;)
+<pre class="r"><code>path_name &lt;- c(&quot;../../data/export/supp_tables&quot;)
 
 #Key for converting HETO bracts to flowers + some additional info for supp table
 write.csv(heto_flowers_per_bract_for_supp, file.path(path_name, &quot;Heliconia_flowers_per_bracts_key.csv&quot;))

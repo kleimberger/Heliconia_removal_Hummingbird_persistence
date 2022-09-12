@@ -392,7 +392,7 @@ code works fine.</em></p>
 <pre class="r"><code>#Summary of nectar volume/concentration measurements collected in field
 #Need to rename GIN-ROS-AMA because there is another unknown Renealmia species
 #Decided to use mean nectar volume and nectar concentration (instead of median) since that is value most commonly found in literature
-nectar_field &lt;- read.csv(&quot;../../data/export/intermediate/Nectar_volume_and_concentration_summary.csv&quot;) %&gt;%
+nectar_field &lt;- read.csv(&quot;../../data/export/supp_tables/Nectar_volume_and_concentration_summary.csv&quot;) %&gt;%
   select(-X) %&gt;%
   mutate(speciesName = ifelse(species == &quot;GIN-ROS-AMA&quot;, &quot;Renealmia sp. 2&quot;, as.character(speciesName))) %&gt;%
   select(species, speciesName, family, nectarVol_micro = mean_vol, nectarConc = mean_conc, everything()) %&gt;%
@@ -459,7 +459,7 @@ nectar_data_with_calories &lt;- nectar_data %&gt;%
 </div>
 <div id="step-4-export-data" class="section level2">
 <h2>Step 4: Export data</h2>
-<pre class="r"><code>path_name &lt;- c(&quot;../../data/export/intermediate&quot;)
+<pre class="r"><code>path_name &lt;- c(&quot;../../data/export/supp_tables&quot;)
 write.csv(nectar_data_with_calories, file.path(path_name, &quot;Nectar_volume_concentration_and_calories_summary.csv&quot;))</code></pre>
 </div>
 

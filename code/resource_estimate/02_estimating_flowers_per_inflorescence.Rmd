@@ -458,7 +458,7 @@ atencio_estimates <- read.csv("../../data/import/misc_data_for_resource_estimate
 flowers_per_inflorescence <- flowers_per_inflor_data_no_duplicates %>%
   bind_rows(atencio_estimates) %>%
   mutate(flowers_per = ifelse(is.na(flowers_per), median, flowers_per)) %>%
-  mutate(source = factor(source, levels = c('Birkett inflorescence counts (2014)', 'Notes from resource counts (2016-2018)', 'Nectar sampling (2018)', 'Focal plant flower counts (2017-2018)', 'Estimated by experienced observer'))) %>%
+  mutate(source = factor(source, levels = c('Birkett inflorescence counts (2014)', 'Notes from resource counts (2016-2018)', 'Nectar sampling (2018)', 'Camera flower counts (2017-2018)', 'Estimated by experienced observer'))) %>%
   arrange(source, count_unit, species_name) %>%
   select(species_code, species_name, source, num_inflors_sampled, num_plants_sampled, num_sampling_dates_per_plant, min:median, count_unit, flowers_per, everything(), -species_unit, -notes, -sampling_amount)
 ```
@@ -496,7 +496,7 @@ total_trees <- tree_plants %>%
 
 ## Step 11: Export data
 ```{r step11, message = FALSE}
-path_name <- c("../../data/export/intermediate")
+path_name <- c("../../data/export/supp_tables")
 
 #Key for converting HETO bracts to flowers + some additional info for supp table
 write.csv(heto_flowers_per_bract_for_supp, file.path(path_name, "Heliconia_flowers_per_bracts_key.csv"))

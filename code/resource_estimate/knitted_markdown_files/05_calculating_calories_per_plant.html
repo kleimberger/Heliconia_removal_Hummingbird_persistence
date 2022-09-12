@@ -406,6 +406,8 @@ calories. This is the column to join by.</p>
 resource_counts &lt;- read.csv(file.path(path_name, &quot;Resource_counts_2016-2018_with_count_units.csv&quot;)) %&gt;%
   select(-X, -row_id)
 
+path_name &lt;- c(&quot;../../data/export/supp_tables&quot;)
+
 #Heliconia flowers/bract. I.e. for a given number of open bracts, how many flowers are probably open?
 flowers_per_bracts &lt;- read.csv(file.path(path_name, &quot;Heliconia_flowers_per_bracts_key.csv&quot;)) %&gt;%
   mutate(species_code_for_calories = &quot;HETO&quot;) %&gt;% 
