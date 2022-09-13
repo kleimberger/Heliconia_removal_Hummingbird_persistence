@@ -11,7 +11,7 @@
 
 
 
-<title>Filtering and summarizing camera data for analysis</title>
+<title>Summarizing camera methods</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -361,398 +361,342 @@ pre code {
 
 
 
-<h1 class="title toc-ignore">Filtering and summarizing camera data for
-analysis</h1>
+<h1 class="title toc-ignore">Summarizing camera methods</h1>
 
 </div>
 
 
-<p><strong>Goal</strong></p>
-<p>Filter and summarize data for different analyses.</p>
-<p><strong>Approach</strong></p>
-<p>Filter camera data to remove:</p>
-<ul>
-<li>Videos where no flowers were present</li>
-<li>Videos from afternoon of covering day; these likely reflect
-behavioral adjustment by hummingbirds, not the experimental outcome or
-‘normal’ visitation</li>
-</ul>
-<p>Then, subset this dataset (‘full dataset’) into different datasets
-for different analyses.</p>
+<p><strong>Overall goals:</strong></p>
 <ol style="list-style-type: decimal">
-<li>Experimental dataset</li>
+<li>Summarize video effort in various dimensions:</li>
 </ol>
-<p><strong>Purpose:</strong> Investigate hummingbird responses to
-experimental Heliconia removal, following Before-After-Control-Impact
-design</p>
 <ul>
-<li>Needs cameras to have data from pre AND post periods, because I’m
-interested in the pre-to-post change</li>
-<li>Only includes data from pre and post periods, not videos reviewed
-outside of those periods</li>
+<li>Number of cameras per replicate</li>
+<li>Number of plant species per replicate</li>
 </ul>
+<p>[Note: video hours have already been summarizing in script
+summarizing camera data]</p>
 <ol start="2" style="list-style-type: decimal">
-<li>‘Normal’ (unmanipulated) dataset</li>
+<li>Calculate additional summary stats and information for
+methods/supplemental methods:</li>
 </ol>
-<p><strong>Purpose:</strong> Understand ‘normal’ visitation patterns in
-this study system. Use to tailor resource estimate to different
-hummingbird groups &amp; understand ‘normal’ visitation to <em>Heliconia
-tortuosa.</em></p>
 <ul>
-<li>Not bound by the requirements in #1.</li>
-<li>Only includes data from control replicates and ‘pre’ period of
-treatment replicates; do not want data affected by Heliconia
-removal</li>
+<li>Percentage of cameras at stations (‘station’ = cluster of plants +
+cameras, 2 stations per site)</li>
+<li>Distance between stations</li>
+<li>What plant species were in pots (we brought these species in to
+create a ‘floral array’ at each station)</li>
 </ul>
-<div id="step-1-import-data" class="section level2">
-<h2>Step 1: Import data</h2>
-<pre class="r"><code>##  Import camera data
-## 1. Create column for unique camera ID
-## 2. Convert start/end columns into period objects, so can treat them as times when filtering out afternoon videos from covering days
-camera_data &lt;- read.csv(&quot;../../data/import/Camera_data_with_flower_counts_2016-2018_20220712.csv&quot;) %&gt;%
-  mutate(camera_id = paste(year, patch, plant_species, camera_num, sep = &quot;_&quot;)) %&gt;% 
-  mutate(across(c(video_start, video_end), ~lubridate::hm(.))) %&gt;%
-  mutate(across(c(sighting_start, sighting_end), ~lubridate::hms(.)))
+<div id="step-1-get-data" class="section level2">
+<h2>Step 1: Get data</h2>
+<pre class="r"><code>#Video data to analyze
+data_experiment &lt;- read.csv(&quot;../../data/export/intermediate/Camera_data_filtered_for_experiment.csv&quot;)
 
-## Source helper functions
-source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)
-source(&quot;../../code/helper_functions/Summarize_camera_data.R&quot;)</code></pre>
+#Experimental timeline data (what happened on each day)
+exp_info &lt;- read.csv(&quot;../../data/import/Experiment_dates_2016-2018.csv&quot;)
+
+#Camera location data
+camera_locations &lt;- read.csv(&quot;../../data/import/Camera_locations_2016-2018_20210705.csv&quot;) %&gt;%
+  rename(control_treatment = control_trmt)
+
+#Plant scientific name, etc. for supplement
+plant_info &lt;- read.csv(&quot;../../data/import/Plant_codes_species_list.csv&quot;) %&gt;%
+  select(family, species_name, plant_species = species_code)
+
+#Function to calculate basic summary stats (mean, median, etc.)
+source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)</code></pre>
 </div>
-<div id="step-2-run-some-initial-checks-before-filtering" class="section level2">
-<h2>Step 2: Run some initial checks before filtering</h2>
-<pre class="r"><code>## Check strings that failed to parse in previous step
-check01 &lt;- camera_data %&gt;%
-  filter(if_any(c(video_start, video_end), ~is.na(.)))
-
-## Are there any missing start/end times for sightings within a video?
-## Filter to rows with sighting start/end times (no sightings = NA = no times to parse = warning message)
-check02 &lt;- camera_data %&gt;%
-  filter(if_any(c(sighting_start, sighting_end), ~is.na(.))) %&gt;%
-  filter(sightings_yes_or_no == &quot;Y&quot;)
-
-## Are there videos from non-priority dates?
-## &quot;Priority&quot; = days in between capture sessions, omitting the day after cover day (for treatment sites) or its equivalent (for control sites)
-check03 &lt;- camera_data %&gt;%
-  filter(video_priority != 1) %&gt;%
-  select(contains(&quot;day&quot;), everything()) %&gt;% 
-  arrange(exp_day, control_count_day, trmt_day_after_cover)
-
-## Are there videos without any visible flowers?
-check06 &lt;- camera_data %&gt;%
-  filter(flowers_camera_video == 0)
-
-## It doesn&#39;t really make sense to analyze videos with no visible flowers, but out of curiosity...do hummingbirds ever visit anyway?
-## &quot;Sighting&quot; = hummingbird appears on camera, &quot;Visit&quot; = hummingbird appears to drink from flower
-check04 &lt;- camera_data %&gt;%
-  filter(flowers_camera_video == 0 &amp; sightings_yes_or_no == &quot;Y&quot; &amp; visit_type != &quot;none&quot;) 
-
-## Are there sightings from the afternoon of cover day? 
-## Covering is a big disturbance to the site, so we should NOT use these data...and especially should not consider them &#39;pre&#39; data!
-check05 &lt;- camera_data %&gt;%
-  filter(cover_day == 1) %&gt;%
-  filter(video_end &gt;= lubridate::hm(&quot;11:30&quot;)) %&gt;%
-  filter(sightings_yes_or_no == &quot;Y&quot;)</code></pre>
-</div>
-<div id="step-3-filter-data-for-all-analyses" class="section level2">
-<h2>Step 3: Filter data for all analyses</h2>
-<p>Remove videos with no flowers on camera (videos were typically not
-reviewed if they had no flowers, but some were reviewed anyway).</p>
-<pre class="r"><code>## I will still include NAs, since some plants never had flowers visible on video (i.e., MARA-VER, GINGY)
-camera_data02 &lt;- camera_data %&gt;%
-  filter(flowers_camera_video &gt; 0 | is.na(flowers_camera_video))</code></pre>
-<p>Remove sightings from afternoon of cover day (treatment sites only).
-Here, ‘afternoon’ = videos starting after 11:30 AM</p>
-<pre class="r"><code>## Videos that start (and end) after 11:30 (will just remove these)
-treatment_videos_pm &lt;- camera_data02 %&gt;%
-  filter(cover_day == 1 &amp; control_treatment == &quot;treatment&quot;) %&gt;%
-  filter(video_start &gt; hm(&quot;11:30&quot;))
-
-## Videos that span the cutoff time (will change end time to 11:30 and remove sightings after this time)
-treatment_videos_am_pm &lt;- camera_data02 %&gt;%
-  filter(cover_day == 1 &amp; control_treatment == &quot;treatment&quot;) %&gt;%
-  filter(video_start &lt; hm(&quot;11:30&quot;)) %&gt;%
-  filter(video_end &gt; hm(&quot;11:30&quot;))
-
-## Sightings from afternoon of covering
-treatment_sightings_pm &lt;- treatment_videos_am_pm %&gt;%
-  filter(sighting_end &gt; hm(&quot;11:30&quot;))
-
-## 1. Remove videos from afternoon of cover day (i.e., videos starting after 11:30AM)
-## 2. Adjust end time of videos from afternoon of cover day
-## 3. Recalculate video length with updated end times
-## 4. Make &#39;adjusted&#39; video length the new video length
-camera_data03 &lt;- camera_data02 %&gt;% 
-  filter(!(file_id %in% treatment_videos_pm$file_id)) %&gt;% 
-  filter(!(sighting_id %in% treatment_sightings_pm$sighting_id)) %&gt;% 
-  mutate(video_end_adjust = dplyr::if_else(file_id %in% treatment_videos_am_pm$file_id, hm(&quot;11:30&quot;), video_end)) %&gt;%
-  mutate(video_length_adjust = as.numeric(video_end_adjust - video_start, &quot;hours&quot;)) %&gt;%
-  select(row_id:video_length, video_end_adjust, video_length_adjust, everything()) %&gt;%
-  select(-video_length) %&gt;%
-  rename(video_length = video_length_adjust)</code></pre>
-<p>Calculate total number of video hours in full dataset (from which
-smaller datasets are created)</p>
-<pre class="r"><code>hours_per_camera_date &lt;- camera_data03 %&gt;%
-  distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %&gt;%
-  group_by(year, patch, control_treatment, camera_num, date_video, exp_phase) %&gt;%
-  summarise(video_hours = sum(video_length)) %&gt;%
-  ungroup()
-
-#Number of hours, summarized across cameras
-hours_total &lt;- hours_per_camera_date %&gt;%
-  summarise(video_hours = sum(video_hours)) %&gt;%
-  ungroup()
-
-hours_total</code></pre>
-<pre><code>## # A tibble: 1 × 1
-##   video_hours
-##         &lt;dbl&gt;
-## 1      20735.</code></pre>
-<pre class="r"><code>#How many sightings is this?
-camera_data03 %&gt;%
-  filter(visit_type != &quot;none&quot;) %&gt;%
-  distinct(sighting_id) %&gt;%
-  filter(!is.na(sighting_id)) %&gt;%
-  pull(sighting_id) %&gt;%
-  length()</code></pre>
-<pre><code>## [1] 6693</code></pre>
-</div>
-<div id="step-4-filter-data-for-experimental-analyses" class="section level2">
-<h2>Step 4: Filter data for experimental analyses</h2>
-<p>Remove videos that do not correspond to ‘pre’ and ‘post’ dates</p>
-<p>Remove cameras without data pre and post. For the experiment, I’m
-interested in the pre-to-post change over time. No data from a given
-time period means that I cannot look at that change!</p>
-<pre class="r"><code>#Remove dates that do not correspond to pre and post; sometimes videos were reviewed during setup, for example.
-camera_data04 &lt;- camera_data03 %&gt;%
-  filter(video_priority == 1)
-
-#Identify cameras that have data from both experimental periods
-cameras_pre_and_post &lt;- camera_data04 %&gt;%
-  distinct(year, patch, control_treatment, exp_phase, camera_id, date_video) %&gt;%
-  group_by(year, patch, control_treatment, exp_phase, camera_id) %&gt;%
-  summarise(num_dates = n()) %&gt;%
+<div id="step-2-calculate-number-of-plant-species-number-of-cameras-per-replicate" class="section level2">
+<h2>Step 2: Calculate number of plant species + number of cameras per
+replicate</h2>
+<p>I can either calculate these numbers from:</p>
+<ol style="list-style-type: decimal">
+<li>The dataset of hummingbird sightings that will be used in analysis
+(i.e., the one I’ve been working with so far)</li>
+</ol>
+<p>OR</p>
+<ol start="2" style="list-style-type: decimal">
+<li>The dataset of camera locations (data recorded during camera
+installation)</li>
+</ol>
+<p>The first option is more conservative, because not all cameras that
+were set up yielded usable data. For example, perhaps the focal plant
+had no flowers or data were unavailable for both experimental periods,
+etc. However, in the methods section, it might be a bit more natural to
+say “We installed X cameras per replicate” rather than “We obtained
+usable data from X cameras per replicate”.</p>
+<p><strong>Effort summary from sighting dataset (final, usable
+data)</strong></p>
+<pre class="r"><code>#Number of cameras per replicate (there can be multiple plant species per camera)
+cameras_per_replicate = data_experiment %&gt;%
+  distinct(year, patch, control_treatment, camera_num) %&gt;%
+  group_by(year, patch, control_treatment) %&gt;%
+  summarise(num_cameras = n()) %&gt;%
   ungroup() %&gt;%
-  pivot_wider(names_from = exp_phase, values_from = num_dates, values_fill = 0) %&gt;%
-  filter(post &gt; 0 &amp; pre &gt; 0)
+  filter(!is.na(patch))
 
-data_for_experiment &lt;- camera_data04 %&gt;%
-  filter(camera_id %in% cameras_pre_and_post$camera_id)
+cameras_per_replicate_sum = cameras_per_replicate %&gt;%
+    calculate_basic_summary_stats(data = ., variable = num_cameras)
 
-#Calculate hours in this dataset
-hours_experiment &lt;- data_for_experiment %&gt;%
-  distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %&gt;%
-  group_by(year, patch, control_treatment, camera_num, date_video, exp_phase) %&gt;%
-  summarise(video_hours = sum(video_length)) %&gt;%
+#How much does the number of cameras/site vary between control and treatment replicates?
+cameras_per_replicate %&gt;%
+  mutate(control_treatment = factor(control_treatment, levels = c(&quot;control&quot;, &quot;treatment&quot;), labels = c(&quot;Control&quot;, &quot;Treatment&quot;))) %&gt;%
+  ggplot(data = ., aes(x = control_treatment, y = num_cameras, colour = control_treatment)) +
+    geom_violin(position = position_dodge(width = 1), trim = FALSE) +
+    geom_boxplot(position = position_dodge(width = 1), width = 0.25) +
+    geom_point(position = position_jitterdodge(dodge.width = 1, jitter.width = 0.2, jitter.height = 0.2), alpha = 0.5) +
+    labs(y = &quot;Number of cameras&quot;, x = &quot;&quot;, colour = &quot;&quot;) +
+    scale_colour_manual(values = c(&quot;#0E0D37&quot;, &quot;#BA0022&quot;), guide = &quot;none&quot;) +
+    theme_bw(base_size = 18)</code></pre>
+<p><img src="data:image/png;base64,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" width="672" /></p>
+<pre class="r"><code>#Number of plant species per replicate
+species_per_replicate_sum = data_experiment %&gt;%
+  distinct(year, patch, control_treatment, plant_species) %&gt;%
+  group_by(year, patch, control_treatment) %&gt;%
+  summarise(num_species = n()) %&gt;%
   ungroup() %&gt;%
-  summarise(video_hours = sum(video_hours)) %&gt;%
-  ungroup()
-
-hours_experiment</code></pre>
-<pre><code>## # A tibble: 1 × 1
-##   video_hours
-##         &lt;dbl&gt;
-## 1      19870.</code></pre>
-<pre class="r"><code>#How many sightings is this?
-data_for_experiment %&gt;%
-  filter(visit_type != &quot;none&quot;) %&gt;%
-  distinct(sighting_id) %&gt;%
-  filter(!is.na(sighting_id)) %&gt;%
-  pull(sighting_id) %&gt;%
-  length()</code></pre>
-<pre><code>## [1] 6475</code></pre>
-</div>
-<div id="step-5-filter-data-for-normal-visitation" class="section level2">
-<h2>Step 5: Filter data for ‘normal’ visitation</h2>
-<p>Remove data from ‘post’ period of treatment replicates (i.e., data
-affected by experimental <em>Heliconia</em> removal)</p>
-<pre class="r"><code>data_for_normal_visitation &lt;- camera_data03 %&gt;%
-  filter(!(control_treatment == &quot;treatment&quot; &amp; exp_phase == &quot;post&quot;))
-
-#Calculate hours in this dataset
-hours_normal_visitation &lt;- data_for_normal_visitation %&gt;%
-  distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %&gt;%
-  group_by(year, patch, control_treatment, camera_num, date_video, exp_phase) %&gt;%
-  summarise(video_hours = sum(video_length)) %&gt;%
-  ungroup() %&gt;%
-  summarise(video_hours = sum(video_hours)) %&gt;%
-  ungroup()
-
-hours_normal_visitation</code></pre>
-<pre><code>## # A tibble: 1 × 1
-##   video_hours
-##         &lt;dbl&gt;
-## 1      15119.</code></pre>
-</div>
-<div id="step-6-summarize-data-for-experiment" class="section level2">
-<h2>Step 6: Summarize data for experiment</h2>
-<p>Calculate visitation rates for each patch-year (across camera IDs,
-dates)</p>
-<pre class="r"><code>sighting_rates_all_spp = calculate_sighting_rates(data = data_for_experiment, level_org = &quot;plant_species&quot;, level_time = &quot;exp_phase&quot;, level_bird = &quot;camera_spp_combined&quot;, sightings = &quot;with_visit&quot;, include_unknown_spp = FALSE) %&gt;%
-  mutate(bird_group = &quot;all_spp&quot;) #Replace &quot;camera_spp_combined&quot; with &quot;all_spp&quot;
-
-sighting_rates_greh_visa = calculate_sighting_rates(data = data_for_experiment, level_org = &quot;plant_species&quot;, level_time = &quot;exp_phase&quot;, level_bird = list(greh_visa = c(&quot;GREH&quot;, &quot;VISA&quot;)), sightings = &quot;with_visit&quot;, include_unknown_spp = FALSE)
-
-#Combine various summaries
-sighting_rates &lt;- sighting_rates_all_spp %&gt;%
-  bind_rows(sighting_rates_greh_visa) %&gt;%
-  mutate(analysis = ifelse(plant_species == &quot;HETO&quot;, &quot;camera_HETO&quot;, &quot;camera_non-HETO&quot;)) %&gt;%
-  select(analysis, bird_group, everything())</code></pre>
-<p>Calculate visitation rates for each patch-year (across camera IDs,
-dates) - color-marked birds only</p>
-<p>There are some ‘marked’ birds for 2016, before we marked birds with
-nail polish, but those are for radio transmitters. I am only interested
-in birds that can be identified to individual based on color mark, so
-these data will only reflect the last two years of study (2017-2018)</p>
-<pre class="r"><code>#This summary is at the level of indvidual bird. Since there is species info, will just filter to GREH/VISA
-marked_sighting_rates_all_spp = calculate_sighting_rates(data = data_for_experiment, level_org = &quot;plant_species&quot;, level_time = &quot;exp_phase&quot;, level_bird = &quot;individual_marked&quot;, sightings = &quot;with_visit&quot;, include_unknown_spp = FALSE) %&gt;%
-  mutate(bird_group = &quot;all_spp&quot;) #Replace &quot;individual_marked&quot; with &quot;all_spp&quot;
-
-marked_sighting_rates_greh_visa = marked_sighting_rates_all_spp %&gt;%
-  filter(bird_species == &quot;GREH&quot; | bird_species == &quot;VISA&quot;) %&gt;%
-  select(-bird_group) %&gt;%
-  mutate(bird_group = &quot;greh_visa&quot;)
+  filter(!is.na(patch)) %&gt;%
+  calculate_basic_summary_stats(data = ., variable = num_species)
   
-marked_sighting_rates &lt;- marked_sighting_rates_all_spp %&gt;%
-  bind_rows(marked_sighting_rates_greh_visa) %&gt;%
-  mutate(analysis = ifelse(plant_species == &quot;HETO&quot;, &quot;camera_HETO&quot;, &quot;camera_non-HETO&quot;)) %&gt;%
-  select(analysis, bird_group, everything())
-
-#Remove birds not present during pre (at HETO and non-HETO separately)
-birds_not_present_during_pre &lt;- marked_sighting_rates %&gt;%
-  group_by(analysis, year, patch, exp_phase, color_id) %&gt;%
-  summarise(sightings = sum(sightings, na.rm = TRUE)) %&gt;%
-  filter(exp_phase == &quot;pre&quot; &amp; sightings == 0) %&gt;%
-  mutate(present_during_pre = &quot;no&quot;)
-
-marked_sighting_rates &lt;- marked_sighting_rates %&gt;%
-  left_join(birds_not_present_during_pre) %&gt;%
-  mutate(present_during_pre = ifelse(is.na(present_during_pre), &quot;yes&quot;, present_during_pre))</code></pre>
-<p>Summarize effort for marked birds</p>
-<pre class="r"><code>#How many video hours are there for 2017-2018? Calculate hours in this dataset
-hours_experiment_17_18 &lt;- data_for_experiment %&gt;%
-  filter(year == &quot;2017&quot; | year == &quot;2018&quot;) %&gt;%
-  distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %&gt;%
-  group_by(year, patch, control_treatment, camera_num, date_video, exp_phase) %&gt;%
-  summarise(video_hours = sum(video_length)) %&gt;%
+#Finally, just out of curiosity...which plant species are present most reliably across the different replicates?
+replicates_per_species &lt;- data_experiment %&gt;%
+  distinct(year, patch, control_treatment, plant_species) %&gt;%
+  group_by(plant_species) %&gt;%
+  summarise(num_replicates = n()) %&gt;%
   ungroup() %&gt;%
-  summarise(video_hours = sum(video_hours)) %&gt;%
-  ungroup()
+  arrange(desc(num_replicates))
 
-hours_experiment_17_18</code></pre>
-<pre><code>## # A tibble: 1 × 1
-##   video_hours
-##         &lt;dbl&gt;
-## 1      14949.</code></pre>
-<pre class="r"><code>#How many marked individuals were detected on camera?
-marked_individuals_on_camera &lt;- marked_sighting_rates %&gt;%
-  distinct(year, patch, bird_species, color_id)
+head(replicates_per_species)</code></pre>
+<pre><code>## # A tibble: 6 × 2
+##   plant_species num_replicates
+##   &lt;chr&gt;                  &lt;int&gt;
+## 1 HETO                      31
+## 2 MARA                      24
+## 3 PAV-ROJ-AMA               22
+## 4 CEPO                      21
+## 5 TUBO-AMA                  18
+## 6 HAPA                      17</code></pre>
+<p><strong>Effort summary from camera setup dataset (record of cameras
+installed)</strong></p>
+<pre class="r"><code>#Number of cameras per replicate (there can be multiple plant species per camera)
+cameras_per_replicate_setup = camera_locations %&gt;%
+  distinct(year, patch, control_treatment, camera_number_video_data) %&gt;%
+  group_by(year, patch, control_treatment) %&gt;%
+  summarise(num_cameras = n()) %&gt;%
+  ungroup() %&gt;%
+  filter(!is.na(patch))
 
-(num_marked_individuals_on_camera &lt;- marked_individuals_on_camera$color_id %&gt;% length())</code></pre>
-<pre><code>## [1] 44</code></pre>
-<pre class="r"><code>#How does this number compare to the number of individuals that were color marked? I.e., what proportion of color-marked birds were detected on camera?
-captures &lt;- read.csv(&quot;../../data/import/Hummingbird_captures_2010-2018_20220713.csv&quot;) %&gt;%
-  select(control_treatment, exp_phase, year, patch = site, everything())
+cameras_per_replicate_setup_sum &lt;- cameras_per_replicate_setup %&gt;%
+  calculate_basic_summary_stats(data = ., variable = num_cameras)
 
-captures_marked_birds &lt;- captures %&gt;%
-  filter(!is.na(control_treatment)) %&gt;%
-  filter(exp_phase == &quot;capture_1&quot;) %&gt;%
-  filter(status != &quot;DR&quot;) %&gt;%
-  filter(!is.na(colors)) %&gt;%
-  unite(color_id, year, patch, species, colors, sep = &quot;_&quot;, remove = FALSE)
-
-(num_marked_indivduals &lt;-unique(captures_marked_birds$color_id) %&gt;% length())</code></pre>
-<pre><code>## [1] 140</code></pre>
-<pre class="r"><code>duplicated_marks &lt;- captures_marked_birds %&gt;%
-  filter(duplicated(color_id)) %&gt;%
-  select(year, patch, species, sex, color_id)
-
-#According to capture data, 142 birds were marked with nail polish during initial capture (2017-2018 only). 140 were unique to year, patch, and species.
-#Duplicated marks: 
-#2017_201_VISA_Y (same color, but on different sexes, so would have been distinguishable. But not seen on camera)
-#2018_29_STRH_B (seen on camera, sex not distinguishable)
-#Note: if calculate number of marked birds according to &#39;color_marks&#39; datasheets, 143 birds were marked with nail polish during initial capture (2017-2018 only), because this includes CHHU from p200 establishment
-
-#Percentage of color-marked birds detected on camera
-num_marked_individuals_on_camera/num_marked_indivduals</code></pre>
-<pre><code>## [1] 0.3142857</code></pre>
-</div>
-<div id="step-7-explore-data-related-to-heliconia-using-normal-visitation-data" class="section level2">
-<h2>Step 7: Explore data related to <em>Heliconia</em>, using ‘normal’
-visitation data</h2>
-<p>What species visit Heliconia?</p>
-<pre class="r"><code>#To level of species
-heto_sightings_by_species &lt;- calculate_sighting_rates(data = data_for_normal_visitation, level_org = &quot;plant_species_across_sites&quot;, level_time = &quot;all&quot;, level_bird = &quot;camera_spp_separate&quot;, sightings = &quot;with_visit&quot;, include_unknown_spp = TRUE) %&gt;% 
-  filter(plant_species == &quot;HETO&quot;) %&gt;%
-  filter(sightings &gt; 0) %&gt;%
-  mutate(bird_sex = &quot;all&quot;)
-
-#Before summarizing to level of sex, combine unknown sex categories, i.e. convert unknown male (UM) and unknown female (UF) to unknown
-data_for_heto_sightings_by_sex &lt;- data_for_normal_visitation %&gt;%
-    mutate(bird_sex = ifelse(bird_sex == &quot;UM&quot; | bird_sex == &quot;UF&quot;, &quot;U&quot;, as.character(bird_sex)))
+#Number of plant species per replicate
+species_per_replicate_setup_sum = camera_locations %&gt;%
+  distinct(year, patch, control_treatment, plant_species) %&gt;%
+  group_by(year, patch, control_treatment) %&gt;%
+  summarise(num_species = n()) %&gt;%
+  ungroup() %&gt;%
+  filter(!is.na(patch)) %&gt;%
+  calculate_basic_summary_stats(data = ., variable = num_species)
   
-heto_sightings_by_sex &lt;- calculate_sighting_rates(data = data_for_heto_sightings_by_sex, level_org = &quot;plant_species_across_sites&quot;, level_time = &quot;all&quot;, level_bird = &quot;camera_spp_separate_sex&quot;, sightings = &quot;with_visit&quot;, include_unknown_spp = TRUE) %&gt;% 
-  filter(plant_species == &quot;HETO&quot;) 
-
-#Combine for Supp material
-heto_sightings &lt;- heto_sightings_by_species %&gt;%
-  bind_rows(heto_sightings_by_sex) %&gt;%
-  arrange(bird_species, desc(sightings))
-
-#How many video hours for this dataset?
-hours_normal_visitation_heto &lt;- data_for_normal_visitation %&gt;%
-  filter(plant_species == &quot;HETO&quot;) %&gt;%
-  distinct(year, patch, control_treatment, camera_num, date_video, exp_phase, file_id, video_length) %&gt;%
-  group_by(year, patch, control_treatment, camera_num, date_video, exp_phase) %&gt;%
-  summarise(video_hours = sum(video_length)) %&gt;%
+#Number of plant species that were in pots (i.e., brought in to be part of focal array). This data was only recorded in 2017-2018
+potted_plants_per_replicate_setup_sum &lt;- camera_locations %&gt;%
+  filter(potted_y_n == &quot;Y&quot;) %&gt;%
+  distinct(year, patch, control_treatment, camera_number_video_data) %&gt;%
+  group_by(year, patch, control_treatment) %&gt;%
+  summarise(num_plants = n()) %&gt;%
   ungroup() %&gt;%
-  summarise(video_hours = sum(video_hours)) %&gt;%
+  calculate_basic_summary_stats(data = ., variable = num_plants)
+
+potted_plants_per_replicate_setup_sum</code></pre>
+<pre><code>## # A tibble: 1 × 6
+##     min   max  mean    sd median     n
+##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1     7    11  9.15  1.18      9    20</code></pre>
+<p><strong>Compare methods</strong></p>
+<pre class="r"><code>cameras_per_replicate_sum</code></pre>
+<pre><code>## # A tibble: 1 × 6
+##     min   max  mean    sd median     n
+##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1     2    17  10.3  3.44   10.5    32</code></pre>
+<pre class="r"><code>cameras_per_replicate_setup_sum</code></pre>
+<pre><code>## # A tibble: 1 × 6
+##     min   max  mean    sd median     n
+##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1     6    17  12.5  3.32     13    32</code></pre>
+<pre class="r"><code>species_per_replicate_sum</code></pre>
+<pre><code>## # A tibble: 1 × 6
+##     min   max  mean    sd median     n
+##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1     2    11  7.75  2.02      8    32</code></pre>
+<pre class="r"><code>species_per_replicate_setup_sum</code></pre>
+<pre><code>## # A tibble: 1 × 6
+##     min   max  mean    sd median     n
+##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1     6    14  9.28  2.05      9    32</code></pre>
+<p><em>As expected, more cameras were set up than yielded usable data.
+Results are similar for number of plant species as well.</em></p>
+</div>
+<div id="step-3-calculate-details-of-camera-spatial-arrangement" class="section level2">
+<h2>Step 3: Calculate details of camera spatial arrangement</h2>
+<ul>
+<li>Percent of cameras at stations</li>
+<li>Distance between stations</li>
+</ul>
+<p><strong>Calculate percentage of cameras at stations</strong></p>
+<pre class="r"><code>#Note: these data might be a bit noisy, as I&#39;m not sure how consistent field techs were in determining whether plant was &#39;at station&#39; or not (i.e., estimating how far from focal Heliconia plant it was and recorded it as being &#39;at station&#39; or not)
+cameras_per_replicate_station_setup = camera_locations %&gt;%
+  filter(station == &quot;1&quot; | station == &quot;2&quot;) %&gt;%
+  distinct(year, patch, control_treatment, camera_number_video_data) %&gt;%
+  group_by(year, patch, control_treatment) %&gt;%
+  summarise(num_cameras_station = n()) %&gt;%
   ungroup()
 
-hours_normal_visitation_heto</code></pre>
-<pre><code>## # A tibble: 1 × 1
-##   video_hours
-##         &lt;dbl&gt;
-## 1       1809.</code></pre>
-<p>How many hummingbird sightings per <em>Heliconia</em> plant
-(inflorescence) per day?</p>
-<pre class="r"><code>#Summarize using &#39;normal&#39; data, by camera number. Each camera was positioned at a single Heliconia inflorescence
-heto_sightings_per_date &lt;- calculate_sighting_rates(data = data_for_normal_visitation, level_org = &quot;camera_num&quot;, level_time = &quot;date_video&quot;, level_bird = &quot;camera_spp_combined&quot;, sightings = &quot;with_visit&quot;, include_unknown_spp = TRUE) %&gt;% 
-  filter(plant_species == &quot;HETO&quot;)
-
-heto_sightings_per_date_sum &lt;- heto_sightings_per_date %&gt;%
-  calculate_basic_summary_stats(variable = sightings)
-
-heto_sightings_per_date_sum</code></pre>
+percent_cameras_at_station_setup_sum = cameras_per_replicate_setup %&gt;%
+  left_join(cameras_per_replicate_station_setup) %&gt;%
+  mutate(percent_at_station = num_cameras_station/num_cameras * 100) %&gt;%
+  calculate_basic_summary_stats(data = ., variable = percent_at_station)
+  
+percent_cameras_at_station_setup_sum</code></pre>
 <pre><code>## # A tibble: 1 × 6
 ##     min   max  mean    sd median     n
 ##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1     0    25  6.21  5.62      5   170</code></pre>
-<pre class="r"><code>#Sightings per date is the most meaningful metric...but not all dates have 12 hours of video. Can I extrapolate from sightings/hour? Only problem would be if rate isn&#39;t constant throughout day
-heto_sightings_per_12_hours &lt;- heto_sightings_per_date %&gt;%
-  mutate(sightings_per_12hours = sightings_per_hour * 12) %&gt;% #Hourly sighting rate multiplied by 12
-  select(-sightings_per_hour)
+## 1  33.3   100  83.7  17.1   85.8    32</code></pre>
+<p><em>On average, &gt;80% of cameras at a station</em></p>
+<p><strong>Calculate distance between stations</strong></p>
+<p>Stations comprised a variety of different flowering plant species –
+some naturally occurring, some brought it in in pots – and was centered
+around a ‘focal’ Heliconia plant. There were two stations per site. How
+far apart were these stations?</p>
+<p>Get data and write helper function for distance calculation</p>
+<pre class="r"><code>#Projection to use
+projstring &lt;- &quot;+proj=utm +zone=17 +ellps=WGS84 +units=m +no_defs&quot; 
 
-heto_sightings_per_12_hours_sum &lt;- heto_sightings_per_12_hours %&gt;%
-  calculate_basic_summary_stats(variable = sightings_per_12hours)
+#Function to calculate distance between locations of interest
+calculate_distance &lt;- function(data, group_id){
+  
+  #Select data from same group
+  data_same_group &lt;- data %&gt;%
+    filter(replicate_id == group_id)
+  
+  #If there is &gt;1 element, calculate distance between them
+  if(length(data_same_group$replicate_id) &gt; 1){
+    
+    distance &lt;- st_distance(data_same_group$geometry, by_element = FALSE)
 
-heto_sightings_per_12_hours_sum #Slightly higher values when multiply by 12</code></pre>
+    #First element in vector is zero; second element is actual distance
+    return(distance[[2]]) 
+  
+  }
+  
+  return(NULL)
+
+}
+
+#Make a empty table to be filled in using purrr::map(). Replicate ID (patch + year combination) will be the group of interest (i.e., how far apart stations are within each replicate)
+base_table &lt;- camera_locations %&gt;%
+  distinct(year, patch) %&gt;%
+  mutate(replicate_id = paste(patch, year, sep = &quot;_&quot;))</code></pre>
+<p><strong>Calculate distance using average station
+coordinates</strong></p>
+<pre class="r"><code>#First, average coordinates assigned to each station (sometimes there are different coordinates, but presumably close to each other)
+camera_stations &lt;- camera_locations %&gt;%
+  distinct(year, patch, control_treatment, camera_number_video_data, plant_species, station, x, y) %&gt;%
+  filter(station == 1 | station == 2) %&gt;%
+  filter(!(is.na(x) | is.na(y))) %&gt;%
+  group_by(year, patch, station) %&gt;%
+  summarise(x = mean(x),
+            y = mean(y)) %&gt;%
+  mutate(replicate_id = paste(patch, year, sep = &quot;_&quot;))
+
+camera_stations_spatial &lt;- st_as_sf(camera_stations, coords = c(&quot;x&quot;, &quot;y&quot;))
+camera_stations_spatial &lt;- st_set_crs(camera_stations_spatial, value = projstring)
+
+station_distance = base_table %&gt;%
+  mutate(distance = map(replicate_id, ~calculate_distance(data = camera_stations_spatial, group_id = .))) %&gt;%
+  unnest(distance) %&gt;%
+  arrange(replicate_id)
+
+#1. Remove &#39;unit&#39; attributes (meters) 2. Summarize
+station_distance_sum &lt;- station_distance %&gt;%
+  mutate(distance = units::drop_units(distance)) %&gt;%
+  calculate_basic_summary_stats(data = ., variable = distance)</code></pre>
+<p><strong>Calculate distance using distance of focal Heliconia
+locations</strong></p>
+<p>Stations should be centered around focal Heliconia, so results should
+be similar as station results</p>
+<pre class="r"><code>focal_heto_locations &lt;- camera_locations %&gt;%
+  distinct(year, patch, control_treatment, camera_number_video_data, plant_species, station, x, y) %&gt;%
+  filter((station == 1 | station == 2)) %&gt;% #Note: by only looking at station numbers, this omits 2017 p10 focal HETO that was not at station
+  filter(plant_species == &quot;HETO&quot;) %&gt;%
+  filter(!(is.na(x) | is.na(y))) %&gt;%
+  group_by(year, patch, station) %&gt;%
+  summarise(x = mean(x),
+            y = mean(y)) %&gt;%
+  mutate(replicate_id = paste(patch, year, sep = &quot;_&quot;))
+
+focal_heto_locations_spatial &lt;- st_as_sf(focal_heto_locations, coords = c(&quot;x&quot;, &quot;y&quot;))
+focal_heto_locations_spatial &lt;- st_set_crs(focal_heto_locations_spatial, value = projstring)
+
+station_distance_focal_heto = base_table %&gt;%
+  mutate(distance = map(replicate_id, ~calculate_distance(data = focal_heto_locations_spatial, group_id = .))) %&gt;%
+  unnest(distance) %&gt;%
+  arrange(replicate_id)
+
+#1. Remove &#39;unit&#39; attributes (meters) 2. Summarize
+station_distance_focal_heto_sum &lt;- station_distance_focal_heto %&gt;%
+  mutate(distance = units::drop_units(distance)) %&gt;%
+  calculate_basic_summary_stats(data = ., variable = distance)</code></pre>
+<p><strong>Compare methods</strong></p>
+<pre class="r"><code>station_distance_sum</code></pre>
 <pre><code>## # A tibble: 1 × 6
 ##     min   max  mean    sd median     n
 ##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1     0  31.0  6.99  6.22   5.03   170</code></pre>
+## 1  21.2  229.  59.4  44.4   48.0    32</code></pre>
+<pre class="r"><code>station_distance_focal_heto_sum</code></pre>
+<pre><code>## # A tibble: 1 × 6
+##     min   max  mean    sd median     n
+##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1  24.0  236.  61.6  43.7   55.6    29</code></pre>
+<p><em>Results are indeed similar if use station locations vs. focal
+Heliconia. Median of ~50m, mean of ~60 m +/- 44 m SD</em></p>
 </div>
-<div id="step-8-export" class="section level2">
-<h2>Step 8: Export</h2>
-<pre class="r"><code>## Camera data, filtered but not summarized
-write.csv(data_for_experiment, &quot;../../data/export/intermediate/Camera_data_filtered_for_experiment.csv&quot;) 
-write.csv(data_for_normal_visitation, &quot;../../data/export/intermediate/Camera_data_filtered_for_normal_visitation.csv&quot;) 
+<div id="step-4-summarize-which-plant-species-were-present-in-focal-arrays-at-stations-for-table-in-supplemental-methods" class="section level2">
+<h2>Step 4: Summarize which plant species were present in focal arrays
+at stations (for table in Supplemental Methods)</h2>
+<pre class="r"><code>#Note: potted status was only recorded in 2017-2018, but plants used in these years encompass all of 2016 species except IMPO (which did not yield any usable camera data anyway)
+floral_array_species &lt;- camera_locations %&gt;%
+  filter(potted_y_n == &quot;Y&quot;) %&gt;%
+  distinct(plant_species)
 
-## Summarized data for analysis of experiment
-write.csv(sighting_rates, &quot;../../data/export/for_analysis/Camera_visitation_rates.csv&quot;) 
-write.csv(marked_sighting_rates, &quot;../../data/export/for_analysis/Camera_visitation_rates_marked_birds.csv&quot;)
+floral_array_species </code></pre>
+<pre><code>##    plant_species
+## 1       TUBO-AMA
+## 2           AMAP
+## 3          GOLFO
+## 4       PAV-ROSA
+## 5    PAV-ROJ-AMA
+## 6           COWO
+## 7           HETO
+## 8           PALU
+## 9           RABO
+## 10        SASPLE
+## 11          HAPA
+## 12     BOCA-ROJA
+## 13          CEPO
+## 14    RABO, PALU
+## 15       COSTBAR</code></pre>
+<pre class="r"><code>floral_array_species_supp &lt;- floral_array_species %&gt;%
+  left_join(plant_info) %&gt;%
+  filter(!is.na(family)) %&gt;%
+  arrange(family, species_name) %&gt;%
+  filter(plant_species != &quot;HETO&quot;) #Remove HETO. Not really part of floral array/potted plants
 
-##  Summarized data of Heliconia visitation
-write.csv(heto_sightings, &quot;../../data/export/supp_tables/Heliconia_visitor_summary.csv&quot;)</code></pre>
+#Where there any species recorded in setup data that didn&#39;t end up in usable data?
+check01 &lt;- floral_array_species_supp %&gt;%
+  filter(!(plant_species %in% data_experiment$plant_species))
+
+#Export
+write.csv(floral_array_species_supp, &quot;../../data/export/supp_tables/List_of_floral_array_species.csv&quot;)</code></pre>
 </div>
 
 

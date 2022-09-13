@@ -148,6 +148,14 @@ hours_total <- hours_per_camera_date %>%
   ungroup()
 
 hours_total
+
+#How many sightings is this?
+camera_data03 %>%
+  filter(visit_type != "none") %>%
+  distinct(sighting_id) %>%
+  filter(!is.na(sighting_id)) %>%
+  pull(sighting_id) %>%
+  length()
 ```
 
 ## Step 4: Filter data for experimental analyses
@@ -182,6 +190,14 @@ hours_experiment <- data_for_experiment %>%
   ungroup()
 
 hours_experiment
+
+#How many sightings is this?
+data_for_experiment %>%
+  filter(visit_type != "none") %>%
+  distinct(sighting_id) %>%
+  filter(!is.na(sighting_id)) %>%
+  pull(sighting_id) %>%
+  length()
 ```
 
 ## Step 5: Filter data for 'normal' visitation
