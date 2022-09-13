@@ -119,7 +119,7 @@ B) Add median, mean, or most common number of flowers for that plant species (if
 
 *AS OF 5/27/2020, DECIDED NOT TO WORRY ABOUT THIS. ONLY ~25 PLANTS ARE MISSING COUNT INFO*
 
-## Step 3: Calculate calories per plant by multiplying number of flowers by calories per flower**
+## Step 3: Calculate calories per plant by multiplying number of flowers by calories per flower
 
 ```{r step3, message = FALSE}
 #This is calories, not kilocalories
@@ -148,7 +148,7 @@ check08 <- calories_per_plant %>%
   filter(!grepl("UNKN", species_code))
 ```
 
-## Step 4: Export dat (will be summarized to patch level in later step)
+## Step 4: Export data (will be summarized to patch level in later step)
 
 ```{r step4, message = FALSE}
 path_name <- c("../../data/export/intermediate")

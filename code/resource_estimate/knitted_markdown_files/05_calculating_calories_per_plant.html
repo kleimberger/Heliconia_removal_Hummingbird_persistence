@@ -480,7 +480,7 @@ ARE MISSING COUNT INFO</em></p>
 </div>
 <div id="step-3-calculate-calories-per-plant-by-multiplying-number-of-flowers-by-calories-per-flower" class="section level2">
 <h2>Step 3: Calculate calories per plant by multiplying number of
-flowers by calories per flower**</h2>
+flowers by calories per flower</h2>
 <pre class="r"><code>#This is calories, not kilocalories
 calories_per_plant &lt;- resource_counts03 %&gt;%
   mutate(calories_per_plant = as.numeric(num_flowers_estimate)*as.numeric(calories)) %&gt;%
@@ -506,8 +506,8 @@ check08 &lt;- calories_per_plant %&gt;%
   filter(is.na(calories_per_plant)) %&gt;%
   filter(!grepl(&quot;UNKN&quot;, species_code))</code></pre>
 </div>
-<div id="step-4-export-dat-will-be-summarized-to-patch-level-in-later-step" class="section level2">
-<h2>Step 4: Export dat (will be summarized to patch level in later
+<div id="step-4-export-data-will-be-summarized-to-patch-level-in-later-step" class="section level2">
+<h2>Step 4: Export data (will be summarized to patch level in later
 step)</h2>
 <pre class="r"><code>path_name &lt;- c(&quot;../../data/export/intermediate&quot;)
 write.csv(calories_per_plant, file.path(path_name, &quot;Resource_counts_2016-2018_with_calories.csv&quot;))</code></pre>

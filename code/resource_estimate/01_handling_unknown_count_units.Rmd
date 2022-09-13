@@ -189,8 +189,16 @@ still_unknown <- resource_data04 %>%
 filter(still_unknown, !is.na(species_name)) %>% pull(species_name) %>% length()
 
 #How many rows (plants) have unknown count units?
-filter(still_unknown, !is.na(species_name)) %>% 
-  summarise(num_rows = sum(num_rows))
+unknown_plants <- filter(still_unknown, !is.na(species_name)) %>% 
+  summarise(num_rows = sum(num_rows)) %>%
+  pull(num_rows)
+
+unknown_plants
+
+#What percentage of plants is this?
+(total_plants <- nrow(resource_data04))
+
+unknown_plants/total_plants
 ```
 
 **Assign a high estimate and a low estimate to species where I was not able to figure out the most likely count unit**

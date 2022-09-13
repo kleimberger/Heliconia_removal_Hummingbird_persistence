@@ -414,12 +414,9 @@ nectar_bagged &lt;- nectar %&gt;%
   calculate_basic_summary_stats(variable = nectarConc) %&gt;%
   ungroup() %&gt;%
   select(-n) %&gt;%
-  rename(mean_conc = mean, sd_conc = sd, min_conc = min, max_conc = max, median_conc = median)</code></pre>
-<pre><code>## Warning in min(~nectarConc, na.rm = TRUE): no non-missing arguments to min;
-## returning Inf</code></pre>
-<pre><code>## Warning in max(~nectarConc, na.rm = TRUE): no non-missing arguments to max;
-## returning -Inf</code></pre>
-<pre class="r"><code>#Note: If max=33, there were values above the max refractometer reading (32%)</code></pre>
+  rename(mean_conc = mean, sd_conc = sd, min_conc = min, max_conc = max, median_conc = median)
+
+#Note: If max=33, there were values above the max refractometer reading (32%)</code></pre>
 <p>Summarize measurements for nectar volume</p>
 <pre class="r"><code>volume_sum &lt;- nectar_bagged %&gt;%
   group_by(species, speciesName, family)%&gt;%
@@ -433,34 +430,29 @@ sum_with_zero_volume &lt;- nectar_bagged %&gt;%
   group_by(species, speciesName) %&gt;%
   summarise(numFlowers_inclZero = n()) %&gt;%
   ungroup() %&gt;%
-  arrange(desc(numFlowers_inclZero))</code></pre>
-<pre><code>## `summarise()` has grouped output by &#39;species&#39;. You can override using the
-## `.groups` argument.</code></pre>
-<pre class="r"><code>#SAMPLE SIZE SUMMARY *EXCLUDING* FLOWERS WITH ZERO NECTAR
+  arrange(desc(numFlowers_inclZero))
+
+#SAMPLE SIZE SUMMARY *EXCLUDING* FLOWERS WITH ZERO NECTAR
 sum_without_zero_volume &lt;- nectar_bagged %&gt;%
   filter(nectarVol &gt; 0.00) %&gt;% #Only including nectar amounts &gt;0
   group_by(species, speciesName) %&gt;%
   summarise(numFlowers_notZero=n()) %&gt;%
   ungroup() %&gt;%
-  arrange(desc(numFlowers_notZero))</code></pre>
-<pre><code>## `summarise()` has grouped output by &#39;species&#39;. You can override using the
-## `.groups` argument.</code></pre>
-<pre class="r"><code>#SAMPLE SIZE SUMMARY *EXCLUDING* FLOWERS WITH NO BRIX MEASUREMENTS
+  arrange(desc(numFlowers_notZero))
+
+#SAMPLE SIZE SUMMARY *EXCLUDING* FLOWERS WITH NO BRIX MEASUREMENTS
 sum_without_missing_conc &lt;- nectar_bagged %&gt;%
   filter(!is.na(nectarConc)) %&gt;% #Only including flowers with measured concentrations
   group_by(species, speciesName) %&gt;%
   summarise(numFlowers_withBrix=n()) %&gt;%
   ungroup() %&gt;%
-  arrange(desc(numFlowers_withBrix))</code></pre>
-<pre><code>## `summarise()` has grouped output by &#39;species&#39;. You can override using the
-## `.groups` argument.</code></pre>
-<pre class="r"><code>#COMBINING ALL OF THE SAMPLE SIZE SUMMARIES FROM ABOVE
+  arrange(desc(numFlowers_withBrix))
+
+#COMBINING ALL OF THE SAMPLE SIZE SUMMARIES FROM ABOVE
 sample_size_sum &lt;- sum_with_zero_volume %&gt;%
   left_join(sum_without_zero_volume) %&gt;%
   left_join(sum_without_missing_conc) %&gt;%
   mutate_at(vars(numFlowers_withBrix), list(~ifelse(is.na(.), 0, .))) #Replace zeroes with NA</code></pre>
-<pre><code>## Joining, by = c(&quot;species&quot;, &quot;speciesName&quot;)
-## Joining, by = c(&quot;species&quot;, &quot;speciesName&quot;)</code></pre>
 <p>Combine nectar/conc summary with sample size summary</p>
 <pre class="r"><code>nectar_sum &lt;- volume_sum %&gt;%
   left_join(concentration_sum) %&gt;%
@@ -468,14 +460,13 @@ sample_size_sum &lt;- sum_with_zero_volume %&gt;%
   select(species, speciesName, family, everything()) %&gt;%
   mutate_if(is.numeric, ~round(., digits=2)) %&gt;%
   arrange(family)</code></pre>
-<pre><code>## Joining, by = c(&quot;species&quot;, &quot;speciesName&quot;, &quot;family&quot;)
-## Joining, by = c(&quot;species&quot;, &quot;speciesName&quot;)</code></pre>
 </div>
 <div id="step-3-compile-some-info-for-supplemental-methods" class="section level2">
 <h2>Step 3: Compile some info for supplemental methods</h2>
 <pre class="r"><code>#How many species measured?
 species_sampled &lt;- nectar_bagged %&gt;%
   distinct(speciesName) %&gt;%
+  filter(!is.na(speciesName)) %&gt;%
   pull(speciesName) %&gt;%
   length()
 
@@ -514,7 +505,6 @@ collection_time_sum</code></pre>
 ##       median    n
 ## 1 10H 30M 0S 1368</code></pre>
 <pre class="r"><code>#How many plants were measured with OSU refractometer (not temperature calibrated) vs Rice refractometer (temperature calibrated)?
-
 flowers_per_refractometer &lt;- nectar_bagged %&gt;%
   group_by(refractometerID) %&gt;%
   summarise(num_flowers = n()) %&gt;%

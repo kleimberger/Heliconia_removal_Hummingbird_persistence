@@ -74,7 +74,36 @@ source("../../code/helper_functions/Summarize_camera_data.R")
 source("../../code/helper_functions/Make_barplot_for_weights.R")
 ```
 
-## Step 2: Filter data for resource estimate
+## Step 2: Make list of all plant species detected, for Supp methods, then filter data for resource estimate
+
+```{r step2a}
+#How many species total?
+species_list <- resource_data %>%
+  distinct(family, species_name, species_code, species_code_for_calories) %>%
+  mutate(known_vs_unknown = ifelse(grepl("UNKN", species_code), "unknown", "known")) %>%
+  arrange(known_vs_unknown)
+
+#How many known vs unknown?
+species_list_sum <- species_list %>%
+  group_by(known_vs_unknown) %>%
+  summarise(num_species = n()) %>%
+  ungroup()
+
+species_list_sum
+
+#Unknown species that did not have an approximate (i.e., genus level) species substituted 
+completely_unknown_species <- species_list %>%
+  filter(grepl("UNKN", species_code_for_calories))
+
+nrow(completely_unknown_species)
+
+#How many plants was this?
+completely_unknown_plants <- resource_data %>%
+  filter(count_estimate_high_low == "high") %>%
+  filter(grepl("UNKN", species_code_for_calories))
+
+nrow(completely_unknown_plants)
+```
 
 Remove unknown species (i.e.,, UNKN-_____)
 
@@ -90,10 +119,10 @@ Remove night-blooming species (i.e., OJO, CEPU)
 
   - Bat-pollinated species produce nectar at night. Though some nectar may be leftover and available to hummingbirds at dawn/dusk, I don't know how much that would generally be.
   
-```{r step2}
+```{r step2b}
 #Resource data. Use this filtered dataste for calculations of abundance and calories.
 resource_data_filtered <- resource_data %>%
-  filter(!grepl("UNKN", species_code)) %>%  #Remove unknown species that did not have an approximate (i.e., genus level) species substituted
+  filter(!grepl("UNKN", species_code_for_calories)) %>%  #Remove unknown species that did not have an approximate (i.e., genus level) species substituted
   filter(species_code != "OJO" & species_code != "CEPU") #Remove species that open at night and are visited by bats
 ```
 

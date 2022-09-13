@@ -567,12 +567,17 @@ units?</strong></p>
 filter(still_unknown, !is.na(species_name)) %&gt;% pull(species_name) %&gt;% length()</code></pre>
 <pre><code>## [1] 45</code></pre>
 <pre class="r"><code>#How many rows (plants) have unknown count units?
-filter(still_unknown, !is.na(species_name)) %&gt;% 
-  summarise(num_rows = sum(num_rows))</code></pre>
-<pre><code>## # A tibble: 1 × 1
-##   num_rows
-##      &lt;int&gt;
-## 1      648</code></pre>
+unknown_plants &lt;- filter(still_unknown, !is.na(species_name)) %&gt;% 
+  summarise(num_rows = sum(num_rows)) %&gt;%
+  pull(num_rows)
+
+unknown_plants</code></pre>
+<pre><code>## [1] 648</code></pre>
+<pre class="r"><code>#What percentage of plants is this?
+(total_plants &lt;- nrow(resource_data04))</code></pre>
+<pre><code>## [1] 6680</code></pre>
+<pre class="r"><code>unknown_plants/total_plants</code></pre>
+<pre><code>## [1] 0.09700599</code></pre>
 <p><strong>Assign a high estimate and a low estimate to species where I
 was not able to figure out the most likely count unit</strong></p>
 <pre class="r"><code>resource_data05 &lt;- resource_data04 %&gt;%
