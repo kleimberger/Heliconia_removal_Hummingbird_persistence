@@ -23,7 +23,7 @@ library(ggplot2)
 
 ## Step 1: Get data
 ```{r, get_data}
-telem_data <- read.csv("../../data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv") %>%
+telem_data <- read.csv("data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv") %>%
   select(-X, -id)
 ```
 
