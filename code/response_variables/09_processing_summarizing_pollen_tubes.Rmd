@@ -212,7 +212,7 @@ proportion_pollinated_sum <- tubes_for_analysis %>%
   rename(styles_with_tubes = "1", styles_no_tubes = "0") %>%
   mutate(styles = styles_with_tubes + styles_no_tubes) %>%
   mutate(prop_with_tubes = styles_with_tubes/styles) %>%
-  filter(plant_species == "HAPA" | plant_species == "HETO" | plant_species == "PAV-ROJ-AMA")
+  filter(plant_species == "HAPA" | plant_species == "HETO" | plant_species == "PAV-ROJ-AMA" | plant_species == "RABO")
 
 #How many styles ended up in the final sample?
 styles_analyzed <- proportion_pollinated_sum %>%
