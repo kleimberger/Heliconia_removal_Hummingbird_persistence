@@ -168,14 +168,14 @@ forest = raster::projectRaster(forest, crs = projstring)
 chase_forest = raster::projectRaster(chase_forest, crs = projstring)
 
 #Export the UTM raster layers since this step takes a while to run; can just import the UTM versions moving forward
-path_name <- c("data/export/for_analysis")
+path_name <- c("data/export/spatial_layers")
 raster::writeRaster(forest, filename = file.path(path_name, "Leimberger_GE_forest_layer_UTM.tif"), overwrite=FALSE)
 raster::writeRaster(chase_forest, filename = file.path(path_name, "Mendenhall_GE_forest_layer_UTM.tif"), overwrite=FALSE)
 ```
 
 ```{r}
-forest = raster::raster("data/export/for_analysis/Leimberger_GE_forest_layer_UTM.tif") 
-chase_forest = raster::raster("data/export/for_analysis/Mendenhall_GE_forest_layer_UTM.tif")
+forest = raster::raster("data/export/spatial_layers/Leimberger_GE_forest_layer_UTM.tif") 
+chase_forest = raster::raster("data/export/spatial_layers/Mendenhall_GE_forest_layer_UTM.tif")
 ```
 
 ## Step 2: Process forest layers
