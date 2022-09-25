@@ -42,6 +42,7 @@ Folders should be run in the following order:
 4. statistical_analysis
 
 --------------------
+```bash
 
 code
    |-- helper_functions
@@ -104,4 +105,4 @@ code
    |   |   |-- 05_analyzing_pollen_tubes.html
    |   |   |-- 06_compiling_visualizing_results.html
    
-  
+  ```
