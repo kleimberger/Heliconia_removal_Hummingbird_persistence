@@ -34,7 +34,7 @@ No evidence that hummingbirds changed their movements and foraging patterns to c
 
 **Repository organization**
 
-Folders should be run in the following order:
+Code sub-folders should be run in the following order:
 
 1. response_variables
 2. resource_estimate
