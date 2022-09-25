@@ -26,7 +26,7 @@ I gathered data on hummingbird abundance, space use, and plant-hummingbird inter
 4.	Plant pollination success
     -	Proportion of flowers pollinated
 
-To determine whether *Heliconia* removal affected these response varaibles, I conducted statistical analyses using generalized linear mixed models (Poisson, betabinomial, and negative binomial families).
+To determine whether *Heliconia* removal affected these response variables, I conducted statistical analyses using generalized linear mixed models (Poisson, betabinomial, and negative binomial families).
 
 **Results**
 
