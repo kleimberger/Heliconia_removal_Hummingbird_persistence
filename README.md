@@ -41,7 +41,6 @@ Folders should be run in the following order:
 3. making_maps
 4. statistical_analysis
 
---------------------
 ```bash
 
 code
