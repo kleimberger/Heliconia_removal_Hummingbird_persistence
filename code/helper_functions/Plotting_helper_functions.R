@@ -134,7 +134,7 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
       scale_shape_manual(values = c(16, 17), labels = legend_text_labels, limits = c("all_spp", "greh_visa")) +
       theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
             panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
-      labs(x = "", y = "Change", shape = "Bird group")
+      labs(x = "", y = "Experimental effect", shape = "Bird group")
     
     return(plot)
     
@@ -173,8 +173,8 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
       scale_shape_manual(values = c(16)) +
       theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
             panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
-      labs(x = "", y = "Ratio")
-    
+      labs(x = "", y = "Experimental effect")
+
     return(plot)
     
   }
@@ -190,7 +190,7 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
       scale_shape_manual(values = c(16, 17), labels = legend_text_labels, limits = c("all_spp", "greh_visa")) +
       theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
             panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
-      labs(x = "", y = "Ratio", shape = "Bird group")
+      labs(x = "", y = "Experimental effect", shape = "Bird group")
     
     return(plot)
     
