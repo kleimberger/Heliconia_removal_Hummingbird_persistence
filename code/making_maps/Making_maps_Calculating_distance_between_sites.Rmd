@@ -8,7 +8,6 @@ knit: (function(inputFile, encoding) {
                         output_dir=file.path(dirname(inputFile), out_dir))})
 ---
 
-
 **Goal**
 
 Make maps illustrating the following:
@@ -29,6 +28,7 @@ library(ggplot2)
 #Spatial packages
 library(sf)
 library(sp)
+library(raster)
 library(tmap)
 library(rnaturalearth)
 
@@ -38,7 +38,7 @@ library(dplyr) #load last so that 'select' function does not get masked
 library(future)
 plan(multisession)
 
-raster::removeTmpFiles(h=0) #this removes all files. If h = 24, removes all temp files more than 24 hours old, etc.
+raster::removeTmpFiles(h = 0) #this removes all files. If h = 24, removes all temp files more than 24 hours old, etc.
 ```
 
 ## Step 1: Import data
@@ -227,19 +227,6 @@ mean_landscapes <- base_table %>%
   select(-patch) %>% #Remove to avoid duplicate columns
   unnest(col = landscapes) %>%
   st_as_sf()
-
-# Reclassify all values 
-# https://rdrr.io/cran/raster/man/reclassify.html
-rc_matrix <- matrix(c(-Inf, 1, 0, 1, Inf, 1), ncol=3, byrow=TRUE) #If > -Inf and < 1, should be ZERO. If >= 1 and < Inf, should be ONE.
-forest_reclass <- raster::reclassify(forest, rc_matrix, include.lowest = TRUE, right = FALSE)
-
-#Crop/mask forest raster to focal landscapes
-#Note: these operations seem to cause a large build-up of temp files.
-#raster::removeTmpFiles(h=0) #this removes all files. If h = 24, removes all temp files more than 24 hours old, etc.
-
-#For general study area (all 14 sites + 1000m landscapes)
-forest_landscapes_CROP <- raster::crop(forest_reclass, sf::as_Spatial(mean_landscapes$geometry)) #All focal landscapes, created using mean focal area centroid
-forest_landscapes_MASK <- raster::mask(forest_landscapes_CROP, sf::as_Spatial(mean_landscapes$geometry)) #All focal landscapes, created using mean focal area centroid
 ```
 
 Get study area boundary
@@ -264,17 +251,53 @@ extent_study_area <- mean_landscapes %>%
   summarise(xmin = min(xmin),
             xmax = max(xmax),
             ymin = min(ymin),
-            ymax = max(ymax))
+            ymax = max(ymax)) %>%
+  mutate(across(c(xmin, xmax, ymin, ymax), ~round(.)))
 
 adjust = 500
 bbox_study_area = sf::st_bbox(c(xmin = extent_study_area$xmin - adjust, xmax = extent_study_area$xmax + adjust, ymin = extent_study_area$ymin - adjust, ymax = extent_study_area$ymax + adjust), crs = proj)
+```
+
+My data: reclassify and clip to focal landscapes OR study area boundary
+```{r}
+# Reclassify all values 
+# https://rdrr.io/cran/raster/man/reclassify.html
+rc_matrix <- matrix(c(-Inf, 1, 0, 1, Inf, 1), ncol = 3, byrow = TRUE) #If > -Inf and < 1, should be ZERO. If >= 1 and < Inf, should be ONE.
+forest_reclass <- raster::reclassify(forest, rc_matrix, include.lowest = TRUE, right = FALSE)
+
+#Crop/mask forest raster to focal landscapes
+
+#For focal landscapes (1000-m focal landscapes, N = 14)
+# forest_landscapes_CROP <- raster::crop(forest_reclass, sf::as_Spatial(mean_landscapes$geometry)) #All focal landscapes, created using mean focal area centroid
+# forest_landscapes_MASK <- raster::mask(forest_landscapes_CROP, sf::as_Spatial(mean_landscapes$geometry)) #All focal landscapes, created using mean focal area centroid
+
+#For general study area
+forest_CROP <- raster::crop(forest_reclass, raster::extent(bbox_study_area$xmin, bbox_study_area$xmax, bbox_study_area$ymin, bbox_study_area$ymax))
 ```
 
 Chase data: reclassify and clip to Coto Brus boundary
 ```{r}
 chase_forest_reclass <- raster::reclassify(chase_forest, rc_matrix, include.lowest = TRUE, right = FALSE)
 chase_forest_CROP <- raster::crop(chase_forest_reclass, raster::extent(bbox_study_area$xmin, bbox_study_area$xmax, bbox_study_area$ymin, bbox_study_area$ymax))
-chase_forest_MASK <- raster::mask(chase_forest_CROP, coto_brus_utm_sp) #remove forest outside of canton boundary.
+
+#Remove forest outside of Coto Brus canton boundary
+#chase_forest_MASK <- raster::mask(chase_forest_CROP, coto_brus_utm_sp) 
+
+#Remove forest that overlaps with my digitization
+#But first, need to get exact same extent, because crop did not give same extent
+#https://gis.stackexchange.com/questions/403536/raster-extent-issue-in-r
+forest_CROP = raster::brick(forest_CROP)
+chase_forest_CROP = raster::brick(chase_forest_CROP)
+forest_CROP <- resample(forest_CROP, chase_forest_CROP) #resample transfers values between non matching Raster* objects (in terms of origin and resolution). 
+
+extent(forest_CROP)
+extent(chase_forest_CROP)
+
+plot(forest_CROP)
+plot(chase_forest_CROP)
+
+chase_forest_MASK <- raster::mask(chase_forest_CROP, forest_CROP, maskvalue = c(0, 1), inverse = TRUE) 
+plot(chase_forest_MASK)
 ```
 
 ## Step 3: Process spatial data for example site
@@ -304,7 +327,7 @@ Crop/mask forest raster to focal area
 #Order of extent: xmin, xmax, ymin, ymax
 
 #Crop to focal area
-forest_focal_area_example_CROP <- raster::crop(forest_landscapes_MASK, raster::extent(bbox_focal_area_example$xmin, bbox_focal_area_example$xmax, bbox_focal_area_example$ymin, bbox_focal_area_example$ymax)) 
+forest_focal_area_example_CROP <- raster::crop(forest_CROP, raster::extent(bbox_focal_area_example$xmin, bbox_focal_area_example$xmax, bbox_focal_area_example$ymin, bbox_focal_area_example$ymax)) 
 ```
 
 Subset nets, cameras to example site & year
@@ -325,15 +348,15 @@ Overall study area
 ```{r}
 study_area_map = 
   
-  tm_shape(chase_forest_MASK, bbox = bbox_study_area) +
-    tm_raster(style="cat", palette = c('white', 'grey60'), alpha = 1, legend.show = FALSE) +
+  tm_shape(forest_CROP) +
+    tm_raster(style = "pretty", palette = c('white', 'grey60'), legend.show = FALSE) +
+  
+  tm_shape(chase_forest_MASK) +
+    tm_raster(style = "cat", palette = c('white', 'grey60'), alpha = 1, legend.show = FALSE) +
   
   # tm_shape(coto_brus) +
   #   tm_borders(lwd = 1, col = "black") +
 
-  tm_shape(forest_landscapes_MASK) +
-    tm_raster(style = "cat", palette = c('white', 'grey60'), legend.show = FALSE) +
-  
   tm_shape(mean_centroids_spatial) +
     tm_symbols(shape = 19, col = "black", size = 0.25) +
 
@@ -389,7 +412,7 @@ focal_area_map =
   
   #FOREST CLASSIFICATION
   tm_shape(forest_focal_area_example_CROP, bbox = bbox_focal_area_example, unit = "m") + #Make units m instead of km
-    tm_raster(style="cat", palette = c('white', 'grey60'), legend.show = FALSE) +
+    tm_raster(style = "cat", palette = c('white', 'grey60'), legend.show = FALSE) +
 
   #FOCAL AREA (OUTLINED)
   tm_shape(focal_area_example) +
