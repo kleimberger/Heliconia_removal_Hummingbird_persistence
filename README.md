@@ -1,6 +1,6 @@
-# Heliconia_removal_Hummingbird_persistence
+# Tropical hummingbird pollination networks are resistant to short-term experimental removal of a common flowering plant
 
-Analyses for [hummingbird persistence manuscript](https://www.biorxiv.org/content/10.1101/2022.02.24.481682v2) (second chapter of dissertation)
+Analyses for [hummingbird persistence manuscript](https://www.biorxiv.org/content/10.1101/2022.02.24.481682v3) (second chapter of dissertation)
 
 **Question** 
 
