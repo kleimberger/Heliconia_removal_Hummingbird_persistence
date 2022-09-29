@@ -281,5 +281,5 @@ proportion_pollinated_plots$plot
 write.csv(tubes_for_analysis, "../../data/export/intermediate/Pollen_tube_data_filtered_for_analysis.csv")
 
 #Summarized data for analysis
-write.csv(proportion_pollinated_sum, "../../data/export/for_analysis/Pollen_tube_pollination_success.csv")
+write.csv(proportion_pollinated_sum, "../../data/export/for_analysis/Pollen_tube_pollination_success.csv", row.names = FALSE)
 ```

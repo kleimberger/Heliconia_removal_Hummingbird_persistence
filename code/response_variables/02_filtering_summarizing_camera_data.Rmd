@@ -376,8 +376,8 @@ write.csv(data_for_experiment, "../../data/export/intermediate/Camera_data_filte
 write.csv(data_for_normal_visitation, "../../data/export/intermediate/Camera_data_filtered_for_normal_visitation.csv") 
 
 ## Summarized data for analysis of experiment
-write.csv(sighting_rates, "../../data/export/for_analysis/Camera_visitation_rates.csv") 
-write.csv(marked_sighting_rates, "../../data/export/for_analysis/Camera_visitation_rates_marked_birds.csv")
+write.csv(sighting_rates, "../../data/export/for_analysis/Camera_visitation_rates.csv", row.names = FALSE) 
+write.csv(marked_sighting_rates, "../../data/export/for_analysis/Camera_visitation_rates_marked_birds.csv", row.names = FALSE)
 
 ##  Summarized data of Heliconia visitation
 write.csv(heto_sightings, "../../data/export/supp_tables/Heliconia_visitor_summary.csv")

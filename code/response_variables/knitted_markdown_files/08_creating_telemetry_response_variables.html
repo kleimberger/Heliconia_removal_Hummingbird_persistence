@@ -740,7 +740,7 @@ time_at_location_plot</code></pre>
 </div>
 <div id="step-9-export-data" class="section level2">
 <h2>Step 9: Export data</h2>
-<pre class="r"><code>write.csv(prop_time_for_analysis, &quot;../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv&quot;)
+<pre class="r"><code>write.csv(prop_time_for_analysis, &quot;../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv&quot;, row.names = FALSE)
 write.csv(telem_data_for_analysis, &quot;../../data/export/intermediate/Telemetry_data_filtered_for_analysis.csv&quot;)
 
 #Radio-tracking outcomes for Supp material

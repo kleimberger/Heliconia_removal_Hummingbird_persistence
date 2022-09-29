@@ -449,7 +449,7 @@ results <- models %>%
 ## Step 6: Export results
 ```{r}
 #Data that I analyzed here
-write.csv(data_for_analysis, "../../data/export/for_analysis/Relative_body_mass_for_analysis.csv")
+write.csv(data_for_analysis, "../../data/export/for_analysis/Relative_body_mass.csv", row.names = FALSE)
 
 #Multiplot of log(mass) ~ log(wing length) regressions
 path_name <- c("../../results/response_variables/figures")
