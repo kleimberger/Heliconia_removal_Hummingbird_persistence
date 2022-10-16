@@ -57,22 +57,21 @@ library(emmeans)
 **Import data**
 ```{r}
 #Hummingbirds codes --> hummingbird species names
-bird_species_names <- read.csv("../../data/import/Hummingbird_codes_species_list.csv") %>%
-  rename(species = code)
+bird_species_names <- read.csv("../../data/import/data/Hummingbird_codes_species_list.csv")
 
 #Get all capture data (2010-2018)
 #Add color_id column because sometimes birds were not banded. Using colors instead in those cases. This ID will allow me to identify recaps between pre/post a given patch/year
-captures_all_years <- read.csv("../../data/import/Hummingbird_captures_2010-2018_20220713.csv") %>%
+captures_all_years <- read.csv("../../data/import/data/captures/Hummingbird_captures_2010-2018.csv") %>%
   left_join(bird_species_names) %>%
   rename(patch = site) %>%
   filter(status != "DR") %>% #Remove day recaptures
-  mutate(bird_id = ifelse(is.na(band_number), paste(year, patch, species, colors, sep = "_"), paste(year, patch, species, band_number, sep = "_"))) %>% 
+  mutate(bird_id = ifelse(is.na(band_number), paste(year, patch, bird_species, colors, sep = "_"), paste(year, patch, bird_species, band_number, sep = "_"))) %>% 
   mutate(year_patch = paste(year, patch, sep = "_")) %>%
   select(bird_id, everything())
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
 heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
-  select(-X, -area) %>%
+  select(-area) %>%
   mutate(patch = as.character(patch))
 
 #Hummingbirds captured pre AND post during Heliconia removal experiment (2016-2018)
@@ -122,7 +121,7 @@ average_wing_lengths <- recaptures_experiment %>%
 recaptures_experiment_measurements <- recaptures_experiment %>%
   select(-wing_length) %>%
   left_join(average_wing_lengths) %>%
-  select(year, patch, year_patch, control_treatment, exp_phase, bird_id, species, mass, wing_length, notes) %>%
+  select(year, patch, year_patch, control_treatment, exp_phase, bird_id, bird_species, mass, wing_length, notes) %>%
   filter(!is.na(wing_length)) %>%
   filter(!is.na(mass)) %>%
   filter(!grepl("comio antes de pesar|fed before weight|fed b/f", notes, ignore.case = TRUE)) 
@@ -141,7 +140,7 @@ recaptures_experiment_all_spp <- recaptures_experiment_measurements %>%
 
 #Create subset for GREH/VISA
 recaptures_experiment_greh_visa <- recaptures_experiment_all_spp %>%
-  filter(species == "GREH" | species == "VISA") %>%
+  filter(bird_species == "GREH" | bird_species == "VISA") %>%
   mutate(bird_group = "greh_visa")
 
 #Combine subsets, add info about quantitative treatment
@@ -178,7 +177,7 @@ data_mass_wing_regressions <- captures_all_years %>%
   mutate(experiment_bird = ifelse(bird_id %in% recaptures_experiment_for_analysis$bird_id, "yes", "no")) %>%
   mutate(log_mass = log(mass)) %>%
   mutate(log_wing_length = log(wing_length)) %>%
-  select(year, patch, exp_phase, species, bird_id, log_mass, log_wing_length, experiment_bird)
+  select(year, patch, exp_phase, bird_species, bird_id, log_mass, log_wing_length, experiment_bird)
 ```
 
 Write functions
@@ -187,7 +186,7 @@ Write functions
 subset_data <- function(dataset, bird_species){
   
   data <- dataset %>%
-    filter(species == bird_species)
+    filter(bird_species == bird_species)
   
   return(data)
   
@@ -273,9 +272,9 @@ Apply functions
 #4. Run regression
 #5. Add residuals and predicted values from model, using broom::augment
 mass_wing_regressions <- recaptures_experiment_for_analysis %>%
-  distinct(species) %>%
+  distinct(bird_species) %>%
   left_join(bird_species_names) %>%
-  mutate(data = map(species, ~subset_data(dataset = data_mass_wing_regressions, bird_species = .))) %>% 
+  mutate(data = map(bird_species, ~subset_data(dataset = data_mass_wing_regressions, bird_species = .))) %>% 
   mutate(num_rows = map(data, function(.){unlist(dim(.)[[1]])})) %>%
   filter(num_rows > 30) %>% #Remove species that don't have > 30 observations for regression
   mutate(mass_wing_model = map(data, create_model)) %>%
@@ -287,7 +286,7 @@ Identify and remove outliers from regression
 #Identify outliers in mass ~ wing length regressions, with the goal of removing sketchy points (in lieu of going back to paper datasheets)
 outliers <- mass_wing_regressions %>%
   mutate(data_augment_outliers = pmap(list(data_augment, num_rows), ~identify_outliers(dataset = ..1, sample_size = ..2))) %>%
-  mutate(plot_outlier = pmap(list(data_augment_outliers, common_name), ~make_plot_outlier_id(dataset = ..1, bird_species = ..2, group_id = "cooksd_outlier")))
+  mutate(plot_outlier = pmap(list(data_augment_outliers, bird_common_name), ~make_plot_outlier_id(dataset = ..1, bird_species = ..2, group_id = "cooksd_outlier")))
 
 #Sample plot of what outliers look like
 outliers$plot_outlier[[1]]
@@ -308,16 +307,16 @@ data_mass_wing_regressions_without_outliers <- data_mass_wing_regressions %>%
 Re-run regressions using data without outliers
 ```{r, fig.height = 11.5, fig.width = 15}
 mass_wing_regressions_without_outliers <- recaptures_experiment_for_analysis %>%
-  distinct(species) %>%
+  distinct(bird_species) %>%
   left_join(bird_species_names) %>%
-  mutate(data = map(species, ~subset_data(dataset = data_mass_wing_regressions_without_outliers, bird_species = .))) %>% 
+  mutate(data = map(bird_species, ~subset_data(dataset = data_mass_wing_regressions_without_outliers, bird_species = .))) %>% 
   mutate(num_rows = map(data, function(.){unlist(dim(.)[[1]])})) %>%
   filter(num_rows > 30) %>% #Remove species that don't have > 30 observations for regression
   mutate(mass_wing_model = map(data, create_model)) %>%
   mutate(mass_wing_intercept = map(mass_wing_model, function(.){coefficients(.)[[1]]})) %>%
   mutate(mass_wing_slope = map(mass_wing_model, function(.){coefficients(.)[[2]]})) %>%
   mutate(data_augment = pmap(list(data, mass_wing_model), ~augment_data(dataset = ..1, model_object = ..2))) %>%
-  mutate(plot_recaps = pmap(list(data_augment, common_name, mass_wing_intercept, mass_wing_slope), ~make_plot(dataset = ..1, bird_species = ..2, intercept = ..3, slope = ..4, group_id = "experiment_bird"))) %>%
+  mutate(plot_recaps = pmap(list(data_augment, bird_common_name, mass_wing_intercept, mass_wing_slope), ~make_plot(dataset = ..1, bird_species = ..2, intercept = ..3, slope = ..4, group_id = "experiment_bird"))) %>%
   arrange(desc(as.numeric(num_rows))) #Re-order so that plots are ordered by amount of data
 
 mass_wing_regressions_without_outliers$plot_recaps[[1]]

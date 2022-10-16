@@ -46,7 +46,7 @@ raster::removeTmpFiles(h = 0) #this removes all files. If h = 24, removes all te
 Experiment data
 ```{r}
 #Make variable indicating paired sites
-exp_info <- read.csv("data/import/Experiment_dates_2016-2018.csv") %>%
+exp_info <- read.csv("data/import/data/Experiment_dates_2016-2018.csv") %>%
   mutate(replicate_id = paste(year, replicate, sep = "_")) %>%
   distinct(year, patch, replicate_id) %>%
   rename(replicate = replicate_id) %>%
@@ -83,7 +83,7 @@ mean_centroids_spatial <- st_set_crs(mean_centroids_spatial, value = proj)
 Net and camera locations
 ```{r}
 #Nets
-nets <- read.csv("data/import/Nets_2016-2018_20210909.csv") %>%
+nets <- read.csv("data/import/data/captures/Nets_2016-2018.csv") %>%
  distinct(year, patch, net_number, net_length, x_utm, y_utm) %>%
  arrange(year, patch, net_number) %>%
  filter(!is.na(x_utm) & !is.na(y_utm)) #remove NAs. 'st_as_sf' cannot handle NAS
@@ -92,7 +92,7 @@ nets_spatial <- st_as_sf(nets, coords = c("x_utm", "y_utm"))
 nets_spatial <- st_set_crs(nets_spatial, value = proj)
 
 #Cameras
-cameras <- read.csv("data/import/Camera_locations_2016-2018_20210705.csv") %>%
+cameras <- read.csv("data/import/data/cameras/Camera_locations_2016-2018.csv") %>%
  filter(!is.na(x) & !is.na(y)) #remove NAs for coordinates.'st_as_sf' cannot handle NAS
 
 #Cameras at stations (2/site). Some sites have multiple coordinates per station (one per camera). Take average x-y coordinates.
@@ -115,8 +115,8 @@ cameras_no_stations_spatial <- st_set_crs(cameras_no_stations_spatial, value = p
 
 Icons symbolizing cameras
 ```{r}
-camera_icon_circle = tmap_icons("data/import/Camera_icon_for_map_circle.png") #class = list
-camera_icon = tmap_icons("data/import/Camera_icon_for_map_no_circle.png") #class = list
+camera_icon_circle = tmap_icons("code/making_maps/Camera_icon_for_map_circle.png") #class = list
+camera_icon = tmap_icons("code/making_maps/Camera_icon_for_map_no_circle.png") #class = list
 ```
 
 Coordinate for field station
@@ -129,7 +129,7 @@ lcbs_spatial <- st_set_crs(lcbs_spatial, value = proj)
 
 Boundary of Coto Brus canton
 ```{r}
-coto_brus = read_sf(dsn = "data/import/Cantones_de_Costa_Rica-shp", layer = "5894e940-8455-4376-a1bc-ab05875cd4092020329-1-vyv616.0a2l") %>%
+coto_brus = read_sf(dsn = "data/import/data/spatial_layers/Cantones_de_Costa_Rica-shp", layer = "5894e940-8455-4376-a1bc-ab05875cd4092020329-1-vyv616.0a2l") %>%
   filter(NOM_CANT_1 == "COTO BRUS")
 
 coto_brus_utm = sf::st_transform(coto_brus, crs = sf::st_crs(proj)) #set projection to forest projection
@@ -154,8 +154,8 @@ countries_subset_utm = sf::st_transform(countries_subset, crs = proj)
 
 Forest/non-forest layers
 ```{r}
-forest = raster::raster("data/export/spatial_layers/Leimberger_GE_forest_layer_UTM.tif") 
-chase_forest = raster::raster("data/export/spatial_layers/Mendenhall_GE_forest_layer_UTM.tif")
+forest = raster::raster("data/import/data/spatial_layers/Leimberger_GE_forest_layer_UTM.tif") 
+chase_forest = raster::raster("data/import/data/spatial_layers/Mendenhall_GE_forest_layer_UTM.tif")
 ```
 
 ## Step 2: Process forest layers
@@ -528,7 +528,7 @@ tmap_save(all_layers_legend, filename = "results/making_maps/Legend.png", dpi=30
 
 Distances
 ```{r}
-write.csv(distances, "results/making_maps/Distances_between_paired_sites.csv")
-write.csv(distances_sum, "results/making_maps/Distances_between_paired_sites_sum.csv")
+write.csv(distances, "results/making_maps/Distances_between_paired_sites.csv", row.names = FALSE)
+write.csv(distances_sum, "results/making_maps/Distances_between_paired_sites_sum.csv", row.names = FALSE)
 ```
 

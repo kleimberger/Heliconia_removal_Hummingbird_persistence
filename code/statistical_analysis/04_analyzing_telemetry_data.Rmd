@@ -46,15 +46,14 @@ set.seed(1)
 **Data for analysis**
 ```{r}
 #Telemetry data, all hummingbird species
-telem_data <- read.csv("../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv") %>%
-  mutate(bird_group = "all_spp") %>%
-  select(-X)
+telem_data <- read.csv("data/export/for_analysis/Telemetry_proportion_time_in_patch.csv") %>%
+  mutate(bird_group = "all_spp")
 
 head(telem_data)
 
 #Create subset for GREH/VISA
 telem_data_greh_visa <- telem_data %>%
-  filter(species == "GREH" | species == "VISA") %>%
+  filter(bird_species == "GREH" | bird_species == "VISA") %>%
   mutate(bird_group = "greh_visa")
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
@@ -75,7 +74,7 @@ telem_data_for_analysis <- telem_data %>%
          log_focal_area_hectares = log(focal_area_hectares)) %>%
   mutate(analysis = "telemetry") %>%
   mutate(subanalysis = "telemetry") %>%
-  select(analysis, subanalysis, bird_group, year, patch, year_patch, control_treatment, exp_phase, bird_id, frequency, species, sex, obs_effort_minutes, everything())
+  select(analysis, subanalysis, bird_group, year, patch, year_patch, control_treatment, exp_phase, bird_id, frequency, bird_species, bird_sex, obs_effort_minutes, everything())
 ```
 
 **Import functions**
