@@ -39,20 +39,20 @@ Before this point, I manually assigned (known) count units in Excel if a count u
 ```{r step1, warning=FALSE}
 #Shorten "inflorescence" to "inflor"
 #Create column designating known vs. unknown count units (known = count unit explicitly recorded in field)
-resource_data <- read.csv("../../data/import/Resource_counts_2016-2018_20200713.csv") %>%
+resource_data <- read.csv("../../data/import/data/resource_counts/Resource_counts_2016-2018.csv") %>%
   mutate(count_unit = ifelse(count_unit == "inflorescence", "inflor", as.character(count_unit)), 
          count_unit_status = ifelse(is.na(count_unit), "unknown", "known"))
 ```
 
 ## Step 2: Deal with unknown species that have a known genus (e.g., COSTUS, PASSIFLORA, HELICONIA) or identifying descriptions
 
-I can still include these species in the calorie estimate by substituting a closely related species. To do this, I will create a new column called 'species_code_for_calories'.  *Remember, this is just for the resource/calorie estimate! Use original 'species_code' to calculate other variables, e.g., species richness.*
+I can still include these species in the calorie estimate by substituting a closely related species. To do this, I will create a new column called 'plant_species_for_calories'.  *Remember, this is just for the resource/calorie estimate! Use original 'plant_species' to calculate other variables, e.g., species richness.*
 
 Which unknown species include genera -- or somewhat familiar/useful descriptions -- and could be reasonably approximated with a known species? Preferably the approximate species will also have nectar data.
 ```{r step2a, warning=FALSE}
 unknown_species <- resource_data %>%
-  filter(grepl("UNKN", species_code)) %>%
-  distinct(species_code)
+  filter(grepl("UNKN", plant_species)) %>%
+  distinct(plant_species)
 ```
 
 Species substitutions
@@ -67,14 +67,14 @@ Species substitutions
 Create new column for approximate species. Use this column for rest of calorie estimation
 ```{r step2b, warning=FALSE}
 resource_data02 <- resource_data %>%
-  mutate(species_code_for_calories = case_when(species_code == "UNKN-PASSIFLORA" ~ "PACO",
-                                               species_code == "UNKN-HELICONIA" ~ "HETO",
-                                               species_code == "UNKN-COSTUS" ~ "COLA",
-                                               species_code == "UNKN-HIBISCUS" ~ "AMAP",
-                                               species_code == "UNKN-BROMELIA" ~ "GUZA", 
-                                               species_code == "UNKN-PAV-MOR-PEL" ~ "PAV-MOR",
-                                               TRUE ~ as.character(species_code)))%>%
-  select(year:family, species_code_for_calories, count_unit, count_unit_status, everything())
+  mutate(plant_species_for_calories = case_when(plant_species == "UNKN-PASSIFLORA" ~ "PACO",
+                                               plant_species == "UNKN-HELICONIA" ~ "HETO",
+                                               plant_species == "UNKN-COSTUS" ~ "COLA",
+                                               plant_species == "UNKN-HIBISCUS" ~ "AMAP",
+                                               plant_species == "UNKN-BROMELIA" ~ "GUZA", 
+                                               plant_species == "UNKN-PAV-MOR-PEL" ~ "PAV-MOR",
+                                               TRUE ~ as.character(plant_species)))%>%
+  select(year:plant_family, plant_species_for_calories, count_unit, count_unit_status, everything())
 ```
 
 ## Step 3: Assign count units based on knowledge of the plant species/count methods used
@@ -93,7 +93,7 @@ resource_data02 <- resource_data %>%
 
     * GUMA (inflorescences - "orange puffs" - grow on a vine, typically out of reach)
   
-*Note: need to use 'species_code_for_calories' so that unknown/approximated species get assigned count units*
+*Note: need to use 'plant_species_for_calories' so that unknown/approximated species get assigned count units*
 ```{r step3, warning=FALSE}
 #Species with no inflorescence to count
 species_counted_as_flowers <- c("PAV-MOR", "PAV-ROSA", "AMAP", "PACO", "PAVI")
@@ -104,19 +104,19 @@ species_counted_as_inflor <- c("GUMA")
 resource_data03 <-resource_data02 %>%
   
   #Assign "bract" to Heliconia species
-  mutate(count_unit_source = ifelse(count_unit_status == "unknown" & grepl(pattern = "HE", species_code_for_calories), "Counting protocol for Heliconias", ""),
-         count_unit_status = ifelse(count_unit_status == "unknown" & grepl(pattern = "HE", species_code_for_calories), "assumed", count_unit_status),
-         count_unit = ifelse((is.na(count_unit) | count_unit == "inflor") & grepl(pattern = "HE", species_code_for_calories), "bract", as.character(count_unit))) %>%
+  mutate(count_unit_source = ifelse(count_unit_status == "unknown" & grepl(pattern = "HE", plant_species_for_calories), "Counting protocol for Heliconias", ""),
+         count_unit_status = ifelse(count_unit_status == "unknown" & grepl(pattern = "HE", plant_species_for_calories), "assumed", count_unit_status),
+         count_unit = ifelse((is.na(count_unit) | count_unit == "inflor") & grepl(pattern = "HE", plant_species_for_calories), "bract", as.character(count_unit))) %>%
   
   #Assign "flower" to species presumably counted as flowers
-  mutate(count_unit_source = ifelse(is.na(count_unit) & (species_code_for_calories %in% species_counted_as_flowers), "No countable inflorescence", count_unit_source),
-         count_unit_status = ifelse(is.na(count_unit) & (species_code_for_calories %in% species_counted_as_flowers), "assumed", count_unit_status),
-         count_unit = ifelse(is.na(count_unit) & (species_code_for_calories %in% species_counted_as_flowers), "flower", as.character(count_unit))) %>%
+  mutate(count_unit_source = ifelse(is.na(count_unit) & (plant_species_for_calories %in% species_counted_as_flowers), "No countable inflorescence", count_unit_source),
+         count_unit_status = ifelse(is.na(count_unit) & (plant_species_for_calories %in% species_counted_as_flowers), "assumed", count_unit_status),
+         count_unit = ifelse(is.na(count_unit) & (plant_species_for_calories %in% species_counted_as_flowers), "flower", as.character(count_unit))) %>%
   
   #Assign "inflor" to species presumably counted as inflorescences
-  mutate(count_unit_source = ifelse(is.na(count_unit) & (species_code_for_calories %in% species_counted_as_inflor), "No countable flower", count_unit_source),
-         count_unit_status = ifelse(is.na(count_unit) & (species_code_for_calories %in% species_counted_as_inflor), "assumed", count_unit_status),
-         count_unit = ifelse(is.na(count_unit) & (species_code_for_calories == "GUMA"), "inflor", as.character(count_unit))) %>%
+  mutate(count_unit_source = ifelse(is.na(count_unit) & (plant_species_for_calories %in% species_counted_as_inflor), "No countable flower", count_unit_source),
+         count_unit_status = ifelse(is.na(count_unit) & (plant_species_for_calories %in% species_counted_as_inflor), "assumed", count_unit_status),
+         count_unit = ifelse(is.na(count_unit) & (plant_species_for_calories == "GUMA"), "inflor", as.character(count_unit))) %>%
   
   #Reorder columns
   select(year:count_unit_status, count_unit_source, everything())
@@ -129,7 +129,7 @@ In 2018, count unit was recorded regularly using the Survey213 mobile app. Here,
 *Note: Density function needs at least two points, so will only look at species with >2 points*
 ```{r step4a, warning=FALSE, fig.height=8, fig.width=8}
 some_known <- resource_data03 %>%
-  group_by(species_code, species_name, count_unit_status) %>%
+  group_by(plant_species, plant_scientific_name, count_unit_status) %>%
   summarise(num_rows = n()) %>%
   ungroup() %>%
   arrange(desc(num_rows)) %>%
@@ -142,14 +142,14 @@ some_known <- resource_data03 %>%
 #3. Creating new column for count status (adding info about known count unit)
 density_plot_data <- resource_data03 %>%
           filter(!is.na(num_other_resources)) %>% 
-          filter(species_code %in% some_known$species_code) %>% 
+          filter(plant_species %in% some_known$plant_species) %>% 
           unite(count_info, count_unit_status, count_unit, sep = "-") %>%
           mutate(count_info = ifelse(count_info == "unknown-NA", "unknown", count_info))
   
 #Make density plot(s). To spread out X axis, use log(number of resources)
 density_plots <- ggplot(data = density_plot_data, aes(x = log(num_other_resources), fill = count_info)) +
             geom_density(alpha = 0.4) +
-            facet_wrap(. ~ species_code, nrow = NULL, ncol = NULL, scales = "free") +
+            facet_wrap(. ~ plant_species, nrow = NULL, ncol = NULL, scales = "free") +
             scale_fill_manual(values = c("blue", "red", "gold", "white")) +
             labs(fill = "Count unit", x = "Ln(number of resources counted)") +
             theme(legend.position = "bottom")
@@ -169,9 +169,9 @@ Based on overlapping distributions, I am confident about 3 species:
 Add count units for species I am confident about
 ```{r step4b, warning=FALSE}
 resource_data04 <- resource_data03 %>%
-  mutate(count_unit_source = ifelse(is.na(count_unit) & grepl(pattern = "GINGY|MARA|MARA-VER", species_code_for_calories), "Known vs. unknown distributions", count_unit_source),
-         count_unit_status = ifelse(is.na(count_unit) & grepl(pattern = "GINGY|MARA|MARA-VER", species_code_for_calories), "assumed", count_unit_status),
-         count_unit = ifelse(is.na(count_unit) & grepl(pattern = "GINGY|MARA|MARA-VER", species_code_for_calories), "inflor", as.character(count_unit)))
+  mutate(count_unit_source = ifelse(is.na(count_unit) & grepl(pattern = "GINGY|MARA|MARA-VER", plant_species_for_calories), "Known vs. unknown distributions", count_unit_source),
+         count_unit_status = ifelse(is.na(count_unit) & grepl(pattern = "GINGY|MARA|MARA-VER", plant_species_for_calories), "assumed", count_unit_status),
+         count_unit = ifelse(is.na(count_unit) & grepl(pattern = "GINGY|MARA|MARA-VER", plant_species_for_calories), "inflor", as.character(count_unit)))
 ```
 
 ## Step 5: For remaining species with unknown count unit, assign a 'low' estimate (i.e., flower) and 'high' estimate (i.e., inflorescence)
@@ -180,16 +180,16 @@ resource_data04 <- resource_data03 %>%
 ```{r step5a, warning=FALSE}
 still_unknown <- resource_data04 %>%
   filter(count_unit_status == "unknown") %>%
-  group_by(species_code, species_name, species_code_for_calories) %>%
+  group_by(plant_species, plant_scientific_name, plant_species_for_calories) %>%
   summarise(num_rows = n()) %>%
   ungroup() %>%
   arrange(desc(num_rows)) 
 
 #How many species still have unknown count units? Filtered to species that could be identified to genus
-filter(still_unknown, !is.na(species_name)) %>% pull(species_name) %>% length()
+filter(still_unknown, !is.na(plant_scientific_name)) %>% pull(plant_scientific_name) %>% length()
 
 #How many rows (plants) have unknown count units?
-unknown_plants <- filter(still_unknown, !is.na(species_name)) %>% 
+unknown_plants <- filter(still_unknown, !is.na(plant_scientific_name)) %>% 
   summarise(num_rows = sum(num_rows)) %>%
   pull(num_rows)
 
@@ -250,7 +250,7 @@ resource_data07 <- resource_data06 %>%
 
 ## Step 7: Export data
 ```{r step7}
-write.csv(resource_data07, "../../data/export/intermediate/Resource_counts_2016-2018_with_count_units.csv") 
+write.csv(resource_data07, "../../data/export/intermediate/Resource_counts_2016-2018_with_count_units.csv", row.names = FALSE) 
 ```
 
 *Next steps: estimating flowers-per-inflorescence and flowers-per-tree, then estimating calories*

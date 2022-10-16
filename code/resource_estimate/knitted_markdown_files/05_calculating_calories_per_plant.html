@@ -395,7 +395,7 @@ per open number of bracts</li>
 </ul></li>
 </ol>
 <p>Any unknown species that could be identified to genus have already
-been assigned a ‘species_code_for_calories’, which is a related
+been assigned a ‘plant_species_for_calories’, which is a related
 (congeneric) species for the purpose of estimating flowers &amp;
 calories. This is the column to join by.</p>
 <div id="step-1-import-data" class="section level2">
@@ -404,40 +404,40 @@ calories. This is the column to join by.</p>
 
 #Resource data
 resource_counts &lt;- read.csv(file.path(path_name, &quot;Resource_counts_2016-2018_with_count_units.csv&quot;)) %&gt;%
-  select(-X, -row_id)
+  select(-row_id)
 
 path_name &lt;- c(&quot;../../data/export/supp_tables&quot;)
 
 #Heliconia flowers/bract. I.e. for a given number of open bracts, how many flowers are probably open?
 flowers_per_bracts &lt;- read.csv(file.path(path_name, &quot;Heliconia_flowers_per_bracts_key.csv&quot;)) %&gt;%
-  mutate(species_code_for_calories = &quot;HETO&quot;) %&gt;% 
-  select(species_code_for_calories, num_bracts, flowers_per)
+  mutate(plant_species_for_calories = &quot;HETO&quot;) %&gt;% 
+  select(plant_species_for_calories, num_bracts, flowers_per)
 
 #Flowers-per-inflor (/tree) key for non-Heliconia species
 flowers_per_inflor &lt;- read.csv(file.path(path_name, &quot;Non-Heliconia_flowers_per_inflorescence_key.csv&quot;)) %&gt;% 
-  select(species_code_for_calories = species_code, count_unit, flowers_per)
+  select(plant_species_for_calories = plant_species, count_unit, flowers_per)
 
 #Nectar data with info about calories per flower
 calories_per_flower &lt;- read.csv(file.path(path_name, &quot;Nectar_volume_concentration_and_calories_summary.csv&quot;)) %&gt;%
-    select(species_code_for_calories = species, calories)</code></pre>
+    select(plant_species_for_calories = plant_species, calories)</code></pre>
 </div>
 <div id="step-2-convert-number-of-bractsinflorescencestrees-into-number-of-flowers" class="section level2">
 <h2>Step 2: Convert number of bracts/inflorescences/trees into number of
 flowers</h2>
-<pre class="r"><code>#1. Assign HETO as the &#39;species_code_for_calories&#39; for ALL Heliconia species, not just tortuosa.
+<pre class="r"><code>#1. Assign HETO as the &#39;plant_species_for_calories&#39; for ALL Heliconia species, not just tortuosa.
 #2. Add imported data
 resource_counts02 &lt;- resource_counts %&gt;%
-  mutate(species_code_for_calories = ifelse(grepl(&quot;Heliconia&quot;, species_name), &quot;HETO&quot;, as.character(species_code_for_calories))) %&gt;%
-  left_join(flowers_per_bracts, by = c(&quot;species_code_for_calories&quot;, &quot;num_bracts&quot;)) %&gt;%
-  left_join(flowers_per_inflor, by = c(&quot;species_code_for_calories&quot;, &quot;count_unit&quot;)) %&gt;%
-  left_join(calories_per_flower, by = c(&quot;species_code_for_calories&quot;)) %&gt;%
+  mutate(plant_species_for_calories = ifelse(grepl(&quot;Heliconia&quot;, plant_scientific_name), &quot;HETO&quot;, as.character(plant_species_for_calories))) %&gt;%
+  left_join(flowers_per_bracts, by = c(&quot;plant_species_for_calories&quot;, &quot;num_bracts&quot;)) %&gt;%
+  left_join(flowers_per_inflor, by = c(&quot;plant_species_for_calories&quot;, &quot;count_unit&quot;)) %&gt;%
+  left_join(calories_per_flower, by = c(&quot;plant_species_for_calories&quot;)) %&gt;%
   unite(flowers_per, flowers_per.x, flowers_per.y, sep = &quot;&quot;) %&gt;%
   mutate(flowers_per = gsub(&quot;NA&quot;, &quot;&quot;, flowers_per, fixed = TRUE))
 
 #Check: what rows do not have any flowers-per (bract/infor/tree) data? Heliconia species with no bract data (either no data recorded, or only data about number of flowers recorded)
 check01 &lt;- resource_counts02 %&gt;%
   filter(count_unit != &quot;flower&quot;) %&gt;%
-  filter(!grepl(&quot;UNKN&quot;, species_code)) %&gt;%
+  filter(!grepl(&quot;UNKN&quot;, plant_species)) %&gt;%
   filter(is.na(flowers_per) | flowers_per == &quot;&quot;)
 
 #Convert bracts/inflor/trees to number of flowers (&#39;num_flowers_estimate&#39;)
@@ -447,14 +447,14 @@ check01 &lt;- resource_counts02 %&gt;%
 resource_counts03 &lt;- resource_counts02 %&gt;%
   mutate(flowers_per = as.numeric(flowers_per)) %&gt;%
   mutate(num_flowers_estimate = ifelse(!is.na(num_flowers), num_flowers, NA),  
-         num_flowers_estimate =ifelse(species_code_for_calories == &quot;HETO&quot;, flowers_per, num_flowers_estimate), 
-         num_flowers_estimate = ifelse(species_code_for_calories==&quot;HETO&quot; &amp; is.na(num_bracts), num_flowers, num_flowers_estimate), 
+         num_flowers_estimate =ifelse(plant_species_for_calories == &quot;HETO&quot;, flowers_per, num_flowers_estimate), 
+         num_flowers_estimate = ifelse(plant_species_for_calories==&quot;HETO&quot; &amp; is.na(num_bracts), num_flowers, num_flowers_estimate), 
          num_flowers_estimate = ifelse((is.na(num_flowers) &amp; count_unit==&quot;inflor&quot;), num_inflors*flowers_per, num_flowers_estimate),
          num_flowers_estimate = ifelse((is.na(num_flowers) &amp; count_unit==&quot;tree&quot;), num_trees*flowers_per, num_flowers_estimate))
 
 #Check: is the math correct?
 check02 &lt;- resource_counts03 %&gt;%
-  select(count_estimate_high_low, species_code, species_code_for_calories, count_unit, num_bracts, num_flowers, num_inflors, num_trees, flowers_per, num_flowers_estimate, notes_data)
+  select(count_estimate_high_low, plant_species, plant_species_for_calories, count_unit, num_bracts, num_flowers, num_inflors, num_trees, flowers_per, num_flowers_estimate, notes_data)
 
 #Check: how many rows do not have a num_flowers_estimate? Why? 
 check03 &lt;- resource_counts03 %&gt;%
@@ -465,7 +465,7 @@ check03 &lt;- resource_counts03 %&gt;%
 #Check: how many rows do not have num_flowers_estimate? Why? (Aside from being an unknown species)
 check04 &lt;- resource_counts03 %&gt;%
   filter(is.na(num_flowers_estimate)) %&gt;%
-  filter(!grepl(&quot;UNKN&quot;, species_code))
+  filter(!grepl(&quot;UNKN&quot;, plant_species))
 
 #Answer: When count data are NA. For example, when rows were assumed to be duplicate counts (e.g., p137 MARIPA and p10 PORO), or when data are just missing.</code></pre>
 <p>Possible solutions for plants (rows) missing count data:</p>
@@ -488,10 +488,10 @@ calories_per_plant &lt;- resource_counts03 %&gt;%
   arrange(count_estimate_high_low)
 
 #Check: are there any species missing nectar data?
-nectar_species &lt;- calories_per_flower %&gt;% distinct(species_code_for_calories)
+nectar_species &lt;- calories_per_flower %&gt;% distinct(plant_species_for_calories)
 
 check05 &lt;- resource_counts03 %&gt;% 
-  filter(!(species_code_for_calories %in% nectar_species$species_code_for_calories))
+  filter(!(plant_species_for_calories %in% nectar_species$plant_species_for_calories))
 
 #Answer: only random unknown species (not known to genus)
 
@@ -504,13 +504,13 @@ check06 &lt;- calories_per_plant %&gt;%
 #Check: which rows have NA calories? And why? Did not have any &#39;num_flowers_estimate&#39;. Same as check04
 check08 &lt;- calories_per_plant %&gt;%
   filter(is.na(calories_per_plant)) %&gt;%
-  filter(!grepl(&quot;UNKN&quot;, species_code))</code></pre>
+  filter(!grepl(&quot;UNKN&quot;, plant_species))</code></pre>
 </div>
 <div id="step-4-export-data-will-be-summarized-to-patch-level-in-later-step" class="section level2">
 <h2>Step 4: Export data (will be summarized to patch level in later
 step)</h2>
 <pre class="r"><code>path_name &lt;- c(&quot;../../data/export/intermediate&quot;)
-write.csv(calories_per_plant, file.path(path_name, &quot;Resource_counts_2016-2018_with_calories.csv&quot;))</code></pre>
+write.csv(calories_per_plant, file.path(path_name, &quot;Resource_counts_2016-2018_with_calories.csv&quot;), row.names = FALSE)</code></pre>
 </div>
 
 

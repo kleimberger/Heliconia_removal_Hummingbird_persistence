@@ -35,10 +35,10 @@ source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 
 Get nectar measurements
 ```{r step1b}
-path_name <- c("../../data/import/misc_data_for_resource_estimate")
+path_name <- c("../../data/import/data/nectar_measurements")
 
 #Nectar measurements from field
-nectar <- read.csv(file.path(path_name, "CR_Nectar_Data_20210914.csv"))
+nectar <- read.csv(file.path(path_name, "Nectar_measurements_2014_2018.csv"))
 ```
 
 ## Step 2: Summarize nectar volume (microliters) and concentration (%w/w) by plant species
@@ -58,17 +58,17 @@ Filter data
 #Remove 'old' and 'unbagged' flowers (not sure what 'old' means, and measuring 'old' flowers could be problematic for single-day flowers)
 #Also remove measurements from unknown species: UNKN-CAVENDISHIA, UNKN-IMPATIENS, and HETO x HELA
 nectar_bagged <- nectar %>%
-  filter(!(grepl("Old", flowerAge, fixed = FALSE, ignore.case = FALSE))) %>%
+  filter(!(grepl("Old", flower_age, fixed = FALSE, ignore.case = FALSE))) %>%
   filter(bagged == "yes") %>%
-  mutate_at(c("nectarVol", "nectarConc"), as.numeric) %>%
-  filter(!is.na(speciesName))
+  mutate_at(c("nectar_vol", "nectar_conc"), as.numeric) %>%
+  filter(!is.na(plant_species))
 ```
 
 Summarize measurements for nectar concentration
 ```{r step2b}
 concentration_sum <- nectar_bagged %>%
-  group_by(species, speciesName, family) %>%
-  calculate_basic_summary_stats(variable = nectarConc) %>%
+  group_by(plant_species, plant_scientific_name, plant_family) %>%
+  calculate_basic_summary_stats(variable = nectar_conc) %>%
   ungroup() %>%
   select(-n) %>%
   rename(mean_conc = mean, sd_conc = sd, min_conc = min, max_conc = max, median_conc = median)
@@ -79,8 +79,8 @@ concentration_sum <- nectar_bagged %>%
 Summarize measurements for nectar volume
 ```{r step2c}
 volume_sum <- nectar_bagged %>%
-  group_by(species, speciesName, family)%>%
-    calculate_basic_summary_stats(variable = nectarVol) %>%
+  group_by(plant_species, plant_scientific_name, plant_family) %>%
+    calculate_basic_summary_stats(variable = nectar_vol) %>%
   ungroup() %>%
   select(-n) %>%
   rename(mean_vol = mean, sd_vol = sd, min_vol = min, max_vol = max, median_vol = median)
@@ -90,32 +90,32 @@ Summarize sample size
 ```{r step2d}
 #SAMPLE SIZE SUMMARY *INCLUDING* FLOWERS WITH ZERO NECTAR
 sum_with_zero_volume <- nectar_bagged %>%
-  group_by(species, speciesName) %>%
-  summarise(numFlowers_inclZero = n()) %>%
+  group_by(plant_species, plant_scientific_name,) %>%
+  summarise(num_flowers_incl_zero = n()) %>%
   ungroup() %>%
-  arrange(desc(numFlowers_inclZero))
+  arrange(desc(num_flowers_incl_zero))
 
 #SAMPLE SIZE SUMMARY *EXCLUDING* FLOWERS WITH ZERO NECTAR
 sum_without_zero_volume <- nectar_bagged %>%
-  filter(nectarVol > 0.00) %>% #Only including nectar amounts >0
-  group_by(species, speciesName) %>%
-  summarise(numFlowers_notZero=n()) %>%
+  filter(nectar_vol > 0.00) %>% #Only including nectar amounts >0
+  group_by(plant_species, plant_scientific_name,) %>%
+  summarise(num_flowers_not_incl_zero = n()) %>%
   ungroup() %>%
-  arrange(desc(numFlowers_notZero))
+  arrange(desc(num_flowers_not_incl_zero))
 
 #SAMPLE SIZE SUMMARY *EXCLUDING* FLOWERS WITH NO BRIX MEASUREMENTS
 sum_without_missing_conc <- nectar_bagged %>%
-  filter(!is.na(nectarConc)) %>% #Only including flowers with measured concentrations
-  group_by(species, speciesName) %>%
-  summarise(numFlowers_withBrix=n()) %>%
+  filter(!is.na(nectar_conc)) %>% #Only including flowers with measured concentrations
+  group_by(plant_species, plant_scientific_name,) %>%
+  summarise(num_flowers_with_brix = n()) %>%
   ungroup() %>%
-  arrange(desc(numFlowers_withBrix))
+  arrange(desc(num_flowers_with_brix))
 
 #COMBINING ALL OF THE SAMPLE SIZE SUMMARIES FROM ABOVE
 sample_size_sum <- sum_with_zero_volume %>%
   left_join(sum_without_zero_volume) %>%
   left_join(sum_without_missing_conc) %>%
-  mutate_at(vars(numFlowers_withBrix), list(~ifelse(is.na(.), 0, .))) #Replace zeroes with NA
+  mutate_at(vars(num_flowers_with_brix), list(~ifelse(is.na(.), 0, .))) #Replace zeroes with NA
 ```
 
 Combine nectar/conc summary with sample size summary
@@ -123,9 +123,9 @@ Combine nectar/conc summary with sample size summary
 nectar_sum <- volume_sum %>%
   left_join(concentration_sum) %>%
   left_join(sample_size_sum) %>%
-  select(species, speciesName, family, everything()) %>%
+  select(plant_species, plant_scientific_name, plant_family, everything()) %>%
   mutate_if(is.numeric, ~round(., digits=2)) %>%
-  arrange(family)
+  arrange(plant_family)
 ```
 
 ## Step 3: Compile some info for supplemental methods
@@ -133,16 +133,16 @@ nectar_sum <- volume_sum %>%
 ```{r step3}
 #How many species measured?
 species_sampled <- nectar_bagged %>%
-  distinct(speciesName) %>%
-  filter(!is.na(speciesName)) %>%
-  pull(speciesName) %>%
+  distinct(plant_scientific_name) %>%
+  filter(!is.na(plant_scientific_name)) %>%
+  pull(plant_scientific_name) %>%
   length()
 
 species_sampled
 
 #How many flowers sampled?
 flowers_sampled <- nectar_bagged %>%
-  pull(speciesName) %>%
+  pull(plant_scientific_name) %>%
   length()
   
 flowers_sampled
@@ -158,28 +158,28 @@ flowers_per_dataset
 
 #What time of day were flowers collected, on average? Or median
 collection_time_sum <- nectar_bagged %>%
-  mutate(timeCollected = lubridate::hm(timeCollected)) %>% #This creates a period object
-  mutate(timeCollected = lubridate::period_to_seconds(timeCollected)) %>% ##Convert period object to seconds to do math
-  calculate_basic_summary_stats(variable = timeCollected) %>%
+  mutate(time_collected = lubridate::hm(time_collected)) %>% #This creates a period object
+  mutate(time_collected = lubridate::period_to_seconds(time_collected)) %>% ##Convert period object to seconds to do math
+  calculate_basic_summary_stats(variable = time_collected) %>%
   mutate_at(vars(median, mean, sd, min, max), lubridate::seconds_to_period) ##Convert back to period object
 
 collection_time_sum
 
 #How many plants were measured with OSU refractometer (not temperature calibrated) vs Rice refractometer (temperature calibrated)?
 flowers_per_refractometer <- nectar_bagged %>%
-  group_by(refractometerID) %>%
+  group_by(refractometer_id) %>%
   summarise(num_flowers = n()) %>%
   ungroup()
 
 flowers_per_refractometer
 
 #Percentage of flowers from non-temp calibrated refractometer
-(flowers_per_refractometer %>% filter(refractometerID == "OSU") %>% pull(num_flowers))/flowers_sampled
+(flowers_per_refractometer %>% filter(refractometer_id == "OSU") %>% pull(num_flowers))/flowers_sampled
 
 #How many plants and species had nectar concentrations above the max of the refractometer? These have nectar concentrations of 33 degrees Brix.
 flowers_above_limit <- nectar_bagged %>%
-  filter(nectarConc == 33) %>% 
-  group_by(species, speciesName) %>%
+  filter(nectar_conc == 33) %>% 
+  group_by(plant_species, plant_scientific_name) %>%
   summarise(num_flowers = n()) %>%
   ungroup()
 
@@ -188,5 +188,5 @@ flowers_above_limit <- nectar_bagged %>%
 
 ## Step 4: Export data
 ```{r step4}
-write.csv(nectar_sum, "../../data/export/supp_tables/Nectar_volume_and_concentration_summary.csv")
+write.csv(nectar_sum, "../../data/export/supp_tables/Nectar_volume_and_concentration_summary.csv", row.names = FALSE)
 ```

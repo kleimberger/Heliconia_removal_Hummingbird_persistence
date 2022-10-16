@@ -51,17 +51,16 @@ library(ggpubr)
 ```{r step1}
 #Resource survey data. Use this unfiltered dataset for any calculations of species richness. Note that there are 'low' and 'high' estimates based on counting units.
 resource_data <- read.csv("../../data/export/intermediate/Resource_counts_2016-2018_with_calories.csv") %>% 
-  select(-X, -calories, -flowers_per) %>%
+  select(-calories, -flowers_per) %>%
   mutate(year_patch = paste(year, patch, sep = "_"))
 
 #Info about focal area size
 focal_area_sizes <- read.csv("../../data/export/intermediate/Focal_area_sizes_and_centroids.csv") %>%
-  select(-X) %>%
   select(year, patch, control_treatment, area)
 
 #Plant scientific names
-plant_names <- read.csv("../../data/import/Plant_codes_species_list.csv") %>%
-  select(plant_species = species_code, plant_scientific_name = species_name, plant_family = family) %>%
+plant_names <- read.csv("../../data/import/data/Plant_codes_species_list.csv") %>%
+  select(plant_species, plant_scientific_name, plant_family) %>%
   filter(!is.na(plant_species) & plant_species != "")
 
 #Camera data reflected 'normal' visitation, but removing night-blooming species. These will not be in the calorie estimate, so I don't need to include them
@@ -79,8 +78,8 @@ source("../../code/helper_functions/Make_barplot_for_weights.R")
 ```{r step2a}
 #How many species total?
 species_list <- resource_data %>%
-  distinct(family, species_name, species_code, species_code_for_calories) %>%
-  mutate(known_vs_unknown = ifelse(grepl("UNKN", species_code), "unknown", "known")) %>%
+  distinct(plant_family, plant_scientific_name, plant_species, plant_species_for_calories) %>%
+  mutate(known_vs_unknown = ifelse(grepl("UNKN", plant_species), "unknown", "known")) %>%
   arrange(known_vs_unknown)
 
 #How many known vs unknown?
@@ -93,14 +92,14 @@ species_list_sum
 
 #Unknown species that did not have an approximate (i.e., genus level) species substituted 
 completely_unknown_species <- species_list %>%
-  filter(grepl("UNKN", species_code_for_calories))
+  filter(grepl("UNKN", plant_species_for_calories))
 
 nrow(completely_unknown_species)
 
 #How many plants was this?
 completely_unknown_plants <- resource_data %>%
   filter(count_estimate_high_low == "high") %>%
-  filter(grepl("UNKN", species_code_for_calories))
+  filter(grepl("UNKN", plant_species_for_calories))
 
 nrow(completely_unknown_plants)
 ```
@@ -122,8 +121,8 @@ Remove night-blooming species (i.e., OJO, CEPU)
 ```{r step2b}
 #Resource data. Use this filtered dataste for calculations of abundance and calories.
 resource_data_filtered <- resource_data %>%
-  filter(!grepl("UNKN", species_code_for_calories)) %>%  #Remove unknown species that did not have an approximate (i.e., genus level) species substituted
-  filter(species_code != "OJO" & species_code != "CEPU") #Remove species that open at night and are visited by bats
+  filter(!grepl("UNKN", plant_species_for_calories)) %>%  #Remove unknown species that did not have an approximate (i.e., genus level) species substituted
+  filter(plant_species != "OJO" & plant_species != "CEPU") #Remove species that open at night and are visited by bats
 ```
 
 ## Step 3: Add additional columns that will help create summaries of interest
@@ -145,8 +144,8 @@ resource_data_to_summarize <- resource_data_filtered %>%
                                        covered == "N" ~ "remaining",
                                        covered == "NA" | is.na(covered) ~ "remaining",
                                        TRUE ~ as.character(NA))) %>% 
-  mutate(heto_nonheto = case_when(species_code == "HETO" ~ "heto_only",
-                                  species_code != "HETO" ~ "nonheto",
+  mutate(heto_nonheto = case_when(plant_species == "HETO" ~ "heto_only",
+                                  plant_species != "HETO" ~ "nonheto",
                                   TRUE ~ as.character(NA))) %>%
   select(-covered)
 
@@ -166,7 +165,7 @@ resource_data_sum_calories <- resource_data_to_summarize %>%
 
 #At level of PLANTS, for Heliconia
 heto_inflor_removed_remaining <- resource_data_to_summarize %>%
-  filter(species_code == "HETO" & count_estimate_high_low == "high") %>%
+  filter(plant_species == "HETO" & count_estimate_high_low == "high") %>%
   group_by(count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_plants = n(),
             num_flowers = sum(num_flowers_estimate, na.rm = TRUE),
@@ -184,7 +183,7 @@ heto_inflor_removed <- heto_inflor_removed_remaining %>%
 
 #How many inflorescences with open bracts? 
 heto_inflor_open_removed <- resource_data_to_summarize %>%
-  filter(species_code == "HETO" & removed_remaining == "removed" & count_estimate_high_low == "high") %>%
+  filter(plant_species == "HETO" & removed_remaining == "removed" & count_estimate_high_low == "high") %>%
   filter(num_bracts > 0) %>%
   group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_plants_open = n()) %>%
@@ -192,7 +191,7 @@ heto_inflor_open_removed <- resource_data_to_summarize %>%
 
 #How many with at least 3 open bracts?
 heto_inflor_gt3_removed <- resource_data_to_summarize %>%
-  filter(species_code == "HETO" & removed_remaining == "removed" & count_estimate_high_low == "high") %>%
+  filter(plant_species == "HETO" & removed_remaining == "removed" & count_estimate_high_low == "high") %>%
   filter(num_bracts >= 3) %>%
   group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_plants_gt3 = n()) %>%
@@ -200,7 +199,7 @@ heto_inflor_gt3_removed <- resource_data_to_summarize %>%
 
 #How many flowers?
 heto_flowers_removed <- resource_data_to_summarize %>%
-  filter(species_code == "HETO" & removed_remaining == "removed" & count_estimate_high_low == "high") %>%
+  filter(plant_species == "HETO" & removed_remaining == "removed" & count_estimate_high_low == "high") %>%
   group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_flowers = sum(num_flowers_estimate, na.rm = TRUE)) %>%
   ungroup()
@@ -381,12 +380,12 @@ weights <- weights_all_species %>%
 Visualize weights
 ```{r step9c, fig.height=8, fig.width=14}
 data_for_barplots <- weights %>% 
-  select(plant_scientific_name, plant_species_code = plant_species, contains("weight")) %>%
+  select(plant_scientific_name, plant_plant_species = plant_species, contains("weight")) %>%
   rename(all_spp = camera_spp_weight, greh_visa = greh_visa_weight) %>%
   pivot_longer(cols = c("all_spp", "greh_visa"), names_to = "bird_group", values_to = "weight") %>%
   mutate(plant_scientific_name = ifelse(plant_scientific_name == "Drymonia sp.", "Drymonia", plant_scientific_name)) %>% 
   mutate(plant_scientific_name = ifelse(plant_scientific_name == "Renealmia sp.", "Renealmia", plant_scientific_name)) %>% 
-  mutate(heto_color = ifelse(plant_species_code == "HETO", "yes", "no"))
+  mutate(heto_color = ifelse(plant_plant_species == "HETO", "yes", "no"))
 
 #All species 
 weights_barplot_all_spp <- data_for_barplots %>%
@@ -418,7 +417,7 @@ Want two versions of the calorie estimate, and ultimately % calories removed:
 ```{r step10}
 #Weights for calorie estimate
 weights_to_join <- weights %>%
-  select(species_code_for_calories = plant_species, contains("weight"))
+  select(plant_species_for_calories = plant_species, contains("weight"))
 
 #Add weights
 resource_data_to_summarize_with_weights <- resource_data_to_summarize %>%
@@ -519,16 +518,16 @@ proportion_calories_removed_boxplots
 ## Step 12: Export data
 ```{r step12}
 #Data to be used in analysis
-write.csv(heto_removed_as_treatment, "../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv")
+write.csv(heto_removed_as_treatment, "../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv", row.names = FALSE)
 
 #Supp tables
-write.csv(heto_removed, "../../data/export/supp_tables/Heliconia_resources_removed.csv")
-write.csv(heto_removed_sum, "../../data/export/supp_tables/Heliconia_resources_removed_sum.csv")
-write.csv(weights, "../../data/export/supp_tables/Weights_for_resource_estimate.csv")
-write.csv(proportion_calories_removed_tailored_supp, "../../data/export/supp_tables/Proportion_calories_removed.csv")
-write.csv(proportion_calories_removed_tailored_sum, "../../data/export/supp_tables/Proportion_calories_removed_sum.csv")
-write.csv(heto_densities, "../../data/export/supp_tables/Heliconia_densities.csv")
-write.csv(heto_densities_sum, "../../data/export/supp_tables/Heliconia_densities_sum.csv")
+write.csv(heto_removed, "../../data/export/supp_tables/Heliconia_resources_removed.csv", row.names = FALSE)
+write.csv(heto_removed_sum, "../../data/export/supp_tables/Heliconia_resources_removed_sum.csv", row.names = FALSE)
+write.csv(weights, "../../data/export/supp_tables/Weights_for_resource_estimate.csv", row.names = FALSE)
+write.csv(proportion_calories_removed_tailored_supp, "../../data/export/supp_tables/Proportion_calories_removed.csv", row.names = FALSE)
+write.csv(proportion_calories_removed_tailored_sum, "../../data/export/supp_tables/Proportion_calories_removed_sum.csv", row.names = FALSE)
+write.csv(heto_densities, "../../data/export/supp_tables/Heliconia_densities.csv", row.names = FALSE)
+write.csv(heto_densities_sum, "../../data/export/supp_tables/Heliconia_densities_sum.csv", row.names = FALSE)
 
 #Figures
 path_name <- c("../../results/resource_estimate/figures")

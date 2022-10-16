@@ -450,41 +450,33 @@ plant species.</li>
 <pre class="r"><code>source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)</code></pre>
 <p>Get resource count data</p>
 <pre class="r"><code>resource_data &lt;- read.csv(&quot;../../data/export/intermediate/Resource_counts_2016-2018_with_count_units.csv&quot;) %&gt;%
-  select(-X) %&gt;%
   filter(count_estimate_high_low == &quot;high&quot;)
 
 #How many species have &#39;inflorescence&#39; as a counting unit?
 #Aside from unknown species (which I can&#39;t estimate calories for anyway) and Heliconia species (which I&#39;ll use flowers-per-bract data for)
 species_that_need_data &lt;- resource_data %&gt;%
-  distinct(species_code_for_calories, count_unit) %&gt;%
+  distinct(plant_species_for_calories, count_unit) %&gt;%
   filter(count_unit != &quot;flower&quot;) %&gt;%
-  filter(!(grepl(&quot;UNKN&quot;, species_code_for_calories))) %&gt;%
-  filter(!(grepl(&quot;HE&quot;, species_code_for_calories)))
+  filter(!(grepl(&quot;UNKN&quot;, plant_species_for_calories))) %&gt;%
+  filter(!(grepl(&quot;HE&quot;, plant_species_for_calories)))
   
 species_that_need_data$count_unit %&gt;% length()</code></pre>
 <pre><code>## [1] 58</code></pre>
 <p>Get other datasets to help estimate flowers-per-inflorescnece</p>
-<pre class="r"><code>path_name &lt;- c(&quot;../../data/import/misc_data_for_resource_estimate&quot;)
+<pre class="r"><code>path_name &lt;- c(&quot;../../data/import/data&quot;)
 
 #Data from Birkett undergrad thesis
-birkett_thesis &lt;- read.csv(file.path(path_name, &quot;Birkett_flowers_per_inflorescence.csv&quot;))
+birkett_thesis &lt;- read.csv(file.path(path_name, &quot;nectar_measurements/import/Nectar_data_2014_Birkett_FLOWERS_PER_INFLOR.csv&quot;))
 
 #Notes column of resource counts (edite)
-notes_column &lt;- read.csv(file.path(path_name, &quot;Notes_column_flowers_per_inflorescence_20200521.csv&quot;))
+notes_column &lt;- read.csv(file.path(path_name, &quot;resource_counts/flowers_per_inflor/Resource_counts_notes_column_flowers_per_inflorescence.csv&quot;))
 
 #Nectar measurements
-nectar &lt;- read.csv(file.path(path_name, &quot;CR_Nectar_Data_20210914.csv&quot;))
+nectar &lt;- read.csv(file.path(path_name, &quot;nectar_measurements/Nectar_measurements_2014_2018.csv&quot;))
 
 #Flower counts from cameras
-camera_counts_2017 &lt;- read.csv(file.path(path_name, &quot;CR_2017_Camera_Flower_Counts_20220410.csv&quot;)) %&gt;%
-  mutate(year = &quot;2017&quot;)
-
-camera_counts_2018 &lt;- read.csv(file.path(path_name, &quot;CR_2018_Camera_Flower_Counts_20190910.csv&quot;)) %&gt;%
-  mutate(year = &quot;2018&quot;)
-
-camera_counts &lt;- camera_counts_2017 %&gt;%
-  bind_rows(camera_counts_2018) %&gt;%
-  select(year, patch, camera_num, date_video, species_code, flowers_total_field, flowers_camera_field) %&gt;%
+camera_counts &lt;- read.csv(file.path(path_name, &quot;cameras/Camera_flower_counts_2016-2018.csv&quot;)) %&gt;%
+  select(year, patch, camera_num, date_video, plant_species, flowers_total_field, flowers_camera_field) %&gt;%
   filter(!is.na(camera_num))</code></pre>
 </div>
 <div id="step-2-summarize-data-for-heliconia-2018" class="section level2">
@@ -495,7 +487,7 @@ AND number of bracts from the same plant. So for a plant of ___ bracts,
 what is typical number of flowers open on a given day?</p>
 <pre class="r"><code>#Which species do we have both flowers and inflorescence data? Need data about number of flowers AND number of bracts from the same plant
 heto_flowers_bracts &lt;- resource_data %&gt;%
-  filter(species_code == &quot;HETO&quot;) %&gt;%
+  filter(plant_species == &quot;HETO&quot;) %&gt;%
   filter(!is.na(num_flowers) &amp; !is.na(num_bracts)) 
 
 #Plot: # of flowers for a given # of bracts
@@ -526,7 +518,7 @@ heto_flowers_per_bract_key &lt;- heto_flowers_per_bract %&gt;%
          source = ifelse(as.integer(num_bracts) &gt; 9, &quot;Estimated based on resource count data for similarly sized inflorescence&quot;, &quot;&quot;)) %&gt;%
   mutate_all(as.character) %&gt;%
   bind_rows(extra_bracts) %&gt;%
-  mutate(species_code = &quot;HETO&quot;)
+  mutate(plant_species = &quot;HETO&quot;)
 
 #For a given number of bracts, how many had zero flowers? For Helene Wagner (Univ of Toronto)
 heto_zero_flowers = heto_flowers_bracts %&gt;%
@@ -540,7 +532,7 @@ heto_zero_flowers = heto_flowers_bracts %&gt;%
 heto_flowers_per_bract_for_supp &lt;- heto_flowers_per_bract %&gt;%
   left_join(heto_flowers_per_bract_key) %&gt;%
   left_join(heto_zero_flowers) %&gt;%
-  select(-species_code) %&gt;%
+  select(-plant_species) %&gt;%
   select(num_bracts, num_plants, num_plants_zero_flowers, everything())</code></pre>
 </div>
 <div id="step-3-summarize-flowers-per-inflorescence-data-from-birkett-undergrad-thesis-2014" class="section level2">
@@ -569,8 +561,8 @@ because no flowers will lead to zero calories.</p></li>
 #5. Remove any other dates with zero flowers present
 #6. Remove AMAP (amapola) that doesn&#39;t really have inflorescences, to it doesn&#39;t make sense to have flowers per inflor. There is also note saying that 1 flower=1 inflor
 birkett_thesis02 &lt;- birkett_thesis %&gt;%  
-  rename(species_code = Guia.code,
-         species_name = Species,
+  rename(plant_species = Guia.code,
+         plant_scientific_name = Species,
          new_flowers = New.open.flowers.infl,
          old_flowers = Old.open.flowers.infl,
          total_flowers = Total.open.infl,
@@ -578,15 +570,15 @@ birkett_thesis02 &lt;- birkett_thesis %&gt;%
          date = Date,
          patch = Patch,
          notes = Notes) %&gt;%
-  select(date, species_code, species_name, new_flowers, old_flowers, total_flowers, plant_id, patch, notes) %&gt;%
+  select(date, plant_species, plant_scientific_name, new_flowers, old_flowers, total_flowers, plant_id, patch, notes) %&gt;%
   mutate_at(vars(new_flowers, old_flowers, total_flowers), as.character) %&gt;%
   mutate_at(vars(new_flowers, old_flowers, total_flowers), as.numeric) %&gt;% 
   mutate(num_flowers = ifelse(is.na(total_flowers) &amp; !is.na(new_flowers) &amp; !is.na(old_flowers), new_flowers + old_flowers, total_flowers)) %&gt;%
   mutate(date = dmy(date)) %&gt;%
   filter(!grepl(&quot;All fruiting|All budding&quot;, notes)) %&gt;%
   filter(num_flowers != 0) %&gt;%
-  filter(species_code != &quot;AMAP&quot;) %&gt;%
-  filter(!is.na(species_code) &amp; species_code != &quot;&quot;)</code></pre>
+  filter(plant_species != &quot;AMAP&quot;) %&gt;%
+  filter(!is.na(plant_species) &amp; plant_species != &quot;&quot;)</code></pre>
 <pre><code>## Warning in mask$eval_all_mutate(quo): NAs introduced by coercion
 
 ## Warning in mask$eval_all_mutate(quo): NAs introduced by coercion
@@ -595,7 +587,7 @@ birkett_thesis02 &lt;- birkett_thesis %&gt;%
 <pre class="r"><code>##Create summary of flowers per inflorescence
 flowers_per_inflor_birkett_thesis &lt;- birkett_thesis02 %&gt;%
   mutate(count_unit = &quot;inflor&quot;) %&gt;%
-  group_by(species_code, count_unit) %&gt;%
+  group_by(plant_species, count_unit) %&gt;%
   calculate_basic_summary_stats(variable = num_flowers) %&gt;%
   ungroup() %&gt;%
   rename(num_inflors_sampled = n) %&gt;%
@@ -607,22 +599,20 @@ resource count data (2016-2018)</h2>
 <pre class="r"><code>notes_column02 &lt;- notes_column %&gt;%
   mutate(count_unit = ifelse(!is.na(num_trees), &quot;tree&quot;, NA),
          count_unit = ifelse(!is.na(num_inflors), &quot;inflor&quot;, count_unit),
-         count_unit = ifelse(!is.na(num_bracts), &quot;bract&quot;, count_unit),
          flowers_per = ifelse(count_unit == &quot;inflor&quot;, num_flowers/num_inflors, NA),
-         flowers_per = ifelse(count_unit == &quot;tree&quot;, num_flowers/num_trees, flowers_per),
-         flowers_per = ifelse(count_unit == &quot;bract&quot;, num_flowers/num_bracts,flowers_per)) %&gt;%
+         flowers_per = ifelse(count_unit == &quot;tree&quot;, num_flowers/num_trees, flowers_per)) %&gt;%
   filter(num_flowers != 0)
   
 #Summarize number of inflorescences sampled
 num_inflors_sampled &lt;- notes_column02 %&gt;%
-  group_by(species_code, count_unit) %&gt;%
+  group_by(plant_species, count_unit) %&gt;%
   summarise(num_inflors_sampled = sum(num_inflors, na.rm = TRUE))
 
 #Summarize flowers per inflorescence
 #Here, number of rows = number of plants. It is possible that plants were resampled across years, but not accounting for that here.
 #Also, the per-tree estimates (RUBY and PORO) seem a little low. Will try to find other options.
 flowers_per_inflor_notes_column &lt;- notes_column02 %&gt;%
-  group_by(species_code, count_unit) %&gt;%
+  group_by(plant_species, count_unit) %&gt;%
   calculate_basic_summary_stats(variable = flowers_per) %&gt;%
   ungroup() %&gt;%
   rename(num_plants_sampled = n) %&gt;%
@@ -664,11 +654,9 @@ unnecessary as of 5/21/2020.</p>
 #2. Subset to species that only had 1 bag per inflor
 #3. Summarize number of flowers sampled on a given date
 nectar02 &lt;- nectar %&gt;%
-  filter(species == &quot;BAN-C&quot; | species == &quot;BAN-P&quot; | species == &quot;SANO&quot; | species == &quot;GUMA&quot;) %&gt;%
-  rename(species_code = species,
-         date = dateExtracted,
-         bag_number = bagNumber) %&gt;%
-  group_by(species_code, bag_number, date) %&gt;%
+  filter(plant_species == &quot;BAN-C&quot; | plant_species == &quot;BAN-P&quot; | plant_species == &quot;SANO&quot; | plant_species == &quot;GUMA&quot;) %&gt;%
+  rename(date = date_extracted) %&gt;%
+  group_by(plant_species, bag_number, date) %&gt;%
   summarise(num_flowers_sampled = n()) %&gt;%
   ungroup() %&gt;%
   filter(!is.na(bag_number))
@@ -677,7 +665,7 @@ nectar02 &lt;- nectar %&gt;%
 #Approach: calculate flowers/day by getting total # of flowers and dividing by total # of sampling dates
 #First, calculate (1) total number of flowers and (2) total number of dates per ind&#39;l plant
 flowers_per_plant_nectar &lt;- nectar02 %&gt;%
-  group_by(species_code, bag_number)%&gt;%
+  group_by(plant_species, bag_number)%&gt;%
   summarise(num_dates_sampled = n(),
             num_flowers_sampled = sum(num_flowers_sampled)) %&gt;% #Total number of flowers sampled from that plant
   mutate(flowers_per_day = num_flowers_sampled/num_dates_sampled) %&gt;% #Mean number of flowers per day (i.e. total number of flowers with nectar data div. by num dates with nectar data)
@@ -685,7 +673,7 @@ flowers_per_plant_nectar &lt;- nectar02 %&gt;%
 
 #Then average across ind&#39;l plants to level of species
 flowers_per_inflor_nectar &lt;- flowers_per_plant_nectar %&gt;%
-  group_by(species_code) %&gt;%
+  group_by(plant_species) %&gt;%
   summarise(median = median(flowers_per_day, na.rm = TRUE),
             mean = mean(flowers_per_day, na.rm = TRUE),
             sd = sd(flowers_per_day, na.rm = TRUE),
@@ -744,7 +732,7 @@ inflor</strong>)</li>
 species_with_1_inflor_per_camera &lt;- c(&quot;BAN-C&quot;, &quot;MARA-VER&quot;, &quot;CEPU&quot;, &quot;GING-P&quot;, &quot;GINGY&quot;, &quot;OJO&quot;, &quot;COL-ROSA&quot;, &quot;GIN-ROS-AMA&quot;)
 
 camera_counts02 &lt;- camera_counts %&gt;%
-  filter(species_code %in% species_with_1_inflor_per_camera | (species_code == &quot;GES-AMA&quot; &amp; camera_num==&quot;20&quot;)) %&gt;%
+  filter(plant_species %in% species_with_1_inflor_per_camera | (plant_species == &quot;GES-AMA&quot; &amp; camera_num==&quot;20&quot;)) %&gt;%
   filter(flowers_total_field != &quot;0&quot;)
 
 #Summarize # of flowers per inflorescence
@@ -753,7 +741,7 @@ camera_counts02 &lt;- camera_counts %&gt;%
 #First, calculate (1) total number of flowers and (2) total number of dates per ind&#39;l plant
 flowers_per_plant_camera_counts &lt;- camera_counts02 %&gt;%
   mutate(flowers_total_field = as.numeric(flowers_total_field)) %&gt;%
-  group_by(species_code, camera_num)%&gt;%
+  group_by(plant_species, camera_num)%&gt;%
   summarise(num_dates_sampled = n(),
             flowers_total_field = sum(flowers_total_field, na.rm = TRUE)) %&gt;%
   mutate(flowers_per_day = flowers_total_field/num_dates_sampled) %&gt;% 
@@ -761,7 +749,7 @@ flowers_per_plant_camera_counts &lt;- camera_counts02 %&gt;%
   
 #Then average across ind&#39;l plants to level of species
 flowers_per_inflor_camera_counts &lt;- flowers_per_plant_camera_counts %&gt;%
-  group_by(species_code) %&gt;%
+  group_by(plant_species) %&gt;%
   summarise(median = median(flowers_per_day, na.rm = TRUE),
             mean = mean(flowers_per_day, na.rm = TRUE),
             sd = sd(flowers_per_day, na.rm = TRUE),
@@ -792,17 +780,17 @@ flowers_per_inflor_data &lt;- flowers_per_inflor_birkett_thesis %&gt;%
   bind_rows(flowers_per_inflor_notes_column) %&gt;%
   bind_rows(flowers_per_inflor_nectar) %&gt;% 
   bind_rows(flowers_per_inflor_camera_counts) %&gt;%
-  left_join(distinct(select(resource_data, c(species_code, species_name)))) %&gt;% #Add scientific names
+  left_join(distinct(select(resource_data, c(plant_species, plant_scientific_name)))) %&gt;% #Add scientific names
   mutate_at(vars(median, mean, sd, min, max, num_sampling_dates_per_plant), ~round(., digits = 1)) %&gt;%
   mutate(sampling_amount = ifelse(!is.na(num_plants_sampled) &amp; !is.na(num_sampling_dates_per_plant), num_plants_sampled * num_sampling_dates_per_plant, num_plants_sampled),
          sampling_amount = ifelse(is.na(sampling_amount), num_inflors_sampled, sampling_amount)) %&gt;%
   mutate(num_plants_sampled = ifelse(grepl(&quot;Birkett&quot;, source), &quot;Unknown&quot;, num_plants_sampled),
          num_sampling_dates_per_plant = ifelse(grepl(&quot;Birkett&quot;, source), &quot;Unknown&quot;, num_sampling_dates_per_plant)) %&gt;%
-  select(species_code, species_name, count_unit:num_sampling_dates_per_plant, sampling_amount, everything()) #Reorder columns
+  select(plant_species, plant_scientific_name, count_unit:num_sampling_dates_per_plant, sampling_amount, everything()) #Reorder columns
 
 #Prioritize data with most sampling effort
 max_effort &lt;- flowers_per_inflor_data %&gt;%
-  group_by(species_code, species_name) %&gt;%
+  group_by(plant_species, plant_scientific_name) %&gt;%
   summarise(sampling_amount = max(sampling_amount)) %&gt;%
   ungroup() %&gt;%
   mutate(priority = &quot;yes&quot;)
@@ -812,9 +800,9 @@ flowers_per_inflor_data_no_duplicates &lt;- flowers_per_inflor_data %&gt;%
   left_join(max_effort) %&gt;%
   filter(priority == &quot;yes&quot;) %&gt;%
   select(-priority) %&gt;%
-  filter(species_code != &quot;HETO&quot;) %&gt;% #For HETO, this isn&#39;t necessary; will assign flowers based on number of open bracts
-  arrange(source, species_code) %&gt;%
-  mutate(species_unit = paste(species_code, count_unit, sep = &quot;_&quot;))</code></pre>
+  filter(plant_species != &quot;HETO&quot;) %&gt;% #For HETO, this isn&#39;t necessary; will assign flowers based on number of open bracts
+  arrange(source, plant_species) %&gt;%
+  mutate(species_unit = paste(plant_species, count_unit, sep = &quot;_&quot;))</code></pre>
 </div>
 <div id="step-8-get-expert-opinion-estimates-for-missing-species-including-a-couple-problem-species-that-have-the-count-unit-of-tree" class="section level2">
 <h2>Step 8: Get ‘expert opinion’ estimates for missing species,
@@ -823,7 +811,7 @@ including a couple problem species that have the count unit of
 <p>Identify species that still don’t have data for # flowers per
 ______</p>
 <pre class="r"><code>species_that_STILL_need_data &lt;- species_that_need_data %&gt;%
-  mutate(species_unit = paste(species_code_for_calories, count_unit, sep = &quot;_&quot;)) %&gt;%
+  mutate(species_unit = paste(plant_species_for_calories, count_unit, sep = &quot;_&quot;)) %&gt;%
   filter(!(species_unit %in% flowers_per_inflor_data_no_duplicates$species_unit)) %&gt;%
   arrange(count_unit)
   
@@ -834,39 +822,39 @@ unit of ‘tree’</p>
 <pre class="r"><code>#How many inflorescences, on average according our data? Can multiply this by # flowers/inflorescence. Alternative is to look in literature, but data from our system seems better.
 ruby_poro_inflor_sum &lt;- resource_data %&gt;%
   filter(count_unit_status == &quot;known&quot; &amp; count_unit == &quot;inflor&quot;) %&gt;%
-  filter(species_code == &quot;RUBY&quot; | species_code == &quot;PORO&quot;) %&gt;%
-  group_by(species_code) %&gt;%
+  filter(plant_species == &quot;RUBY&quot; | plant_species == &quot;PORO&quot;) %&gt;%
+  group_by(plant_species) %&gt;%
   calculate_basic_summary_stats(variable = num_inflors)
 
 ruby_poro_inflor_sum</code></pre>
 <pre><code>## # A tibble: 2 × 7
-##   species_code   min   max  mean    sd median     n
-##   &lt;chr&gt;        &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1 PORO             4   800 371   346.     340     4
-## 2 RUBY             1   150  19.0  25.5      8    92</code></pre>
+##   plant_species   min   max  mean    sd median     n
+##   &lt;chr&gt;         &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1 PORO              4   800 371   346.     340     4
+## 2 RUBY              1   150  19.0  25.5      8    92</code></pre>
 <pre class="r"><code># Median number of inflorescences/tree
 # PORO: 340 (at 10 flowers/inflor, this is 3400 flowers per tree)
 # RUBY: 8 (at 6 flowers/inflor, this is 48 flowers per tree)
 # On 5/25/2020, added these numbers to Michael&#39;s estimation spreadsheet (&#39;Flores_por_inflorescencia&#39;)</code></pre>
 <p>Get estimates from field tech Michael Atencio</p>
 <pre class="r"><code>#Species names
-species_names &lt;- resource_data %&gt;%
-  distinct(species_code, species_name)
+plant_scientific_names &lt;- resource_data %&gt;%
+  distinct(plant_species, plant_scientific_name)
 
 #Get estimates and add scientific names
-atencio_estimates &lt;- read.csv(&quot;../../data/import/misc_data_for_resource_estimate/Atencio_flores_por_inflorescencia_20200525.csv&quot;, check.names = FALSE) %&gt;%
+atencio_estimates &lt;- read.csv(&quot;../../data/import/data/resource_counts/flowers_per_inflor/Atencio_flores_por_inflorescencia_20200525.csv&quot;, check.names = FALSE) %&gt;%
   purrr:::discard(~all(is.na(.) | . == &quot;&quot;)) %&gt;%
   rename(page_in_guide = `Pagina en guia`,
          family = `Familia`,
-         species_name = `Nombre de la especie`,
-         species_code = `Codigo de la especie`,
+         plant_scientific_name = `Nombre de la especie`,
+         plant_species = `Codigo de la especie`,
          flowers_per = `Numero de flores por inflorescencia`,
          confidence_level = `Nivel de confianza`, #1 = low confidence, 3 = high confidence
          notes = `Nota`) %&gt;%
-  filter(!is.na(species_code) &amp; species_code != &quot;&quot;) %&gt;%
-  filter(!grepl(&quot;HE&quot;, species_code)) %&gt;% #Remove Heliconia species. Will use data from HETO for those.
-  left_join(species_names) %&gt;%
-  select(species_code, species_name, flowers_per, count_unit = per_unit, notes) %&gt;%
+  filter(!is.na(plant_species) &amp; plant_species != &quot;&quot;) %&gt;%
+  filter(!grepl(&quot;HE&quot;, plant_species)) %&gt;% #Remove Heliconia species. Will use data from HETO for those.
+  left_join(plant_scientific_names) %&gt;%
+  select(plant_species, plant_scientific_name, flowers_per, count_unit = per_unit, notes) %&gt;%
   mutate(source = &quot;Estimated by experienced observer&quot;)</code></pre>
 </div>
 <div id="step-9-combine-all-flowers-per-inflorescence-data" class="section level2">
@@ -876,8 +864,8 @@ flowers_per_inflorescence &lt;- flowers_per_inflor_data_no_duplicates %&gt;%
   bind_rows(atencio_estimates) %&gt;%
   mutate(flowers_per = ifelse(is.na(flowers_per), median, flowers_per)) %&gt;%
   mutate(source = factor(source, levels = c(&#39;Birkett inflorescence counts (2014)&#39;, &#39;Notes from resource counts (2016-2018)&#39;, &#39;Nectar sampling (2018)&#39;, &#39;Camera flower counts (2017-2018)&#39;, &#39;Estimated by experienced observer&#39;))) %&gt;%
-  arrange(source, count_unit, species_name) %&gt;%
-  select(species_code, species_name, source, num_inflors_sampled, num_plants_sampled, num_sampling_dates_per_plant, min:median, count_unit, flowers_per, everything(), -species_unit, -notes, -sampling_amount)</code></pre>
+  arrange(source, count_unit, plant_scientific_name) %&gt;%
+  select(plant_species, plant_scientific_name, source, num_inflors_sampled, num_plants_sampled, num_sampling_dates_per_plant, min:median, count_unit, flowers_per, everything(), -species_unit, -notes, -sampling_amount)</code></pre>
 </div>
 <div id="step-10-summary-for-supplemental-methods---how-many-speciesplants-were-michaels-estimates-used-for-how-many-speciesplants-needed-estimates-of-flowers-per-tree" class="section level2">
 <h2>Step 10: Summary for supplemental methods - how many species/plants
@@ -889,10 +877,10 @@ estimates of flowers per tree?</h2>
 <pre class="r"><code>#Species &#39;estimated by an experienced observer&quot;
 expert_opinion_species &lt;- flowers_per_inflorescence %&gt;%
   filter(source == &quot;Estimated by experienced observer&quot; &amp; count_unit == &quot;inflor&quot;) %&gt;%
-  distinct(species_code, species_name, count_unit)
+  distinct(plant_species, plant_scientific_name, count_unit)
 
 expert_opinion_plants &lt;- resource_data %&gt;%
-  filter(species_code %in% expert_opinion_species$species_code) %&gt;%
+  filter(plant_species %in% expert_opinion_species$plant_species) %&gt;%
   filter(count_unit == &quot;inflor&quot;)
 
 (percent_michael &lt;- length(expert_opinion_plants$year)/total_plants)</code></pre>
@@ -900,10 +888,10 @@ expert_opinion_plants &lt;- resource_data %&gt;%
 <pre class="r"><code>#Species that were counted as &#39;trees&#39; as the counting unit (only in 2016)
 tree_species &lt;- flowers_per_inflorescence %&gt;%
   filter(source == &quot;Estimated by experienced observer&quot; &amp; count_unit == &quot;tree&quot;) %&gt;%
-  distinct(species_code, species_name, count_unit)
+  distinct(plant_species, plant_scientific_name, count_unit)
 
 tree_plants &lt;- resource_data %&gt;%
-  filter(species_code %in% tree_species$species_code) %&gt;%
+  filter(plant_species %in% tree_species$plant_species) %&gt;%
   filter(count_unit == &quot;tree&quot;)
 
 total_trees &lt;- tree_plants %&gt;%
@@ -918,10 +906,10 @@ total_trees &lt;- tree_plants %&gt;%
 <pre class="r"><code>path_name &lt;- c(&quot;../../data/export/supp_tables&quot;)
 
 #Key for converting HETO bracts to flowers + some additional info for supp table
-write.csv(heto_flowers_per_bract_for_supp, file.path(path_name, &quot;Heliconia_flowers_per_bracts_key.csv&quot;))
+write.csv(heto_flowers_per_bract_for_supp, file.path(path_name, &quot;Heliconia_flowers_per_bracts_key.csv&quot;), row.names = FALSE)
 
 #Key for converting inflorescences/trees to flowers
-write.csv(flowers_per_inflorescence, file.path(path_name, &quot;Non-Heliconia_flowers_per_inflorescence_key.csv&quot;))</code></pre>
+write.csv(flowers_per_inflorescence, file.path(path_name, &quot;Non-Heliconia_flowers_per_inflorescence_key.csv&quot;), row.names = FALSE)</code></pre>
 </div>
 
 

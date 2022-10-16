@@ -36,48 +36,48 @@ library(tidyr)
 #Need to rename GIN-ROS-AMA because there is another unknown Renealmia species
 #Decided to use mean nectar volume and nectar concentration (instead of median) since that is value most commonly found in literature
 nectar_field <- read.csv("../../data/export/supp_tables/Nectar_volume_and_concentration_summary.csv") %>%
-  select(-X) %>%
-  mutate(speciesName = ifelse(species == "GIN-ROS-AMA", "Renealmia sp. 2", as.character(speciesName))) %>%
-  select(species, speciesName, family, nectarVol_micro = mean_vol, nectarConc = mean_conc, everything()) %>%
-  mutate(dataSource = "field_data")
+  mutate(plant_scientific_name = ifelse(plant_species == "GIN-ROS-AMA", "Renealmia sp. 2", as.character(plant_scientific_name))) %>%
+  select(plant_species, plant_scientific_name, plant_family, nectar_vol = mean_vol, nectar_conc = mean_conc, everything()) %>%
+  mutate(data_source = "field_data")
 
-path_name <- c("../../data/import/misc_data_for_resource_estimate")
+path_name <- c("../../data/import/data/nectar_measurements")
 
 #Kearns & Inouye 1993, Table 5-2 (converts Brix w/w to w/volume)
-conversion_table <- read.csv(file.path(path_name, "Kearns_Inouye_1993_Table_5-2.csv"))
+conversion_table <- read.csv(file.path(path_name, "Kearns_Inouye_1993_Table_5-2.csv")) %>%
+  rename(nectar_conc_approx = nectarConc_approx, nectar_conc_gL = nectarConc_gL)
 
 #Data from literature, for species that were missing field data. There are still blanks for some species; I will substitute field data from congeneric species in next step
-nectar_lit <- read.csv(file.path(path_name, "Nectar_data_from_literature_20200528.csv")) %>%
-  select(species, speciesName, speciesName_sub, family, nectarVol_micro, nectarConc, litSite = site, litSources) %>%
-  arrange(litSources)
+nectar_lit <- read.csv(file.path(path_name, "Nectar_measurements_from_literature_20200528.csv")) %>%
+  select(plant_species, plant_scientific_name, plant_scientific_name_sub, plant_family, nectar_vol, nectar_conc, lit_site = site, lit_sources) %>%
+  arrange(lit_sources)
 ```
 
 ## Step 2: Get data ready for calorie calculations
 
 For species that are still missing nectar volume/concentration data, fill in with the nectar measurements from a congeneric species (data we collected in the field). Also combine our nectar measurements with data from literature
 ```{r step2, warning = FALSE, message = FALSE}
-#speciesName_sub is the substitute (congeneric) plant species whose data I will use
+#plant_scientific_name_sub is the substitute (congeneric) plant species whose data I will use
 values_for_missing_species <- nectar_field %>%
-  select(speciesName_sub = speciesName, volume_this_study = nectarVol_micro, conc_this_study = nectarConc)
+  select(plant_scientific_name_sub = plant_scientific_name, volume_this_study = nectar_vol, conc_this_study = nectar_conc)
 
 nectar_missing_species <- nectar_lit %>%
-  filter(is.na(nectarVol_micro) | is.na(nectarConc)) %>%
+  filter(is.na(nectar_vol) | is.na(nectar_conc)) %>%
   left_join(values_for_missing_species) %>%
-  mutate(nectarVol_micro = ifelse(is.na(nectarVol_micro), volume_this_study, nectarVol_micro)) %>%
-  mutate(nectarConc = ifelse(is.na(nectarConc), conc_this_study, nectarConc)) %>%
+  mutate(nectar_vol = ifelse(is.na(nectar_vol), volume_this_study, nectar_vol)) %>%
+  mutate(nectar_conc = ifelse(is.na(nectar_conc), conc_this_study, nectar_conc)) %>%
   select(-contains("this_study")) %>%
-  mutate(dataSource = "field_data_subbed")
+  mutate(data_source = "field_data_subbed")
 
 nectar_data <- nectar_lit %>%
-  filter(!is.na(nectarVol_micro)) %>%
-  mutate(dataSource = "literature") %>%
+  filter(!is.na(nectar_vol)) %>%
+  mutate(data_source = "literature") %>%
   bind_rows(nectar_field) %>%
   bind_rows(nectar_missing_species) %>%
-  select(species, speciesName, speciesName_sub, everything())
+  select(plant_species, plant_scientific_name, plant_scientific_name_sub, everything())
 
 #Check: are any species missing data?
 check01 <- nectar_data %>%
-  filter(is.na(nectarVol_micro) | is.na(nectarConc))
+  filter(is.na(nectar_vol) | is.na(nectar_conc))
 ```
 
 ## Step 3: Calculate calories
@@ -87,23 +87,23 @@ check01 <- nectar_data %>%
 #3. Convert nectar volume to L (from microliters)
 #4. Calculate calories per flower
 nectar_data_with_calories <- nectar_data %>%
-  mutate(nectarConc_approx = case_when(nectarConc <= 10 ~ plyr::round_any(nectarConc,accuracy = 0.5),
-                                       nectarConc > 10 & nectarConc <= 20 ~ plyr::round_any(nectarConc,accuracy = 1.0),
-                                       nectarConc > 20 ~ plyr::round_any(nectarConc,accuracy = 2.0))) %>%
+  mutate(nectar_conc_approx = case_when(nectar_conc <= 10 ~ plyr::round_any(nectar_conc,accuracy = 0.5),
+                                        nectar_conc > 10 & nectar_conc <= 20 ~ plyr::round_any(nectar_conc,accuracy = 1.0),
+                                        nectar_conc > 20 ~ plyr::round_any(nectar_conc,accuracy = 2.0))) %>%
   left_join(conversion_table) %>%
-  mutate(nectarVol_L = nectarVol_micro/1000/1000) %>% #Microliters to milliliters to liters
-  mutate(kilocalories = nectarConc_gL * nectarVol_L * 3.94) %>% #Sucrose provides 3.94 kilocalories/g
+  mutate(nectar_vol_L = nectar_vol/1000/1000) %>% #Microliters to milliliters to liters
+  mutate(kilocalories = nectar_conc_gL * nectar_vol_L * 3.94) %>% #Sucrose provides 3.94 kilocalories/g
   mutate(calories = kilocalories * 1000) %>%
   mutate(calories = round(calories, digits = 2)) %>%
   mutate(kilocalories = round(kilocalories, digits = 5)) %>%
-  select(-nectarConc_approx, -nectarConc_gL, -nectarVol_L) %>%
-  select(dataSource, family, species, speciesName, speciesName_sub, mean_vol = nectarVol_micro, sd_vol,  contains("vol"), mean_conc = nectarConc, sd_conc, contains("conc"), calories, kilocalories, starts_with("numFlowers"), everything()) %>%
-  arrange(dataSource, family, speciesName) 
+  select(-nectar_conc_approx, -nectar_conc_gL, -nectar_vol_L) %>%
+  select(data_source, plant_family, plant_species, plant_scientific_name, plant_scientific_name_sub, mean_vol = nectar_vol, sd_vol, contains("vol"), mean_conc = nectar_conc, sd_conc, contains("conc"), calories, kilocalories, starts_with("numFlowers"), everything()) %>%
+  arrange(data_source, plant_family, plant_scientific_name) 
 ```
 
 ## Step 4: Export data
 ```{r step4, message = FALSE}
 path_name <- c("../../data/export/supp_tables")
-write.csv(nectar_data_with_calories, file.path(path_name, "Nectar_volume_concentration_and_calories_summary.csv"))
+write.csv(nectar_data_with_calories, file.path(path_name, "Nectar_volume_concentration_and_calories_summary.csv"), row.names = FALSE)
 ```
 

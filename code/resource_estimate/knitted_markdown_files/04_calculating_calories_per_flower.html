@@ -393,20 +393,20 @@ code works fine.</em></p>
 #Need to rename GIN-ROS-AMA because there is another unknown Renealmia species
 #Decided to use mean nectar volume and nectar concentration (instead of median) since that is value most commonly found in literature
 nectar_field &lt;- read.csv(&quot;../../data/export/supp_tables/Nectar_volume_and_concentration_summary.csv&quot;) %&gt;%
-  select(-X) %&gt;%
-  mutate(speciesName = ifelse(species == &quot;GIN-ROS-AMA&quot;, &quot;Renealmia sp. 2&quot;, as.character(speciesName))) %&gt;%
-  select(species, speciesName, family, nectarVol_micro = mean_vol, nectarConc = mean_conc, everything()) %&gt;%
-  mutate(dataSource = &quot;field_data&quot;)
+  mutate(plant_scientific_name = ifelse(plant_species == &quot;GIN-ROS-AMA&quot;, &quot;Renealmia sp. 2&quot;, as.character(plant_scientific_name))) %&gt;%
+  select(plant_species, plant_scientific_name, plant_family, nectar_vol = mean_vol, nectar_conc = mean_conc, everything()) %&gt;%
+  mutate(data_source = &quot;field_data&quot;)
 
-path_name &lt;- c(&quot;../../data/import/misc_data_for_resource_estimate&quot;)
+path_name &lt;- c(&quot;../../data/import/data/nectar_measurements&quot;)
 
 #Kearns &amp; Inouye 1993, Table 5-2 (converts Brix w/w to w/volume)
-conversion_table &lt;- read.csv(file.path(path_name, &quot;Kearns_Inouye_1993_Table_5-2.csv&quot;))
+conversion_table &lt;- read.csv(file.path(path_name, &quot;Kearns_Inouye_1993_Table_5-2.csv&quot;)) %&gt;%
+  rename(nectar_conc_approx = nectarConc_approx, nectar_conc_gL = nectarConc_gL)
 
 #Data from literature, for species that were missing field data. There are still blanks for some species; I will substitute field data from congeneric species in next step
-nectar_lit &lt;- read.csv(file.path(path_name, &quot;Nectar_data_from_literature_20200528.csv&quot;)) %&gt;%
-  select(species, speciesName, speciesName_sub, family, nectarVol_micro, nectarConc, litSite = site, litSources) %&gt;%
-  arrange(litSources)</code></pre>
+nectar_lit &lt;- read.csv(file.path(path_name, &quot;Nectar_measurements_from_literature_20200528.csv&quot;)) %&gt;%
+  select(plant_species, plant_scientific_name, plant_scientific_name_sub, plant_family, nectar_vol, nectar_conc, lit_site = site, lit_sources) %&gt;%
+  arrange(lit_sources)</code></pre>
 </div>
 <div id="step-2-get-data-ready-for-calorie-calculations" class="section level2">
 <h2>Step 2: Get data ready for calorie calculations</h2>
@@ -414,28 +414,28 @@ nectar_lit &lt;- read.csv(file.path(path_name, &quot;Nectar_data_from_literature
 fill in with the nectar measurements from a congeneric species (data we
 collected in the field). Also combine our nectar measurements with data
 from literature</p>
-<pre class="r"><code>#speciesName_sub is the substitute (congeneric) plant species whose data I will use
+<pre class="r"><code>#plant_scientific_name_sub is the substitute (congeneric) plant species whose data I will use
 values_for_missing_species &lt;- nectar_field %&gt;%
-  select(speciesName_sub = speciesName, volume_this_study = nectarVol_micro, conc_this_study = nectarConc)
+  select(plant_scientific_name_sub = plant_scientific_name, volume_this_study = nectar_vol, conc_this_study = nectar_conc)
 
 nectar_missing_species &lt;- nectar_lit %&gt;%
-  filter(is.na(nectarVol_micro) | is.na(nectarConc)) %&gt;%
+  filter(is.na(nectar_vol) | is.na(nectar_conc)) %&gt;%
   left_join(values_for_missing_species) %&gt;%
-  mutate(nectarVol_micro = ifelse(is.na(nectarVol_micro), volume_this_study, nectarVol_micro)) %&gt;%
-  mutate(nectarConc = ifelse(is.na(nectarConc), conc_this_study, nectarConc)) %&gt;%
+  mutate(nectar_vol = ifelse(is.na(nectar_vol), volume_this_study, nectar_vol)) %&gt;%
+  mutate(nectar_conc = ifelse(is.na(nectar_conc), conc_this_study, nectar_conc)) %&gt;%
   select(-contains(&quot;this_study&quot;)) %&gt;%
-  mutate(dataSource = &quot;field_data_subbed&quot;)
+  mutate(data_source = &quot;field_data_subbed&quot;)
 
 nectar_data &lt;- nectar_lit %&gt;%
-  filter(!is.na(nectarVol_micro)) %&gt;%
-  mutate(dataSource = &quot;literature&quot;) %&gt;%
+  filter(!is.na(nectar_vol)) %&gt;%
+  mutate(data_source = &quot;literature&quot;) %&gt;%
   bind_rows(nectar_field) %&gt;%
   bind_rows(nectar_missing_species) %&gt;%
-  select(species, speciesName, speciesName_sub, everything())
+  select(plant_species, plant_scientific_name, plant_scientific_name_sub, everything())
 
 #Check: are any species missing data?
 check01 &lt;- nectar_data %&gt;%
-  filter(is.na(nectarVol_micro) | is.na(nectarConc))</code></pre>
+  filter(is.na(nectar_vol) | is.na(nectar_conc))</code></pre>
 </div>
 <div id="step-3-calculate-calories" class="section level2">
 <h2>Step 3: Calculate calories</h2>
@@ -444,23 +444,23 @@ check01 &lt;- nectar_data %&gt;%
 #3. Convert nectar volume to L (from microliters)
 #4. Calculate calories per flower
 nectar_data_with_calories &lt;- nectar_data %&gt;%
-  mutate(nectarConc_approx = case_when(nectarConc &lt;= 10 ~ plyr::round_any(nectarConc,accuracy = 0.5),
-                                       nectarConc &gt; 10 &amp; nectarConc &lt;= 20 ~ plyr::round_any(nectarConc,accuracy = 1.0),
-                                       nectarConc &gt; 20 ~ plyr::round_any(nectarConc,accuracy = 2.0))) %&gt;%
+  mutate(nectar_conc_approx = case_when(nectar_conc &lt;= 10 ~ plyr::round_any(nectar_conc,accuracy = 0.5),
+                                        nectar_conc &gt; 10 &amp; nectar_conc &lt;= 20 ~ plyr::round_any(nectar_conc,accuracy = 1.0),
+                                        nectar_conc &gt; 20 ~ plyr::round_any(nectar_conc,accuracy = 2.0))) %&gt;%
   left_join(conversion_table) %&gt;%
-  mutate(nectarVol_L = nectarVol_micro/1000/1000) %&gt;% #Microliters to milliliters to liters
-  mutate(kilocalories = nectarConc_gL * nectarVol_L * 3.94) %&gt;% #Sucrose provides 3.94 kilocalories/g
+  mutate(nectar_vol_L = nectar_vol/1000/1000) %&gt;% #Microliters to milliliters to liters
+  mutate(kilocalories = nectar_conc_gL * nectar_vol_L * 3.94) %&gt;% #Sucrose provides 3.94 kilocalories/g
   mutate(calories = kilocalories * 1000) %&gt;%
   mutate(calories = round(calories, digits = 2)) %&gt;%
   mutate(kilocalories = round(kilocalories, digits = 5)) %&gt;%
-  select(-nectarConc_approx, -nectarConc_gL, -nectarVol_L) %&gt;%
-  select(dataSource, family, species, speciesName, speciesName_sub, mean_vol = nectarVol_micro, sd_vol,  contains(&quot;vol&quot;), mean_conc = nectarConc, sd_conc, contains(&quot;conc&quot;), calories, kilocalories, starts_with(&quot;numFlowers&quot;), everything()) %&gt;%
-  arrange(dataSource, family, speciesName) </code></pre>
+  select(-nectar_conc_approx, -nectar_conc_gL, -nectar_vol_L) %&gt;%
+  select(data_source, plant_family, plant_species, plant_scientific_name, plant_scientific_name_sub, mean_vol = nectar_vol, sd_vol, contains(&quot;vol&quot;), mean_conc = nectar_conc, sd_conc, contains(&quot;conc&quot;), calories, kilocalories, starts_with(&quot;numFlowers&quot;), everything()) %&gt;%
+  arrange(data_source, plant_family, plant_scientific_name) </code></pre>
 </div>
 <div id="step-4-export-data" class="section level2">
 <h2>Step 4: Export data</h2>
 <pre class="r"><code>path_name &lt;- c(&quot;../../data/export/supp_tables&quot;)
-write.csv(nectar_data_with_calories, file.path(path_name, &quot;Nectar_volume_concentration_and_calories_summary.csv&quot;))</code></pre>
+write.csv(nectar_data_with_calories, file.path(path_name, &quot;Nectar_volume_concentration_and_calories_summary.csv&quot;), row.names = FALSE)</code></pre>
 </div>
 
 

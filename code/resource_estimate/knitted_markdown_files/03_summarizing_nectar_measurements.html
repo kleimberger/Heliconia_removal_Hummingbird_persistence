@@ -382,10 +382,10 @@ calories per flower (in a later step).</p>
 <p>Import helper functions</p>
 <pre class="r"><code>source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)</code></pre>
 <p>Get nectar measurements</p>
-<pre class="r"><code>path_name &lt;- c(&quot;../../data/import/misc_data_for_resource_estimate&quot;)
+<pre class="r"><code>path_name &lt;- c(&quot;../../data/import/data/nectar_measurements&quot;)
 
 #Nectar measurements from field
-nectar &lt;- read.csv(file.path(path_name, &quot;CR_Nectar_Data_20210914.csv&quot;))</code></pre>
+nectar &lt;- read.csv(file.path(path_name, &quot;Nectar_measurements_2014_2018.csv&quot;))</code></pre>
 </div>
 <div id="step-2-summarize-nectar-volume-microliters-and-concentration-ww-by-plant-species" class="section level2">
 <h2>Step 2: Summarize nectar volume (microliters) and concentration
@@ -404,14 +404,14 @@ nectar &lt;- read.csv(file.path(path_name, &quot;CR_Nectar_Data_20210914.csv&quo
 <pre class="r"><code>#Remove &#39;old&#39; and &#39;unbagged&#39; flowers (not sure what &#39;old&#39; means, and measuring &#39;old&#39; flowers could be problematic for single-day flowers)
 #Also remove measurements from unknown species: UNKN-CAVENDISHIA, UNKN-IMPATIENS, and HETO x HELA
 nectar_bagged &lt;- nectar %&gt;%
-  filter(!(grepl(&quot;Old&quot;, flowerAge, fixed = FALSE, ignore.case = FALSE))) %&gt;%
+  filter(!(grepl(&quot;Old&quot;, flower_age, fixed = FALSE, ignore.case = FALSE))) %&gt;%
   filter(bagged == &quot;yes&quot;) %&gt;%
-  mutate_at(c(&quot;nectarVol&quot;, &quot;nectarConc&quot;), as.numeric) %&gt;%
-  filter(!is.na(speciesName))</code></pre>
+  mutate_at(c(&quot;nectar_vol&quot;, &quot;nectar_conc&quot;), as.numeric) %&gt;%
+  filter(!is.na(plant_species))</code></pre>
 <p>Summarize measurements for nectar concentration</p>
 <pre class="r"><code>concentration_sum &lt;- nectar_bagged %&gt;%
-  group_by(species, speciesName, family) %&gt;%
-  calculate_basic_summary_stats(variable = nectarConc) %&gt;%
+  group_by(plant_species, plant_scientific_name, plant_family) %&gt;%
+  calculate_basic_summary_stats(variable = nectar_conc) %&gt;%
   ungroup() %&gt;%
   select(-n) %&gt;%
   rename(mean_conc = mean, sd_conc = sd, min_conc = min, max_conc = max, median_conc = median)
@@ -419,66 +419,66 @@ nectar_bagged &lt;- nectar %&gt;%
 #Note: If max=33, there were values above the max refractometer reading (32%)</code></pre>
 <p>Summarize measurements for nectar volume</p>
 <pre class="r"><code>volume_sum &lt;- nectar_bagged %&gt;%
-  group_by(species, speciesName, family)%&gt;%
-    calculate_basic_summary_stats(variable = nectarVol) %&gt;%
+  group_by(plant_species, plant_scientific_name, plant_family) %&gt;%
+    calculate_basic_summary_stats(variable = nectar_vol) %&gt;%
   ungroup() %&gt;%
   select(-n) %&gt;%
   rename(mean_vol = mean, sd_vol = sd, min_vol = min, max_vol = max, median_vol = median)</code></pre>
 <p>Summarize sample size</p>
 <pre class="r"><code>#SAMPLE SIZE SUMMARY *INCLUDING* FLOWERS WITH ZERO NECTAR
 sum_with_zero_volume &lt;- nectar_bagged %&gt;%
-  group_by(species, speciesName) %&gt;%
-  summarise(numFlowers_inclZero = n()) %&gt;%
+  group_by(plant_species, plant_scientific_name,) %&gt;%
+  summarise(num_flowers_incl_zero = n()) %&gt;%
   ungroup() %&gt;%
-  arrange(desc(numFlowers_inclZero))
+  arrange(desc(num_flowers_incl_zero))
 
 #SAMPLE SIZE SUMMARY *EXCLUDING* FLOWERS WITH ZERO NECTAR
 sum_without_zero_volume &lt;- nectar_bagged %&gt;%
-  filter(nectarVol &gt; 0.00) %&gt;% #Only including nectar amounts &gt;0
-  group_by(species, speciesName) %&gt;%
-  summarise(numFlowers_notZero=n()) %&gt;%
+  filter(nectar_vol &gt; 0.00) %&gt;% #Only including nectar amounts &gt;0
+  group_by(plant_species, plant_scientific_name,) %&gt;%
+  summarise(num_flowers_not_incl_zero = n()) %&gt;%
   ungroup() %&gt;%
-  arrange(desc(numFlowers_notZero))
+  arrange(desc(num_flowers_not_incl_zero))
 
 #SAMPLE SIZE SUMMARY *EXCLUDING* FLOWERS WITH NO BRIX MEASUREMENTS
 sum_without_missing_conc &lt;- nectar_bagged %&gt;%
-  filter(!is.na(nectarConc)) %&gt;% #Only including flowers with measured concentrations
-  group_by(species, speciesName) %&gt;%
-  summarise(numFlowers_withBrix=n()) %&gt;%
+  filter(!is.na(nectar_conc)) %&gt;% #Only including flowers with measured concentrations
+  group_by(plant_species, plant_scientific_name,) %&gt;%
+  summarise(num_flowers_with_brix = n()) %&gt;%
   ungroup() %&gt;%
-  arrange(desc(numFlowers_withBrix))
+  arrange(desc(num_flowers_with_brix))
 
 #COMBINING ALL OF THE SAMPLE SIZE SUMMARIES FROM ABOVE
 sample_size_sum &lt;- sum_with_zero_volume %&gt;%
   left_join(sum_without_zero_volume) %&gt;%
   left_join(sum_without_missing_conc) %&gt;%
-  mutate_at(vars(numFlowers_withBrix), list(~ifelse(is.na(.), 0, .))) #Replace zeroes with NA</code></pre>
+  mutate_at(vars(num_flowers_with_brix), list(~ifelse(is.na(.), 0, .))) #Replace zeroes with NA</code></pre>
 <p>Combine nectar/conc summary with sample size summary</p>
 <pre class="r"><code>nectar_sum &lt;- volume_sum %&gt;%
   left_join(concentration_sum) %&gt;%
   left_join(sample_size_sum) %&gt;%
-  select(species, speciesName, family, everything()) %&gt;%
+  select(plant_species, plant_scientific_name, plant_family, everything()) %&gt;%
   mutate_if(is.numeric, ~round(., digits=2)) %&gt;%
-  arrange(family)</code></pre>
+  arrange(plant_family)</code></pre>
 </div>
 <div id="step-3-compile-some-info-for-supplemental-methods" class="section level2">
 <h2>Step 3: Compile some info for supplemental methods</h2>
 <pre class="r"><code>#How many species measured?
 species_sampled &lt;- nectar_bagged %&gt;%
-  distinct(speciesName) %&gt;%
-  filter(!is.na(speciesName)) %&gt;%
-  pull(speciesName) %&gt;%
+  distinct(plant_scientific_name) %&gt;%
+  filter(!is.na(plant_scientific_name)) %&gt;%
+  pull(plant_scientific_name) %&gt;%
   length()
 
 species_sampled</code></pre>
 <pre><code>## [1] 39</code></pre>
 <pre class="r"><code>#How many flowers sampled?
 flowers_sampled &lt;- nectar_bagged %&gt;%
-  pull(speciesName) %&gt;%
+  pull(plant_scientific_name) %&gt;%
   length()
   
 flowers_sampled</code></pre>
-<pre><code>## [1] 1438</code></pre>
+<pre><code>## [1] 1445</code></pre>
 <pre class="r"><code>#How many flowers measured in 2014 vs. 2018?
 
 flowers_per_dataset &lt;- nectar_bagged %&gt;%
@@ -490,48 +490,48 @@ flowers_per_dataset</code></pre>
 <pre><code>## # A tibble: 2 × 2
 ##   dataset    num_flowers
 ##   &lt;chr&gt;            &lt;int&gt;
-## 1 Birkett            220
+## 1 Birkett            227
 ## 2 Leimberger        1218</code></pre>
 <pre class="r"><code>#What time of day were flowers collected, on average? Or median
 collection_time_sum &lt;- nectar_bagged %&gt;%
-  mutate(timeCollected = lubridate::hm(timeCollected)) %&gt;% #This creates a period object
-  mutate(timeCollected = lubridate::period_to_seconds(timeCollected)) %&gt;% ##Convert period object to seconds to do math
-  calculate_basic_summary_stats(variable = timeCollected) %&gt;%
+  mutate(time_collected = lubridate::hm(time_collected)) %&gt;% #This creates a period object
+  mutate(time_collected = lubridate::period_to_seconds(time_collected)) %&gt;% ##Convert period object to seconds to do math
+  calculate_basic_summary_stats(variable = time_collected) %&gt;%
   mutate_at(vars(median, mean, sd, min, max), lubridate::seconds_to_period) ##Convert back to period object
 
 collection_time_sum</code></pre>
 <pre><code>##         min       max                     mean                       sd
-## 1 5H 35M 0S 18H 0M 0S 11H 9M 43.8596491228091S 2H 25M 34.7422252639371S
+## 1 5H 35M 0S 18H 0M 0S 11H 9M 49.2218181818171S 2H 25M 40.9466521120848S
 ##       median    n
-## 1 10H 30M 0S 1368</code></pre>
+## 1 10H 30M 0S 1375</code></pre>
 <pre class="r"><code>#How many plants were measured with OSU refractometer (not temperature calibrated) vs Rice refractometer (temperature calibrated)?
 flowers_per_refractometer &lt;- nectar_bagged %&gt;%
-  group_by(refractometerID) %&gt;%
+  group_by(refractometer_id) %&gt;%
   summarise(num_flowers = n()) %&gt;%
   ungroup()
 
 flowers_per_refractometer</code></pre>
 <pre><code>## # A tibble: 2 × 2
-##   refractometerID num_flowers
-##   &lt;chr&gt;                 &lt;int&gt;
-## 1 OSU                     286
-## 2 Rice                   1152</code></pre>
+##   refractometer_id num_flowers
+##   &lt;chr&gt;                  &lt;int&gt;
+## 1 OSU                      293
+## 2 Rice                    1152</code></pre>
 <pre class="r"><code>#Percentage of flowers from non-temp calibrated refractometer
-(flowers_per_refractometer %&gt;% filter(refractometerID == &quot;OSU&quot;) %&gt;% pull(num_flowers))/flowers_sampled</code></pre>
-<pre><code>## [1] 0.1988873</code></pre>
+(flowers_per_refractometer %&gt;% filter(refractometer_id == &quot;OSU&quot;) %&gt;% pull(num_flowers))/flowers_sampled</code></pre>
+<pre><code>## [1] 0.2027682</code></pre>
 <pre class="r"><code>#How many plants and species had nectar concentrations above the max of the refractometer? These have nectar concentrations of 33 degrees Brix.
 flowers_above_limit &lt;- nectar_bagged %&gt;%
-  filter(nectarConc == 33) %&gt;% 
-  group_by(species, speciesName) %&gt;%
+  filter(nectar_conc == 33) %&gt;% 
+  group_by(plant_species, plant_scientific_name) %&gt;%
   summarise(num_flowers = n()) %&gt;%
   ungroup()
 
 (flowers_above_limit %&gt;% summarise(num_flowers = sum(num_flowers)) %&gt;% pull(num_flowers)/flowers_sampled)</code></pre>
-<pre><code>## [1] 0.03477051</code></pre>
+<pre><code>## [1] 0.03460208</code></pre>
 </div>
 <div id="step-4-export-data" class="section level2">
 <h2>Step 4: Export data</h2>
-<pre class="r"><code>write.csv(nectar_sum, &quot;../../data/export/supp_tables/Nectar_volume_and_concentration_summary.csv&quot;)</code></pre>
+<pre class="r"><code>write.csv(nectar_sum, &quot;../../data/export/supp_tables/Nectar_volume_and_concentration_summary.csv&quot;, row.names = FALSE)</code></pre>
 </div>
 
 
