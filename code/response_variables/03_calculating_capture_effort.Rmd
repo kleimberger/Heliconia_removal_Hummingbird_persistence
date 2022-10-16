@@ -42,14 +42,13 @@ library(ggpubr)
 
 ```{r}
 #Net locations
-nets <- read.csv("../../data/import/Nets_2016-2018_20210909.csv") %>%
-   select(-X) %>%
+nets <- read.csv("../../data/import/data/captures/Nets_2016-2018.csv") %>%
   mutate_all(as.character)%>%
   mutate(date = ymd(date)) %>%
-  arrange(date, patch, control_trmt, as.numeric(net_number))
+  arrange(date, patch, control_treatment, as.numeric(net_number))
 
 #Net opening/closing times
-times <- read.csv("../../data/import/Capture_effort_2016-2018.csv") %>%
+times <- read.csv("../../data/import/data/captures/Capture_session_times_2016-2018.csv") %>%
   mutate_all(as.character) %>%
   mutate(date = mdy(date))
 
@@ -62,13 +61,13 @@ source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 ```{r}
 ##Calculate capture duration (in hours) based on midpoint of start and end times.##
 hours <- times %>%
-  mutate(across(c(openStart, openEnd, closeStart, closeEnd), ~hm(.))) %>%
-  mutate(openDuration = as.numeric(openEnd - openStart, "hours"), #How long it took to open the nets, in hours
-         closeDuration = as.numeric(closeEnd - closeStart,"hours"), #How long it took to close the nets, in hours
-         openTime = as.numeric(openStart, "hours") + openDuration/2, #Midpoint 
-         closeTime = as.numeric(closeStart, "hours") + closeDuration/2, #Midpoint
-         duration = closeTime - openTime)%>% #Duration is in hours
-  select(year, patch, control_trmt = controlTreatment, date, open_time = openTime, close_time = closeTime, duration, weather = weatherNotes, data_notes = dataNotes)
+  mutate(across(c(open_start, open_end, close_start, close_end), ~hm(.))) %>%
+  mutate(open_duration = as.numeric(open_end - open_start, "hours"), #How long it took to open the nets, in hours
+         close_duration = as.numeric(close_end - close_start,"hours"), #How long it took to close the nets, in hours
+         open_time = as.numeric(open_start, "hours") + open_duration/2, #Midpoint 
+         close_time = as.numeric(close_start, "hours") + close_duration/2, #Midpoint
+         duration = close_time - open_time) %>% #Duration is in hours
+  select(year, patch, control_treatment, date, open_time, close_time, duration, weather_notes, data_notes)
 ```
 
 ## Step 3: Calculate number of nets per capture session
@@ -76,7 +75,7 @@ hours <- times %>%
 ```{r}
 #Problem: Some net lengths are NA (i.e. missing). For purposes of calculating nets per site (and net hours), replace with NAs with 12m. Since this will be the same pre & post, choice of net length should not matter too much.
 missing_lengths <- nets %>%
-  distinct(year, patch, control_trmt, date, net_number, net_length) %>%
+  distinct(year, patch, control_treatment, date, net_number, net_length) %>%
   filter(is.na(net_length))
 
 nets <- nets %>%
@@ -84,8 +83,8 @@ nets <- nets %>%
 
 #How many nets of each length were used per capture session?
 nets_by_length <- nets %>%
-  distinct(year, patch, control_trmt, date, exp_phase, net_number, net_length) %>%
-  group_by(year, patch, control_trmt, date, exp_phase, net_length) %>%
+  distinct(year, patch, control_treatment, date, exp_phase, net_number, net_length) %>%
+  group_by(year, patch, control_treatment, date, exp_phase, net_length) %>%
   summarise(num_nets = n()) %>%
   ungroup() %>%
   mutate(num_nets_adjusted_for_length = ifelse(net_length == 6, num_nets * 0.5, num_nets * 1)) %>% #6m nets count as half a net
@@ -93,13 +92,13 @@ nets_by_length <- nets %>%
 
 #Add up number of nets per capture session
 nets_value_sum <- nets_by_length %>%
-  group_by(year, patch, control_trmt, date, exp_phase) %>%
+  group_by(year, patch, control_treatment, date, exp_phase) %>%
   summarise(net_value = sum(num_nets_adjusted_for_length)) %>%
   ungroup()
 
 #Actual (absolute) number of nets per site
 nets_number_sum <- nets_by_length %>%
-  group_by(year, patch, control_trmt, date, exp_phase) %>%
+  group_by(year, patch, control_treatment, date, exp_phase) %>%
   summarise(actual_number_of_nets = sum(num_nets)) %>%
   ungroup()
 
@@ -156,7 +155,7 @@ Question: when was there a pre-to-post difference in capture effort? This will b
 #Add some variables for plotting
 net_hours_to_plot <- net_hours %>%
   mutate(year_patch = paste(year, patch, sep = "_")) %>%
-  mutate(control_trmt = factor(control_trmt, levels = c("control", "treatment"), labels = c("Control", "Treatment"))) %>%
+  mutate(control_treatment = factor(control_treatment, levels = c("control", "treatment"), labels = c("Control", "Treatment"))) %>%
   mutate(exp_phase = factor(exp_phase, levels = c("capture_1", "capture_2"), labels = c("Pre", "Post"))) %>%
   mutate(outlier = ifelse(year_patch == "2017_203", "outlier", "not_outlier"))
 
@@ -166,10 +165,10 @@ colors <- c("#0E0D37", "#BA0022")
 #Make plot
 pp_effort_plot <- net_hours_to_plot %>%
   ggplot(data = ., aes(x = exp_phase, y = net_hours_adjusted)) +
-    geom_boxplot(aes(fill = control_trmt), width=0.15, position = position_nudge(x = c(-0.15, 0.15)), alpha=0.5, outlier.shape=NA) +
+    geom_boxplot(aes(fill = control_treatment), width=0.15, position = position_nudge(x = c(-0.15, 0.15)), alpha=0.5, outlier.shape=NA) +
     stat_summary(fun = mean, position = position_nudge(x = c(-0.15, 0.15)), geom = "point", shape = 18, size = 3) +
     geom_line(aes(group = year_patch, linetype = outlier), alpha = 0.6) +
-    geom_point(aes(fill = control_trmt), colour = "black", shape = 21, position = position_dodge(width = 0.45), alpha=1, size=3) + #Non-jittered points
+    geom_point(aes(fill = control_treatment), colour = "black", shape = 21, position = position_dodge(width = 0.45), alpha = 1, size = 3) + #Non-jittered points
     theme_bw(base_size = 20)+
     scale_fill_manual(values = colors) +
     scale_color_manual(values = colors) +
@@ -180,22 +179,22 @@ pp_effort_plot <- net_hours_to_plot %>%
           strip.background = element_blank(),
           panel.border = element_rect(colour = "black", fill = NA))+
     labs(x = "", y = "Number of net-hours", fill = "", colour = "") +
-    facet_grid(.~control_trmt)
+    facet_grid(.~control_treatment)
 
 pp_effort_plot
 
 #Does capture effort differ between pre and post within a site?
 pre_post_diffs <- net_hours_to_plot %>%
-  select(year, patch, control_trmt, exp_phase, net_hours_adjusted) %>%
+  select(year, patch, control_treatment, exp_phase, net_hours_adjusted) %>%
   pivot_wider(names_from = exp_phase, values_from = net_hours_adjusted) %>%
   mutate(diff = Post - Pre)
 
 #Paired t-test
 #Assumption of paired t-test: paired differences are normally distributed
-boxplot(filter(pre_post_diffs, control_trmt == "Control")$diff)
-boxplot(filter(pre_post_diffs, control_trmt == "Treatment")$diff)
-shapiro.test(filter(pre_post_diffs, control_trmt == "Control")$diff)
-shapiro.test(filter(pre_post_diffs, control_trmt == "Treatment")$diff)
+boxplot(filter(pre_post_diffs, control_treatment == "Control")$diff)
+boxplot(filter(pre_post_diffs, control_treatment == "Treatment")$diff)
+shapiro.test(filter(pre_post_diffs, control_treatment == "Control")$diff)
+shapiro.test(filter(pre_post_diffs, control_treatment == "Treatment")$diff)
 
 #Does not look normally distributed
 #t.test(net_hours_adjusted ~ exp_phase, data = filter(net_hours_to_plot, control_trmt == "Control"), paired = TRUE)
@@ -204,8 +203,8 @@ shapiro.test(filter(pre_post_diffs, control_trmt == "Treatment")$diff)
 #Paired Wilcoxon test
 #This is alternative to paired t-test
 wilcox.test(net_hours_adjusted ~ exp_phase, data = net_hours_to_plot, paired = TRUE)
-wilcox.test(net_hours_adjusted ~ exp_phase, data = filter(net_hours_to_plot, control_trmt == "Control"), paired = TRUE)
-wilcox.test(net_hours_adjusted ~ exp_phase, data = filter(net_hours_to_plot, control_trmt == "Treatment"), paired = TRUE)
+wilcox.test(net_hours_adjusted ~ exp_phase, data = filter(net_hours_to_plot, control_treatment == "Control"), paired = TRUE)
+wilcox.test(net_hours_adjusted ~ exp_phase, data = filter(net_hours_to_plot, control_treatment == "Treatment"), paired = TRUE)
 ```
 
 Details about Wilcoxon test here: https://data.library.virginia.edu/the-wilcoxon-rank-sum-test/
@@ -218,7 +217,7 @@ Whether exact or approximate, p-values do not tell us anything about how differe
 
 ```{r}
 #Data
-write.csv(net_hours, "../../data/export/intermediate/Net-hours_2016-2018.csv") 
+write.csv(net_hours, "../../data/export/intermediate/Net-hours_2016-2018.csv", row.names = FALSE) 
 
 #Figures
 ggsave("../../results/response_variables/figures/Capture_effort_pre_post.png", plot = pp_effort_plot, width = 8, height = 6, units = "in", dpi = 300)

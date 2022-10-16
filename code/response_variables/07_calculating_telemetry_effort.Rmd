@@ -28,16 +28,15 @@ library(chron)
 ```{r, get_data}
 #Telemetry data
 telem_data <- read.csv("../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv") %>%
-  select(-X) %>%
   mutate(date = lubridate::ymd(date))
 
 #Experiment info. Will add to observation effort
-exp_info <- read.csv("../../data/import/Experiment_dates_2016-2018.csv") %>%
-  select(year, patch, control_treatment = control_trmt, date, exp_phase, priority = video_priority) %>%
+exp_info <- read.csv("../../data/import/data/Experiment_dates_2016-2018.csv") %>%
+  select(year, patch, control_treatment, date, exp_phase, priority = video_priority) %>%
   mutate(date = lubridate::mdy(date))
 
 #Get observation effort data (originally compiled by hand in Dec 2018)
-obs_effort <- read.csv("../../data/import/Telemetry_effort_bird_level_20211214.csv") %>%
+obs_effort <- read.csv("../../data/import/data/telemetry/Telemetry_effort_time_per_bird_20211214.csv") %>%
   mutate(date = lubridate::mdy(date)) #Will convert to ymd in later step
 
 #Functions
@@ -322,8 +321,8 @@ Conclusions/Observations:
 ## Step 6: Export
 
 ```{r, export}
-write.csv(effort_date, "../../data/export/intermediate/Telemetry_effort_by_date.csv")
-write.csv(effort_pp, "../../data/export/intermediate/Telemetry_effort_pre_post.csv")
+write.csv(effort_date, "../../data/export/intermediate/Telemetry_effort_by_date.csv", row.names = FALSE)
+write.csv(effort_pp, "../../data/export/intermediate/Telemetry_effort_pre_post.csv", row.names = FALSE)
 
 #Figure
 ggsave("../../results/response_variables/figures/Telemetry_effort_density_plot.png", plot = obs_effort_density_plot, width = 10, height = 7.5, units = "in", dpi = 300)

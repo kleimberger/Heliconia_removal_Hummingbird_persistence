@@ -379,16 +379,15 @@ recorded in the field.</p>
 <h2>Step 1: Import data and functions</h2>
 <pre class="r"><code>#Telemetry data
 telem_data &lt;- read.csv(&quot;../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv&quot;) %&gt;%
-  select(-X) %&gt;%
   mutate(date = lubridate::ymd(date))
 
 #Experiment info. Will add to observation effort
-exp_info &lt;- read.csv(&quot;../../data/import/Experiment_dates_2016-2018.csv&quot;) %&gt;%
-  select(year, patch, control_treatment = control_trmt, date, exp_phase, priority = video_priority) %&gt;%
+exp_info &lt;- read.csv(&quot;../../data/import/data/Experiment_dates_2016-2018.csv&quot;) %&gt;%
+  select(year, patch, control_treatment, date, exp_phase, priority = video_priority) %&gt;%
   mutate(date = lubridate::mdy(date))
 
 #Get observation effort data (originally compiled by hand in Dec 2018)
-obs_effort &lt;- read.csv(&quot;../../data/import/Telemetry_effort_bird_level_20211214.csv&quot;) %&gt;%
+obs_effort &lt;- read.csv(&quot;../../data/import/data/telemetry/Telemetry_effort_time_per_bird_20211214.csv&quot;) %&gt;%
   mutate(date = lubridate::mdy(date)) #Will convert to ymd in later step
 
 #Functions
@@ -714,8 +713,8 @@ estimates unchanged.</p></li>
 </div>
 <div id="step-6-export" class="section level2">
 <h2>Step 6: Export</h2>
-<pre class="r"><code>write.csv(effort_date, &quot;../../data/export/intermediate/Telemetry_effort_by_date.csv&quot;)
-write.csv(effort_pp, &quot;../../data/export/intermediate/Telemetry_effort_pre_post.csv&quot;)
+<pre class="r"><code>write.csv(effort_date, &quot;../../data/export/intermediate/Telemetry_effort_by_date.csv&quot;, row.names = FALSE)
+write.csv(effort_pp, &quot;../../data/export/intermediate/Telemetry_effort_pre_post.csv&quot;, row.names = FALSE)
 
 #Figure
 ggsave(&quot;../../results/response_variables/figures/Telemetry_effort_density_plot.png&quot;, plot = obs_effort_density_plot, width = 10, height = 7.5, units = &quot;in&quot;, dpi = 300)</code></pre>

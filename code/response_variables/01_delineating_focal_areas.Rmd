@@ -37,7 +37,7 @@ library(purrr)
 #1. Subset to one calorie estimate. Dataset has a high and low calorie estimate, but only need one here
 #2. Remove rows with NA coordinates
 #3. Create a factor level combining patch and year
-resource_data <- read.csv("../../data/import/Resource_counts_2016-2018_20200713.csv") %>%
+resource_data <- read.csv("../../data/import/data/resource_counts/Resource_counts_2016-2018.csv") %>%
   filter(!is.na(x_utm) & !is.na(y_utm)) %>%
   mutate(year_patch = as.factor(paste(year, patch, sep = "_")))
 ```
@@ -101,8 +101,8 @@ Problem: in 2016, we only surveyed for resources in the treatment sites, but we 
 Solution: substitute 2017 patch areas/outlines for 2016 controls that are missing resource counts (and therefore focal area outlines). In 2017, we used the same sites as 2016.
 ```{r}
 #Get experiment info
-exp_info <- read.csv("../../data/import/Experiment_dates_2016-2018.csv")%>%
-  distinct(year, patch, control_treatment = control_trmt) %>%
+exp_info <- read.csv("../../data/import/data/Experiment_dates_2016-2018.csv")%>%
+  distinct(year, patch, control_treatment) %>%
   mutate_all(as.character)
 
 #2016 controls are missing focal area outlines

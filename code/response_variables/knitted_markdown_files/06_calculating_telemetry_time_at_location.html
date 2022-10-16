@@ -376,7 +376,7 @@ next arrival time.</p>
 <div id="step-1-get-data" class="section level2">
 <h2>Step 1: Get data</h2>
 <pre class="r"><code>telem_data &lt;- read.csv(&quot;../../data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv&quot;) %&gt;%
-  select(-X, -id)</code></pre>
+  select(-id)</code></pre>
 </div>
 <div id="step-2-calculate-time-at-location" class="section level2">
 <h2>Step 2: Calculate time at location</h2>
@@ -522,7 +522,7 @@ check03 &lt;- check02 %&gt;%
 #Check: why are there really large estimated times at location?
 check04 &lt;- time_at_loc_data %&gt;%
   filter(time_at_location &gt; 30 &amp; time_leave_category != &quot;known&quot;) %&gt;%
-  select(year, observer, patch, species, frequency, date, starts_with(&quot;time&quot;), point_in_patch, notes_location_english, notes_location_spanish, notes_data)
+  select(year, observer, patch, bird_species, frequency, date, starts_with(&quot;time&quot;), point_in_patch, notes_location_english, notes_location_spanish, notes_data)
 
 #Check: how many of these really large estimated times are &quot;in patch&quot;? Will affect response variable (proportion of time in patch)
 check05 &lt;- check04 %&gt;%
@@ -626,7 +626,7 @@ far off</em></p>
 </div>
 <div id="step-5-export" class="section level2">
 <h2>Step 5: Export</h2>
-<pre class="r"><code>write.csv(telem_data03, &quot;../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv&quot;)
+<pre class="r"><code>write.csv(telem_data03, &quot;../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv&quot;, row.names = FALSE)
 
 ggsave(&quot;../../results/response_variables/figures/Time_at_location_density_plots.png&quot;, plot = time_at_loc_plots, width = 10, height = 7.5, units = &quot;in&quot;, dpi = 300)</code></pre>
 <p><em>Note: for analysis, will still need to filter out rows with

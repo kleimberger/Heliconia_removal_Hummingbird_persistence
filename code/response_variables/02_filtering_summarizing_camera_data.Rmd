@@ -48,7 +48,7 @@ library(ggplot2)
 ##  Import camera data
 ## 1. Create column for unique camera ID
 ## 2. Convert start/end columns into period objects, so can treat them as times when filtering out afternoon videos from covering days
-camera_data <- read.csv("../../data/import/Camera_data_with_flower_counts_2016-2018_20220712.csv") %>%
+camera_data <- read.csv("../../data/import/data/cameras/Camera_data_with_flower_counts_2016-2018.csv") %>%
   mutate(camera_id = paste(year, patch, plant_species, camera_num, sep = "_")) %>% 
   mutate(across(c(video_start, video_end), ~lubridate::hm(.))) %>%
   mutate(across(c(sighting_start, sighting_end), ~lubridate::hms(.)))
@@ -74,8 +74,7 @@ check02 <- camera_data %>%
 ## "Priority" = days in between capture sessions, omitting the day after cover day (for treatment sites) or its equivalent (for control sites)
 check03 <- camera_data %>%
   filter(video_priority != 1) %>%
-  select(contains("day"), everything()) %>% 
-  arrange(exp_day, control_count_day, trmt_day_after_cover)
+  select(contains("day"), everything())
 
 ## Are there videos without any visible flowers?
 check06 <- camera_data %>%
@@ -89,7 +88,7 @@ check04 <- camera_data %>%
 ## Are there sightings from the afternoon of cover day? 
 ## Covering is a big disturbance to the site, so we should NOT use these data...and especially should not consider them 'pre' data!
 check05 <- camera_data %>%
-  filter(cover_day == 1) %>%
+  filter(treatment_cover_day == 1) %>%
   filter(video_end >= lubridate::hm("11:30")) %>%
   filter(sightings_yes_or_no == "Y")
 ```
@@ -107,12 +106,12 @@ Remove sightings from afternoon of cover day (treatment sites only). Here, 'afte
 ```{r step3b}
 ## Videos that start (and end) after 11:30 (will just remove these)
 treatment_videos_pm <- camera_data02 %>%
-  filter(trmt_cover_day == 1 & control_treatment == "treatment") %>%
+  filter(treatment_cover_day == 1 & control_treatment == "treatment") %>%
   filter(video_start > hm("11:30"))
 
 ## Videos that span the cutoff time (will change end time to 11:30 and remove sightings after this time)
 treatment_videos_am_pm <- camera_data02 %>%
-  filter(trmt_cover_day == 1 & control_treatment == "treatment") %>%
+  filter(treatment_cover_day == 1 & control_treatment == "treatment") %>%
   filter(video_start < hm("11:30")) %>%
   filter(video_end > hm("11:30"))
 
@@ -286,7 +285,7 @@ marked_individuals_on_camera <- marked_sighting_rates %>%
 (num_marked_individuals_on_camera <- marked_individuals_on_camera$color_id %>% length())
 
 #How does this number compare to the number of individuals that were color marked? I.e., what proportion of color-marked birds were detected on camera?
-captures <- read.csv("../../data/import/Hummingbird_captures_2010-2018_20220713.csv") %>%
+captures <- read.csv("../../data/import/data/captures/Hummingbird_captures_2010-2018.csv") %>%
   select(control_treatment, exp_phase, year, patch = site, everything())
 
 captures_marked_birds <- captures %>%
@@ -294,13 +293,13 @@ captures_marked_birds <- captures %>%
   filter(exp_phase == "capture_1") %>%
   filter(status != "DR") %>%
   filter(!is.na(colors)) %>%
-  unite(color_id, year, patch, species, colors, sep = "_", remove = FALSE)
+  unite(color_id, year, patch, bird_species, colors, sep = "_", remove = FALSE)
 
-(num_marked_indivduals <-unique(captures_marked_birds$color_id) %>% length())
+(num_marked_indivduals <- unique(captures_marked_birds$color_id) %>% length())
 
 duplicated_marks <- captures_marked_birds %>%
   filter(duplicated(color_id)) %>%
-  select(year, patch, species, sex, color_id)
+  select(year, patch, bird_species, sex, color_id)
 
 #According to capture data, 142 birds were marked with nail polish during initial capture (2017-2018 only). 140 were unique to year, patch, and species.
 #Duplicated marks: 

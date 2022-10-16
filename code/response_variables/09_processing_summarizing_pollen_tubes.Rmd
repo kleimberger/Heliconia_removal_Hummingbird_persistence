@@ -12,9 +12,9 @@ knit: (function(inputFile, encoding) {
 
 These are the data for pollination success; I determined whether or not flowers were pollinated based on the presence of pollen tubes in the style. This was done by examining the style under a microscope. While looking for pollen tubes, the observer did not know what site or time period the styles came from; they just knew the species.
 
-Here, I:
+In a previous step (in the data repo), I added in the data about which site/date the styles (flowers) came from. This was recorded on the vial that held the styles, before lab work began. The date written on the vial was the date that styles were *collected*. This is *not* necessarily the date the flowers were open/could be pollinated. Here, I assume that was the day before styles were collected, which is a reasonable assumption for plant species with single-day flowers (such as *Heliconia*).
 
-- Add in the data about which site/date the styles (flowers) came from. This was recorded on the vial that held the styles, before lab work began.
+In this script, I:
 
 - Explore the data and determine which plant species had enough pollen tubes for analysis (pollen tubes were pretty rare overall)
 
@@ -28,83 +28,12 @@ library(tidyr)
 library(ggplot2)
 ```
 
-## Step 1: Import data and functions
+## Step 1: Import data
 ```{r step1}
-#Data about style, from what was written on vial
-vials <- read.csv("../../data/import/Vial_info_for_pollen_tubes_2016-2018.csv") %>%
-  select(-X)
-
-#Data about which dates were 'pre' vs. 'post
-exp_info <- read.csv("../../data/import/Experiment_dates_2016-2018.csv")
-
-#Data from microscope work (counts of # pollen tubes per style). Initially entered on Google Drive
-tubes <- read.csv("../../data/import/Pollen_tube_microscope_work_from_GD_20210831.csv")
+tubes <- read.csv("../../data/import/data/pollen_tubes/Pollen_tubes_2016-2018.csv")
 ```
 
-## Step 2: Add experiment info (pre/post, control/treatment) to vial info based on date *before* styles were collected
-
-The date written on the vial was the date that styles were *collected*. This is *not* necessarily the date the flowers were open/could be pollinated. Here, I assume that was the day before styles were collected, which is a reasonable assumption for plant species with single-day flowers (such as *Heliconia*).
-
-```{r step2}
-#Prepare data for join
-exp_info_to_join <- exp_info %>%
-  mutate_all(as.character) %>%
-  mutate(date_flowered = lubridate::mdy(date)) %>% #Rename to match vial info below
-  select(year, patch, date_flowered, exp_phase, control_treatment = control_trmt, exp_day, cover_day = trmt_cover_day, day_after_cover_day = trmt_day_after_cover)
-
-#1. Calculate the dates 1 day before the date written on vial
-#2. Join to experiment info
-#3. Some vials had no date, but have experimental period (pre/post) written on the vial. Assign them a period (phase) based on what is written on vial ('exp_phase_vial')
-vials_exp_info <- vials %>%
-  mutate_all(as.character) %>%
-  mutate(date_collected = lubridate::ymd(date_collected)) %>%
-  mutate(date_flowered = date_collected - 1 ) %>%
-  left_join(exp_info_to_join) %>%
-  mutate(exp_phase = ifelse((exp_phase_vial != "" & !is.na(exp_phase_vial)), exp_phase_vial, exp_phase)) %>%
-  select(entered_by:patch, control_treatment, starts_with("plant_species"), starts_with("focal_nf"), starts_with("date"), starts_with("exp_phase"), exp_day, cover_day, day_after_cover_day, everything()) %>%
-  arrange(as.numeric(box_number), as.numeric(vial_number)) %>%
-  rename(vial_notes = notes)
-
-#Check: does each vial from experiment have experiment info?
-check01 <- vials_exp_info %>%
-  filter(is.na(exp_phase)) %>% #These are rows with issues (need the date to get any info about exp_phase)
-  filter(patch != "" & !is.na(patch)) %>% #Remove vials without patch numbers
-  filter(year == "2016" | year == "2017" | year == "2018") %>% #Remove vials from non-experimental years (these are definitely long-term, patch-level pollen tubes)
-  filter(patch %in% exp_info$patch) %>% #Remove vials with patch numbers not in Heliconia removal experiment info (these are long-term, patch-level pollen tubes)
-  arrange(date_flowered, year, patch)
-
-#Technically no; the styles collected on setup day do not have any experiment info. This occurs because the *before* setup is not considered part of the experiment.
-```
-
-## Step 3: Combine pollen tube data (microscope work) with vial + experiment info
-```{r step3}
-#1. Distinguish between the date vial data were entered and the date of microscope work
-#2. Separate vial ID from slide label (which can include subsample ID and slide number)
-#3. Sort out subsample_ID vs. slide_number. If there was no subsample (no A, B, etc.), the data in the 'subsample' column is actually the slide 
-#4. If subsample_ID is a number (instead of a letter), assign that value to the slide_number
-#5. If subsample_ID is a number (instead of a letter), make it NA
-#6. If slide number is still NA (i.e. was never assigned) it is automatically a '1'
-tubes_to_join <- tubes %>%
-  rename(date_reviewed = date, review_notes = notes) %>% 
-  separate(col = slide_label, into = c("vial_ID", "subsample_ID", "slide_number"), remove = FALSE) %>%
-  mutate(slide_number = ifelse(!is.na(as.numeric(subsample_ID)), subsample_ID, slide_number)) %>%  
-  mutate(subsample_ID = ifelse(!is.na(as.numeric(subsample_ID)), NA, subsample_ID)) %>% 
-  mutate(slide_number = ifelse(is.na(slide_number), 1, slide_number)) %>%
-  mutate(row_id = 1:length(vial_ID)) %>%
-  select(row_id, everything())
-  
-#Join...
-tubes_vials_exp_info <- tubes_to_join %>%
-  left_join(vials_exp_info) %>%
-  mutate(exp_phase = factor(exp_phase, ordered = TRUE, levels = c("pre","post"))) %>%
-  mutate(across(c('tubes_total_min', 'tubes_total_max', 'tubes_base_min', 'tubes_base_max'), ~as.numeric(.))) %>%
-  mutate(tube_presence = ifelse(tubes_total_min > 0, 1, 0)) %>%
-  mutate(tube_presence = ifelse(is.na(tubes_total_min) | tubes_total_min == "NA", NA, tube_presence)) %>% #If count is NA, tube is not present
-  mutate(tube_presence = factor(tube_presence)) %>%
-  select(row_id:style_number, starts_with("tube"), everything(), -starts_with("X"))
-```
-
-## Step 4: Identify styles that should be included in analysis
+## Step 2: Identify styles that should be included in analysis
 
 Not all dates and plants should be analyzed. 
 
@@ -128,15 +57,15 @@ These data should be **excluded**:
 
 ```{r step4a}
 #Note: initially I ran these filtering steps on just the vial/experiment info to identify 'priority' vs. 'non-priority' vials for microscope work. But now that the lab work is done, I'm filtering the actual data. For instance, I ended up analyzing quite a few 'test' (non-priority) styles while ironing out methods, and these are still included in the pollen tube dataset. I think I also analyzed non-focal plants initially.
-tubes_vials_exp_info02 <- tubes_vials_exp_info %>%
-  filter(!(exp_day == "NA" | is.na(exp_day))) %>%
+tubes02 <- tubes %>%
+  filter(!(exp_phase == "NA" | is.na(exp_phase))) %>%
   filter(focal_nf == "focal") %>%
   filter(cover_day != "1") %>% #Only applies to treatment sites
   filter(day_after_cover_day != "1") %>% #Only applies to treatment sites
   filter(!(grepl("open during pre", vial_notes, ignore.case = TRUE) & exp_phase == "post"))
   
 #Plants that have data pre and post
-plants_to_keep <- tubes_vials_exp_info02 %>%
+plants_to_keep <- tubes02 %>%
   group_by(year, patch, plant_species, exp_phase, focal_nf) %>%
   summarise(num_vials = n()) %>%
   pivot_wider(names_from = exp_phase, values_from = num_vials) %>%
@@ -145,7 +74,7 @@ plants_to_keep <- tubes_vials_exp_info02 %>%
   select(-pre, -post) %>%
   mutate(keep = 1)
 
-tubes_vials_exp_info03 <- tubes_vials_exp_info02 %>%
+tubes03 <- tubes02 %>%
   left_join(plants_to_keep) %>%
   filter(keep == 1) %>%
   select(-keep)
@@ -156,23 +85,24 @@ Also remove data that seemed suspect during microscope work
 - Data flags currently include situations where I noted that the style was (a) potentially from a different species than the one I thought I was analyzing, (b) a partial style, so there could have been a pollen tube in the missing part, and (c) a test style not meant for analysis.
 
 ```{r step4b}
-unique(tubes_vials_exp_info03$flag)
+unique(tubes03$flag)
 
-tubes_vials_exp_info04 <- tubes_vials_exp_info03 %>%
+tubes04 <- tubes03 %>%
   filter(is.na(flag) | flag == "NA") %>%
   filter(!is.na(tube_presence))
 
-tubes_for_analysis <- tubes_vials_exp_info04 %>%
+tubes_for_analysis <- tubes04 %>%
   mutate(year_patch = paste(year, patch, sep = "_"))
 ```
 
-## Step 5: Explore data, part I
+## Step : Explore data, part I
 
 How many styles had pollen tubes for each species?
 
 *Note: I focused on analyzing HETO, HAPA, PAV-ROJ-AMA, because I felt most confident about my pollen tube IDs for those species (and because RABO had no pollen tubes).*
 ```{r step5a, fig.height = 8, fig.width = 12}
 presence_plot <- tubes_for_analysis %>%
+  mutate(tube_presence = as.factor(tube_presence)) %>%
   ggplot(data = ., aes(x = tube_presence, fill = tube_presence)) +
     geom_histogram(stat = "count") + 
     facet_grid(. ~ plant_species) + 
@@ -278,7 +208,7 @@ proportion_pollinated_plots$plot
 ## Step 8: Export data
 ```{r step8}
 #Filtered data (unsummarized)
-write.csv(tubes_for_analysis, "../../data/export/intermediate/Pollen_tube_data_filtered_for_analysis.csv")
+write.csv(tubes_for_analysis, "../../data/export/intermediate/Pollen_tube_data_filtered_for_analysis.csv", row.names = FALSE)
 
 #Summarized data for analysis
 write.csv(proportion_pollinated_sum, "../../data/export/for_analysis/Pollen_tube_pollination_success.csv", row.names = FALSE)

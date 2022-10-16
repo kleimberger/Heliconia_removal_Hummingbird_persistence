@@ -395,28 +395,25 @@ total hummingbirds captured? Recaptures? etc.</p>
 #3. Remove day recaptures
 #4. Remove bird that died during first capture (not around to be recaptured in post)
 #5. Add column for bird ID, because birds were sometimes not banded. Using colors instead in those cases. This ID will allow me to identify recaps between pre/post a given patch/year
-captures &lt;- read.csv(&quot;../../data/import/Hummingbird_captures_2010-2018_20220713.csv&quot;) %&gt;%
+captures &lt;- read.csv(&quot;../../data/import/data/captures/Hummingbird_captures_2010-2018.csv&quot;) %&gt;%
   rename(patch = site) %&gt;%
   filter(year &gt;= 2016) %&gt;%
   filter(exp_phase == &quot;capture_1&quot; | exp_phase == &quot;capture_2&quot;) %&gt;% 
   filter(status != &quot;DR&quot;) %&gt;%
   filter(!(grepl(&quot;died&quot;, notes))) %&gt;%
-  mutate(bird_id = ifelse(is.na(band_number), paste(year, patch, species, colors, sep = &quot;_&quot;), paste(year, patch, species, band_number, sep = &quot;_&quot;))) %&gt;%
+  mutate(bird_id = ifelse(is.na(band_number), paste(year, patch, bird_species, colors, sep = &quot;_&quot;), paste(year, patch, bird_species, band_number, sep = &quot;_&quot;))) %&gt;%
   mutate(date = lubridate::mdy(date)) %&gt;%
   mutate(across(c(year, patch), as.character)) %&gt;% 
   mutate(trap_id = as.integer(trap_id))
 
 #Capture effort (net-hours)
 net_hours &lt;- read.csv(&quot;../../data/export/intermediate/Net-hours_2016-2018.csv&quot;) %&gt;%
-  select(-X) %&gt;%
-  rename(control_treatment = control_trmt) %&gt;%
   mutate(net_hours = round(net_hours_adjusted, digits = 4)) %&gt;%
   mutate(date = lubridate::ymd(date)) %&gt;%
   mutate(across(c(year, patch), as.character))
 
 #Scientific names
-bird_species_names &lt;- read.csv(&quot;../../data/import/Hummingbird_codes_species_list.csv&quot;) %&gt;%
-  rename(species = code)
+bird_species_names &lt;- read.csv(&quot;../../data/import/data/Hummingbird_codes_species_list.csv&quot;)
 
 #Functions
 source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)</code></pre>
@@ -432,9 +429,9 @@ source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)<
 filtered them out above (status != “DR”), but it’s possible some could
 have slipped through.</p>
 <pre class="r"><code>recaps_within_day &lt;- captures %&gt;%
-  distinct(patch, date, species, band_number) %&gt;%
+  distinct(patch, date, bird_species, band_number) %&gt;%
   filter(!is.na(band_number)) %&gt;% #NA for birds not banded
-  group_by(date, species, band_number) %&gt;%
+  group_by(date, bird_species, band_number) %&gt;%
   summarise(num_captures = n()) %&gt;%
   filter(num_captures &gt; 1)
 
@@ -449,34 +446,34 @@ total_captures</code></pre>
 ## 1         383</code></pre>
 <pre class="r"><code>#Total captures by species
 total_captures_per_species &lt;- captures %&gt;%
-  group_by(species) %&gt;%
+  group_by(bird_species) %&gt;%
   summarise(num_captures = n()) %&gt;%
   arrange(desc(num_captures))
 
 total_captures_per_species</code></pre>
 <pre><code>## # A tibble: 17 × 2
-##    species num_captures
-##    &lt;chr&gt;          &lt;int&gt;
-##  1 GREH             110
-##  2 RTAH              95
-##  3 VISA              50
-##  4 STRH              43
-##  5 GCBR              22
-##  6 WTEM              19
-##  7 WTMG              11
-##  8 WTSI              11
-##  9 CHHU               4
-## 10 GAEM               4
-## 11 SBEH               3
-## 12 SBRH               3
-## 13 CRWO               2
-## 14 GFRL               2
-## 15 LBST               2
-## 16 BRHE               1
-## 17 BTRG               1</code></pre>
+##    bird_species num_captures
+##    &lt;chr&gt;               &lt;int&gt;
+##  1 GREH                  110
+##  2 RTAH                   95
+##  3 VISA                   50
+##  4 STRH                   43
+##  5 GCBR                   22
+##  6 WTEM                   19
+##  7 WTMG                   11
+##  8 WTSI                   11
+##  9 CHHU                    4
+## 10 GAEM                    4
+## 11 SBEH                    3
+## 12 SBRH                    3
+## 13 CRWO                    2
+## 14 GFRL                    2
+## 15 LBST                    2
+## 16 BRHE                    1
+## 17 BTRG                    1</code></pre>
 <pre class="r"><code>#Total number of individuals captured and banded
 banded_individuals &lt;- captures %&gt;%
-  distinct(species, band_number) %&gt;%
+  distinct(bird_species, band_number) %&gt;%
   filter(!is.na(band_number))
 
 num_banded_individuals &lt;- banded_individuals$band_number %&gt;% length() + 2
@@ -504,9 +501,9 @@ num_unbanded_individuals &lt;- unbanded_individuals$band_number %&gt;% length()
 <p>Birds recaptured in different sites</p>
 <pre class="r"><code>#Calculate number of sites/bird to get recaptures across sites
 recaps_across_sites &lt;- captures %&gt;%
-  distinct(patch, species, band_number) %&gt;%
+  distinct(patch, bird_species, band_number) %&gt;%
   filter(!is.na(band_number)) %&gt;% #NA for birds not banded
-  group_by(species, band_number) %&gt;%
+  group_by(bird_species, band_number) %&gt;%
   summarise(num_sites = n()) %&gt;%
   arrange(desc(num_sites)) %&gt;%
   filter(num_sites &gt; 1)
@@ -527,9 +524,9 @@ length(recaps_across_sites$band_number)/total_captured_individuals</code></pre>
 <pre><code>## [1] 0.01204819</code></pre>
 <p>Birds recaptured across years</p>
 <pre class="r"><code>recaps_across_years &lt;- captures %&gt;%
-  distinct(year, species, band_number) %&gt;% #Don&#39;t bother with color marks; will have worn off.
+  distinct(year, bird_species, band_number) %&gt;% #Don&#39;t bother with color marks; will have worn off.
   filter(!is.na(band_number)) %&gt;% #NA for birds not banded
-  group_by(species, band_number) %&gt;%
+  group_by(bird_species, band_number) %&gt;%
   summarise(num_years = n()) %&gt;%
   filter(num_years &gt; 1)
 
@@ -540,8 +537,8 @@ length(recaps_across_years$band_number)</code></pre>
 <p>Birds recaptured within an experiment (i.e., birds caught pre and
 post); this is what I’m interested in</p>
 <pre class="r"><code>recaps_within_experiment &lt;-  captures %&gt;%
-  distinct(year, patch, exp_phase, species, bird_id, band_number, colors) %&gt;% #Not all birds banded, so use colors marks as well.
-  group_by(year, patch, species, bird_id, band_number, colors) %&gt;%
+  distinct(year, patch, exp_phase, bird_species, bird_id, band_number, colors) %&gt;% #Not all birds banded, so use colors marks as well.
+  group_by(year, patch, bird_species, bird_id, band_number, colors) %&gt;%
   summarise(num_captures = n()) %&gt;%
   filter(num_captures &gt; 1)
 
@@ -566,8 +563,8 @@ accounted for in birds recaptured across years (STRH SA4200) –&gt;
 <h2>Step 4: Make a summary table of bird species detected per site</h2>
 <pre class="r"><code>#Captures of unique individuals per site, by species
 species_per_site &lt;- captures %&gt;%
-  distinct(patch, species, band_number) %&gt;%
-  group_by(patch, species) %&gt;%
+  distinct(patch, bird_species, band_number) %&gt;%
+  group_by(patch, bird_species) %&gt;%
   summarise(num_birds = n()) %&gt;%
   left_join(bird_species_names)
 
@@ -579,14 +576,14 @@ species_per_site_x &lt;- species_per_site %&gt;%
 
 #Individuals per species
 individuals_per_species &lt;- species_per_site %&gt;%
-  group_by(species) %&gt;%
+  group_by(bird_species) %&gt;%
   summarise(num_birds = sum(num_birds))
 
 #Individuals per species - OMITTING BIRDS FROM &#39;POST&#39; PERIOD IN TREATMENT (i.e., for description of relative abundance/what is &#39;normal&#39; for study system)
 individuals_per_species_normal &lt;- captures %&gt;% 
   filter(!(control_treatment == &quot;treatment&quot; &amp; exp_phase == &quot;capture_2&quot;)) %&gt;%
-  distinct(patch, species, band_number) %&gt;%
-  group_by(species) %&gt;%
+  distinct(patch, bird_species, band_number) %&gt;%
+  group_by(bird_species) %&gt;%
   summarise(num_birds_normal = n())
 
 #Combine data. This is a combined summary of (a) bird species included in capture data, and (b) which sites had which birds
@@ -616,7 +613,7 @@ num_birds_all_species  &lt;- captures %&gt;%
 
 #GREH/VISA only
 num_birds_greh_visa &lt;- captures %&gt;% 
-  filter(species == &quot;GREH&quot; | species == &quot;VISA&quot;) %&gt;% 
+  filter(bird_species == &quot;GREH&quot; | bird_species == &quot;VISA&quot;) %&gt;% 
   group_by(year, patch, control_treatment, date, exp_phase) %&gt;% 
   summarise(num_birds = n()) %&gt;% 
   ungroup() %&gt;% 
@@ -650,16 +647,22 @@ during ‘pre’ period.</p>
   mutate(birds_in_pre = &quot;no&quot;)
 
 no_birds_in_pre_replicates</code></pre>
-<pre><code>## # A tibble: 5 × 10
-##   bird_…¹ year  patch contr…² date       exp_p…³ net_h…⁴ num_b…⁵ captu…⁶ birds…⁷
-##   &lt;chr&gt;   &lt;chr&gt; &lt;chr&gt; &lt;chr&gt;   &lt;date&gt;     &lt;chr&gt;     &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt; &lt;chr&gt;  
-## 1 all_spp 2017  137   control 2017-02-28 captur…    48.1       0       0 no     
-## 2 greh_v… 2016  200   control 2016-04-07 captur…    13.4       0       0 no     
-## 3 greh_v… 2017  137   control 2017-02-28 captur…    48.1       0       0 no     
-## 4 greh_v… 2017  200   treatm… 2017-03-24 captur…    49.5       0       0 no     
-## 5 greh_v… 2018  137   control 2018-03-07 captur…    34.7       0       0 no     
-## # … with abbreviated variable names ¹​bird_group, ²​control_treatment,
-## #   ³​exp_phase, ⁴​net_hours, ⁵​num_birds, ⁶​capture_rate, ⁷​birds_in_pre</code></pre>
+<pre><code>## # A tibble: 60 × 10
+##    bird_group year  patch control_t…¹ date       exp_p…² net_h…³ num_b…⁴ captu…⁵
+##    &lt;chr&gt;      &lt;chr&gt; &lt;chr&gt; &lt;chr&gt;       &lt;date&gt;     &lt;chr&gt;     &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt;
+##  1 all_spp    2016  10    treatment   2016-03-08 captur…   75.1        0       0
+##  2 all_spp    2016  130   treatment   2016-04-06 captur…   80          0       0
+##  3 all_spp    2016  137   treatment   2016-02-24 captur…   80.8        0       0
+##  4 all_spp    2016  200   control     2016-04-07 captur…   16.9        0       0
+##  5 all_spp    2016  201   control     2016-03-09 captur…    6.19       0       0
+##  6 all_spp    2016  203   control     2016-04-21 captur…   12.7        0       0
+##  7 all_spp    2016  24    control     2016-03-23 captur…   19.4        0       0
+##  8 all_spp    2016  30    treatment   2016-04-20 captur…   52          0       0
+##  9 all_spp    2016  58    treatment   2016-03-22 captur…   84          0       0
+## 10 all_spp    2016  60    control     2016-02-25 captur…   12.4        0       0
+## # … with 50 more rows, 1 more variable: birds_in_pre &lt;chr&gt;, and abbreviated
+## #   variable names ¹​control_treatment, ²​exp_phase, ³​net_hours, ⁴​num_birds,
+## #   ⁵​capture_rate</code></pre>
 <pre class="r"><code>#This is a consistent problem in p137 and p200 (across years)
 
 capture_rates_birds_in_pre_only &lt;- capture_rates %&gt;%
@@ -692,7 +695,7 @@ post_birds &lt;- data_for_recaptures %&gt;%
 #THIS IS THE SAME AS &#39;recaps_within_experiment&#39;, above
 recaptures &lt;- post_birds %&gt;%
   filter(bird_id %in% pre_birds$bird_id) %&gt;% 
-  select(year, patch, control_treatment, bird_id, species)
+  select(year, patch, control_treatment, bird_id, bird_species)
 
 #What percentage of birds captured during pre were recaptured during post?
 (num_pre_birds &lt;- pre_birds$band_number %&gt;% length())</code></pre>
@@ -726,7 +729,7 @@ num_recaptures_all_species  &lt;- recaptures %&gt;%
 
 #GREH/VISA only
 num_recaptures_greh_visa &lt;- recaptures %&gt;% 
-  filter(species == &quot;GREH&quot; | species == &quot;VISA&quot;) %&gt;% 
+  filter(bird_species == &quot;GREH&quot; | bird_species == &quot;VISA&quot;) %&gt;% 
   group_by(year, patch, control_treatment) %&gt;% 
   summarise(num_birds = n()) %&gt;% 
   ungroup() %&gt;%
@@ -752,17 +755,17 @@ recapture_rates &lt;- capture_rates %&gt;%
 write.csv(capture_rates_birds_in_pre_only, &quot;../../data/export/for_analysis/Capture_rates.csv&quot;, row.names = FALSE)
 
 #For Supp table
-write.csv(capture_summary_table, &quot;../../data/export/supp_tables/Captured_species_per_site_summary_table.csv&quot;)
+write.csv(capture_summary_table, &quot;../../data/export/supp_tables/Captured_species_per_site_summary_table.csv&quot;, row.names = FALSE)
 
 #RECAPTURES
 #For main analysis
 write.csv(recapture_rates, &quot;../../data/export/for_analysis/Recapture_rates.csv&quot;, row.names = FALSE)
 
 #For analysis of pre-post changes in body condition
-write.csv(recaptures, &quot;../../data/export/intermediate/Birds_recaptured_post.csv&quot;)
+write.csv(recaptures, &quot;../../data/export/intermediate/Birds_recaptured_post.csv&quot;, row.names = FALSE)
 
 #For potential future analysis of whether individual attributes influence recapture (0/1 for each bird)
-write.csv(pre_birds_with_recap_status, &quot;../../data/export/intermediate/Birds_captured_pre_with_recap_status.csv&quot;) </code></pre>
+write.csv(pre_birds_with_recap_status, &quot;../../data/export/intermediate/Birds_captured_pre_with_recap_status.csv&quot;, row.names = FALSE) </code></pre>
 </div>
 
 

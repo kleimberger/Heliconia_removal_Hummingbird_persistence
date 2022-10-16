@@ -38,15 +38,15 @@ library(purrr)
 ## Step 1: Get data
 ```{r, get_data}
 #These data have already had some initial cleaning, at least enough to allow years to be joined together
-telem_data <- read.csv("../../data/import/Telemetry_data_2016-2018_20220603.csv") %>%
-  select(-X)
+telem_data <- read.csv("../../data/import/data/telemetry/Telemetry_data_2016-2018.csv") %>%
+  rename(frequency = trans_freq)
 
 #Get focal area outlines, for determining whether or not a GPS point was in the patch
 #Here, "patch" and "focal area" are used interchangeably
 focal_area_outlines <- sf::st_read("../../data/export/intermediate/focal_areas_2016-2018.shp")
 
 #Net location info, for determining centroid of area where bird caught (and radio-tagged)
-nets <- read.csv("../../data/import/Nets_2016-2018_20210909.csv")
+nets <- read.csv("../../data/import/data/captures/Nets_2016-2018.csv")
 ```
 
 ## Step 2: Do some QA/QC
@@ -115,7 +115,7 @@ To convert compass bearing (direction) and distance into GPS coordinates, use tr
 
 There are multiple ways to project the coordinates. The simplest way uses the unit circle, but the unit circle starts in a different place from where compass starts (it is offset 90 degrees clockwise from compass "north") and also goes counter-clockwise (vs. clockwise with compass). This can be handled by subtracted the compass angle from 90 degrees.
 
-![unit circle](../../data/import/unit_circle.png)
+![unit circle](../../code/response_variables/unit_circle.png)
 
 DECISION: If direction is missing but distance is less than 20m, just use original (non-projected) GPS coords instead of removing the data entirely.
 
@@ -130,7 +130,7 @@ telem_data02 <- telem_data %>%
 
 #Check: why are certain projected coordinates NA? Should only be NA if missing GPS coords, distance, or direction.
 check03 <- telem_data02 %>%
-  select(year, patch, date, observer, species, frequency, notes_location_english, notes_data, x_utm, y_utm, distance, direction, x_displace, y_displace, x_utm_proj, y_utm_proj) %>%
+  select(year, patch, date, observer, bird_species, frequency, notes_location_english, notes_data, x_utm, y_utm, distance, direction, x_displace, y_displace, x_utm_proj, y_utm_proj) %>%
   filter(x_utm_proj == "" | is.na(x_utm_proj) | y_utm_proj == "" | is.na(y_utm_proj))
 ```
 
@@ -149,7 +149,6 @@ out_of_bound_coords <- telem_data02 %>%
 #Create mean center summary for nets from capture #1 in each patch
 #Net mean center summary
 net_centers <- nets %>%
-  select(-X) %>%
   mutate_all(as.character) %>%
   mutate(date = ymd(date)) %>%
   distinct(year, patch, date, exp_phase, net_number, x_utm, y_utm) %>%
@@ -287,7 +286,7 @@ maps$maps
 
 ## Step 7: Export data
 ```{r, export_data}
-write.csv(telem_data04, "../../data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv") 
+write.csv(telem_data04, "../../data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv", row.names = FALSE) 
 ```
 
 *Note: for analysis, will still need to filter out rows with missing data. But, some of these rows have information about telemetry effort, so leaving them in here for now.*

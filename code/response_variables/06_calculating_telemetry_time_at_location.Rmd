@@ -23,8 +23,8 @@ library(ggplot2)
 
 ## Step 1: Get data
 ```{r, get_data}
-telem_data <- read.csv("data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv") %>%
-  select(-X, -id)
+telem_data <- read.csv("../../data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv") %>%
+  select(-id)
 ```
 
 ## Step 2: Calculate time at location
@@ -142,7 +142,7 @@ check03 <- check02 %>%
 #Check: why are there really large estimated times at location?
 check04 <- time_at_loc_data %>%
   filter(time_at_location > 30 & time_leave_category != "known") %>%
-  select(year, observer, patch, species, frequency, date, starts_with("time"), point_in_patch, notes_location_english, notes_location_spanish, notes_data)
+  select(year, observer, patch, bird_species, frequency, date, starts_with("time"), point_in_patch, notes_location_english, notes_location_spanish, notes_data)
 
 #Check: how many of these really large estimated times are "in patch"? Will affect response variable (proportion of time in patch)
 check05 <- check04 %>%
@@ -243,7 +243,7 @@ log_time_at_loc_density_plot
 ## Step 5: Export
 
 ```{r, export_data}
-write.csv(telem_data03, "../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv")
+write.csv(telem_data03, "../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv", row.names = FALSE)
 
 ggsave("../../results/response_variables/figures/Time_at_location_density_plots.png", plot = time_at_loc_plots, width = 10, height = 7.5, units = "in", dpi = 300)
 ```

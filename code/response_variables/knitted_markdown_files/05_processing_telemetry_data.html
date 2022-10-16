@@ -383,14 +383,14 @@ bird’s location using trigonometric relationships)</p></li>
 <div id="step-1-get-data" class="section level2">
 <h2>Step 1: Get data</h2>
 <pre class="r"><code>#These data have already had some initial cleaning, at least enough to allow years to be joined together
-telem_data &lt;- read.csv(&quot;../../data/import/Telemetry_data_2016-2018_20220603.csv&quot;) %&gt;%
-  select(-X)
+telem_data &lt;- read.csv(&quot;../../data/import/data/telemetry/Telemetry_data_2016-2018.csv&quot;) %&gt;%
+  rename(frequency = trans_freq)
 
 #Get focal area outlines, for determining whether or not a GPS point was in the patch
 #Here, &quot;patch&quot; and &quot;focal area&quot; are used interchangeably
 focal_area_outlines &lt;- sf::st_read(&quot;../../data/export/intermediate/focal_areas_2016-2018.shp&quot;)</code></pre>
 <pre><code>## Reading layer `focal_areas_2016-2018&#39; from data source 
-##   `C:\Users\leimberk\Box\CR_hummingbird_project\GitHub_projects\Heliconia_removal_Hummingbird_persistence\data\export\intermediate\focal_areas_2016-2018.shp&#39; 
+##   `C:\Users\leimberk\Box\CR_hummingbird_project\GitHub_projects\hummingbird-persistence\data\export\intermediate\focal_areas_2016-2018.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 32 features and 5 fields
 ## Geometry type: POLYGON
@@ -398,7 +398,7 @@ focal_area_outlines &lt;- sf::st_read(&quot;../../data/export/intermediate/focal
 ## Bounding box:  xmin: 279837 ymin: 963486 xmax: 290809 ymax: 976094
 ## CRS:           unknown</code></pre>
 <pre class="r"><code>#Net location info, for determining centroid of area where bird caught (and radio-tagged)
-nets &lt;- read.csv(&quot;../../data/import/Nets_2016-2018_20210909.csv&quot;)</code></pre>
+nets &lt;- read.csv(&quot;../../data/import/data/captures/Nets_2016-2018.csv&quot;)</code></pre>
 </div>
 <div id="step-2-do-some-qaqc" class="section level2">
 <h2>Step 2: Do some QA/QC</h2>
@@ -486,7 +486,7 @@ telem_data02 &lt;- telem_data %&gt;%
 
 #Check: why are certain projected coordinates NA? Should only be NA if missing GPS coords, distance, or direction.
 check03 &lt;- telem_data02 %&gt;%
-  select(year, patch, date, observer, species, frequency, notes_location_english, notes_data, x_utm, y_utm, distance, direction, x_displace, y_displace, x_utm_proj, y_utm_proj) %&gt;%
+  select(year, patch, date, observer, bird_species, frequency, notes_location_english, notes_data, x_utm, y_utm, distance, direction, x_displace, y_displace, x_utm_proj, y_utm_proj) %&gt;%
   filter(x_utm_proj == &quot;&quot; | is.na(x_utm_proj) | y_utm_proj == &quot;&quot; | is.na(y_utm_proj))</code></pre>
 </div>
 <div id="step-4-do-some-more-qaqc" class="section level2">
@@ -503,7 +503,6 @@ out_of_bound_coords &lt;- telem_data02 %&gt;%
 #Create mean center summary for nets from capture #1 in each patch
 #Net mean center summary
 net_centers &lt;- nets %&gt;%
-  select(-X) %&gt;%
   mutate_all(as.character) %&gt;%
   mutate(date = ymd(date)) %&gt;%
   distinct(year, patch, date, exp_phase, net_number, x_utm, y_utm) %&gt;%
@@ -721,7 +720,7 @@ maps$maps</code></pre>
 </div>
 <div id="step-7-export-data" class="section level2">
 <h2>Step 7: Export data</h2>
-<pre class="r"><code>write.csv(telem_data04, &quot;../../data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv&quot;) </code></pre>
+<pre class="r"><code>write.csv(telem_data04, &quot;../../data/export/intermediate/Telemetry_data_2016-2018_projected_coords.csv&quot;, row.names = FALSE) </code></pre>
 <p><em>Note: for analysis, will still need to filter out rows with
 missing data. But, some of these rows have information about telemetry
 effort, so leaving them in here for now.</em></p>

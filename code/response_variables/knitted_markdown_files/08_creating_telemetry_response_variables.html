@@ -378,8 +378,6 @@ in the focal area</p>
 <h2>Step 1: Get data and functions</h2>
 <pre class="r"><code>#Telemetry data
 telem_data &lt;- read.csv(&quot;../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv&quot;) %&gt;%
-  select(-X) %&gt;%
-  rename(control_treatment = control_trmt) %&gt;%
   mutate(date = lubridate::ymd(date))
 
 #Get observation effort
@@ -387,15 +385,15 @@ effort_date &lt;- read.csv(&quot;../../data/export/intermediate/Telemetry_effort
   mutate(date = lubridate::ymd(date)) %&gt;%
   mutate(telem_start = lubridate::ymd_hms(start)) %&gt;%
   mutate(telem_end = lubridate::ymd_hms(end)) %&gt;%
-  select(-X, -start, -end)
+  select(-start, -end)
 
 #Bird info
-birds_tagged &lt;- read.csv(&quot;../../data/import/Telemetry_birds.csv&quot;) %&gt;%
-  select(year, patch = site, species, sex, frequency = frequency_adjusted, bird_notes = notes) %&gt;%
+birds_tagged &lt;- read.csv(&quot;../../data/import/data/telemetry/Telemetry_birds.csv&quot;) %&gt;%
+  select(year, patch = site, bird_species, bird_sex = sex, frequency = frequency_adjusted, bird_notes = notes) %&gt;%
   mutate(outcome = &quot;tagged&quot;)
 
 #Camera data, for checking telemetry data
-camera_data &lt;- read.csv(&quot;../../data/import/Camera_data_with_flower_counts_2016-2018_20220712.csv&quot;)
+camera_data &lt;- read.csv(&quot;../../data/import/data/cameras/Camera_data_with_flower_counts_2016-2018.csv&quot;)
 
 #Functions
 source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)</code></pre>
@@ -468,7 +466,7 @@ then those data are suspect.</p></li>
 transmitter_sightings &lt;- camera_data %&gt;%
   rename(frequency = trans_freq, date = date_video) %&gt;%
   filter(!is.na(frequency)) %&gt;%
-  mutate(date = lubridate::mdy(date)) %&gt;%
+  mutate(date = lubridate::ymd(date)) %&gt;%
   mutate(sighting_start = lubridate::ymd_hms(paste(date, sighting_start))) %&gt;%
   select(year, patch, date, exp_phase, sighting_start, bird_species, frequency)
 
@@ -514,8 +512,8 @@ birds_with_data_reliability_issues &lt;- birds_tagged_time_in_patch %&gt;%
   filter(!(frequency %in% birds_with_lost_tags$frequency)) %&gt;%
   filter(!(frequency %in% birds_never_found$frequency)) %&gt;%
   filter(frequency %in% transmitter_birds_undetected_during_telem$frequency) %&gt;%
-  select(species, sex, frequency, exp_phase, time_in_patch) %&gt;%
-  group_by(species, sex, frequency, exp_phase) %&gt;%
+  select(bird_species, bird_sex, frequency, exp_phase, time_in_patch) %&gt;%
+  group_by(bird_species, bird_sex, frequency, exp_phase) %&gt;%
   summarise(time_in_patch = sum(time_in_patch)) %&gt;%
   ungroup() %&gt;%
   pivot_wider(names_from = exp_phase, values_from = time_in_patch, values_fill = 0) %&gt;%
@@ -539,7 +537,7 @@ birds_never_in_patch &lt;- birds_tagged_time_in_patch %&gt;%
   filter(!(frequency %in% birds_with_lost_tags$frequency)) %&gt;%
   filter(!(frequency %in% birds_never_found$frequency)) %&gt;%
   filter(!(frequency %in% birds_with_data_reliability_issues$frequency)) %&gt;%
-  group_by(frequency, species, sex) %&gt;%
+  group_by(frequency, bird_species, bird_sex) %&gt;%
   summarise(time_in_patch = sum(time_in_patch)) %&gt;%
   filter(time_in_patch == 0) %&gt;%
   mutate(outcome = &quot;never_in_patch&quot;)
@@ -552,7 +550,7 @@ birds_never_in_patch_during_pre &lt;- birds_tagged_time_in_patch %&gt;%
   filter(!(frequency %in% birds_never_found$frequency)) %&gt;%
   filter(!(frequency %in% birds_with_data_reliability_issues$frequency)) %&gt;%
   filter(!(frequency %in% birds_never_in_patch$frequency)) %&gt;%
-  group_by(frequency, species, sex, exp_phase) %&gt;%
+  group_by(frequency, bird_species, bird_sex, exp_phase) %&gt;%
   summarise(time_in_patch = sum(time_in_patch)) %&gt;%
   filter(time_in_patch == 0 &amp; exp_phase == &quot;pre&quot;) %&gt;%
   mutate(outcome = &quot;never_in_patch_during_pre&quot;)
@@ -567,17 +565,17 @@ table</strong></p>
   bind_rows(birds_with_data_reliability_issues) %&gt;%
   bind_rows(birds_never_in_patch) %&gt;%
   bind_rows(birds_never_in_patch_during_pre) %&gt;%
-  mutate(sex = ifelse(sex == &quot;UF&quot; | sex == &quot;UM&quot;, &quot;U&quot;, sex)) %&gt;% #unknown female and unknown male = unknown sex
-  distinct(outcome, species, sex, frequency)
+  mutate(bird_sex = ifelse(bird_sex == &quot;UF&quot; | bird_sex == &quot;UM&quot;, &quot;U&quot;, bird_sex)) %&gt;% #unknown female and unknown male = unknown sex
+  distinct(outcome, bird_species, bird_sex, frequency)
 
 #Radio tracking outcomes, by species/sex
 outcomes_by_species_sex &lt;- birds_with_outcomes %&gt;%
-  group_by(outcome, species, sex) %&gt;%
+  group_by(outcome, bird_species, bird_sex) %&gt;%
   summarise(num_birds = n())
 
 #Radio tracking outcomes, by species
 outcomes_by_species &lt;- birds_with_outcomes %&gt;%
-  group_by(outcome, species) %&gt;%
+  group_by(outcome, bird_species) %&gt;%
   summarise(num_birds = n())
 
 #Radio tracking outcomes, combined across species/sex
@@ -627,7 +625,7 @@ filter to ‘pre’ period only.</em></p>
 <h2>Step 6: Summarize data to pre/post (across dates) + calculate
 proportion of time spent in patch</h2>
 <pre class="r"><code>prop_time_for_analysis &lt;- time_in_patch_for_analysis %&gt;%
-  group_by(year, patch, control_treatment, frequency, species, sex, exp_phase) %&gt;%
+  group_by(year, patch, control_treatment, frequency, bird_species, bird_sex, exp_phase) %&gt;%
   summarise(obs_effort_minutes = sum(obs_effort_minutes),
             time_in_patch_minutes = sum(time_in_patch)) %&gt;%
   ungroup() %&gt;%
@@ -642,7 +640,7 @@ methods/results</h2>
 locations_per_bird &lt;- telem_data_for_analysis %&gt;%
   filter(!is.na(point_in_patch)) %&gt;% #Only sum the locations with complete GPS coords
   filter(frequency %in% prop_time_for_analysis$frequency) %&gt;% #Filter to birds in final dataset
-  group_by(year, patch, control_treatment, frequency, species, sex) %&gt;%
+  group_by(year, patch, control_treatment, frequency, bird_species, bird_sex) %&gt;%
   summarise(num_locations = n()) %&gt;%
   ungroup()
 
@@ -656,7 +654,7 @@ locations_per_bird_sum</code></pre>
 ## 1     1   171  66.8  47.4     54    36</code></pre>
 <pre class="r"><code>#Dates per bird. Use dataset built on list of tagged birds to include dates even when bird was not detected (and therefore didn&#39;t show up in telem data)
 dates_per_bird &lt;- time_in_patch_for_analysis %&gt;%
-  group_by(year, patch, control_treatment, species, sex, frequency) %&gt;%
+  group_by(year, patch, control_treatment, bird_species, bird_sex, frequency) %&gt;%
   summarise(num_dates = n()) %&gt;%
   ungroup()
 
@@ -707,13 +705,13 @@ would not be able to rule out nighttime torpor. But it’s here just in
 case.</em></p>
 <pre class="r"><code>time_at_location_sum &lt;- telem_data_for_analysis %&gt;%
   filter(!is.na(frequency)) %&gt;%
-  group_by(year, patch, control_treatment, frequency, species, sex, exp_phase) %&gt;%
+  group_by(year, patch, control_treatment, frequency, bird_species, bird_sex, exp_phase) %&gt;%
   calculate_basic_summary_stats(variable = time_at_location) %&gt;%
   rename(num_locations = n)
 
 #Need to look at birds with at least one location pre and post
 time_at_location_birds_complete &lt;- time_at_location_sum %&gt;%
-  distinct(year, patch, control_treatment, frequency, species, sex, exp_phase, num_locations) %&gt;%
+  distinct(year, patch, control_treatment, frequency, bird_species, bird_sex, exp_phase, num_locations) %&gt;%
   pivot_wider(names_from = exp_phase, values_from = num_locations, values_fill = 0) %&gt;%
   filter(pre &gt; 0 &amp; post &gt; 0)
 
@@ -741,12 +739,12 @@ time_at_location_plot</code></pre>
 <div id="step-9-export-data" class="section level2">
 <h2>Step 9: Export data</h2>
 <pre class="r"><code>write.csv(prop_time_for_analysis, &quot;../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv&quot;, row.names = FALSE)
-write.csv(telem_data_for_analysis, &quot;../../data/export/intermediate/Telemetry_data_filtered_for_analysis.csv&quot;)
+write.csv(telem_data_for_analysis, &quot;../../data/export/intermediate/Telemetry_data_filtered_for_analysis.csv&quot;, row.names = FALSE)
 
 #Radio-tracking outcomes for Supp material
-write.csv(outcomes_by_species_sex, &quot;../../data/export/supp_tables/Telemetry_outcomes_by_species_and_sex.csv&quot;)
-write.csv(outcomes_by_species, &quot;../../data/export/supp_tables/Telemetry_outcomes_by_species.csv&quot;)
-write.csv(outcomes, &quot;../../data/export/supp_tables/Telemetry_outcomes.csv&quot;)</code></pre>
+write.csv(outcomes_by_species_sex, &quot;../../data/export/supp_tables/Telemetry_outcomes_by_species_and_sex.csv&quot;, row.names = FALSE)
+write.csv(outcomes_by_species, &quot;../../data/export/supp_tables/Telemetry_outcomes_by_species.csv&quot;, row.names = FALSE)
+write.csv(outcomes, &quot;../../data/export/supp_tables/Telemetry_outcomes.csv&quot;, row.names = FALSE)</code></pre>
 </div>
 
 

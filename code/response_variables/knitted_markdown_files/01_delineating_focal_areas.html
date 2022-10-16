@@ -385,7 +385,7 @@ time radio-tagged birds spent in the area</p></li>
 <pre class="r"><code>#1. Subset to one calorie estimate. Dataset has a high and low calorie estimate, but only need one here
 #2. Remove rows with NA coordinates
 #3. Create a factor level combining patch and year
-resource_data &lt;- read.csv(&quot;../../data/import/Resource_counts_2016-2018_20200713.csv&quot;) %&gt;%
+resource_data &lt;- read.csv(&quot;../../data/import/data/resource_counts/Resource_counts_2016-2018.csv&quot;) %&gt;%
   filter(!is.na(x_utm) &amp; !is.na(y_utm)) %&gt;%
   mutate(year_patch = as.factor(paste(year, patch, sep = &quot;_&quot;)))</code></pre>
 </div>
@@ -451,8 +451,8 @@ sites, but we still need focal area outlines for the 2016 controls</p>
 are missing resource counts (and therefore focal area outlines). In
 2017, we used the same sites as 2016.</p>
 <pre class="r"><code>#Get experiment info
-exp_info &lt;- read.csv(&quot;../../data/import/Experiment_dates_2016-2018.csv&quot;)%&gt;%
-  distinct(year, patch, control_treatment = control_trmt) %&gt;%
+exp_info &lt;- read.csv(&quot;../../data/import/data/Experiment_dates_2016-2018.csv&quot;)%&gt;%
+  distinct(year, patch, control_treatment) %&gt;%
   mutate_all(as.character)
 
 #2016 controls are missing focal area outlines
