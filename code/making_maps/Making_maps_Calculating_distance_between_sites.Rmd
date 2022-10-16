@@ -153,26 +153,6 @@ countries_subset_utm = sf::st_transform(countries_subset, crs = proj)
 ```
 
 Forest/non-forest layers
-```{r, include = FALSE, eval = FALSE}
-#My hand-digitized forest/nonforest layer (generally only within 1000m radius of study sites)
-forest = raster::raster("data/import/Leimberger_GE_forest_raster_with_matrix_20200630.tif") 
-raster::crs(forest) #lat/lon
-
-#Chase Mendenhall's digitization as base map. Doesn't cover entire study area, since mostly clipped to Coto Brus boundary
-chase_forest = raster::raster("data/import/Mendenhall_GE_tree_cover_map_hand_digitized.tif")
-raster::crs(chase_forest) #lat/lon
-
-#Convert fron lat/long to UTM
-projstring <- "+proj=utm +zone=17 +ellps=WGS84 +units=m +no_defs" 
-forest = raster::projectRaster(forest, crs = projstring)
-chase_forest = raster::projectRaster(chase_forest, crs = projstring)
-
-#Export the UTM raster layers since this step takes a while to run; can just import the UTM versions moving forward
-path_name <- c("data/export/spatial_layers")
-raster::writeRaster(forest, filename = file.path(path_name, "Leimberger_GE_forest_layer_UTM.tif"), overwrite=FALSE)
-raster::writeRaster(chase_forest, filename = file.path(path_name, "Mendenhall_GE_forest_layer_UTM.tif"), overwrite=FALSE)
-```
-
 ```{r}
 forest = raster::raster("data/export/spatial_layers/Leimberger_GE_forest_layer_UTM.tif") 
 chase_forest = raster::raster("data/export/spatial_layers/Mendenhall_GE_forest_layer_UTM.tif")

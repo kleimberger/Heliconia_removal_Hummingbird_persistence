@@ -107,12 +107,12 @@ Remove sightings from afternoon of cover day (treatment sites only). Here, 'afte
 ```{r step3b}
 ## Videos that start (and end) after 11:30 (will just remove these)
 treatment_videos_pm <- camera_data02 %>%
-  filter(cover_day == 1 & control_treatment == "treatment") %>%
+  filter(trmt_cover_day == 1 & control_treatment == "treatment") %>%
   filter(video_start > hm("11:30"))
 
 ## Videos that span the cutoff time (will change end time to 11:30 and remove sightings after this time)
 treatment_videos_am_pm <- camera_data02 %>%
-  filter(cover_day == 1 & control_treatment == "treatment") %>%
+  filter(trmt_cover_day == 1 & control_treatment == "treatment") %>%
   filter(video_start < hm("11:30")) %>%
   filter(video_end > hm("11:30"))
 
