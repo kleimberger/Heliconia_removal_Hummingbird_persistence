@@ -51,44 +51,72 @@ plan(multisession)
 set.seed(1)
 ```
 
-## Step 1: Import data and functions
+## Step 1: Import data and functions, prepare for analysis
 
 **Get data**
 ```{r}
 #Camera data, visits summarized across birds
-visit_data <- read.csv("../../data/export/for_analysis/Camera_visitation_rates.csv") %>%
-  mutate(subanalysis = "all_birds") %>%
-  select(-X)
+visit_data <- read.csv("data/export/for_analysis/Camera_visitation_rates.csv") %>%
+  mutate(subanalysis = "all_birds")
 
 #Camera data, visits by individual birds
 #Decided not to exclude birds that have no visits during the pre period (determined for HETO and non-HETO separately)
-visit_data_marked <- read.csv("../../data/export/for_analysis/Camera_visitation_rates_marked_birds.csv") %>%
+visit_data_marked <- read.csv("data/export/for_analysis/Camera_visitation_rates_marked_birds.csv") %>%
   mutate(subanalysis = "marked_birds") %>%
-  select(-present_during_pre, -X)
+  select(-present_during_pre)
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
-heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
-  select(-X, -area)
+heto_removed <- read.csv("data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
+  select(-area)
+```
 
+**How many non-Heliconia species were had camera data pre and post? Did all species have sightings**
+```{r}
+#Calculate total number of species in data (and total # with sightings)
+nonheto_data <- visit_data %>%
+  filter(analysis == "camera_non-HETO" & subanalysis == "all_birds" & bird_group == "all_spp")
+
+nonheto_species <- nonheto_data %>%
+  group_by(plant_species) %>%
+  summarise(sightings = sum(sightings)) %>%
+  arrange(sightings)
+
+nonheto_species_with_sightings <- nonheto_species %>%
+  filter(sightings > 0)
+
+#Which plant species have the most data? In terms of replicates (actual number of rows will be double this, because have data pre and post)
+nonheto_species_sample_size <- nonheto_data %>%
+  distinct(year, patch, plant_species) %>%
+  group_by(plant_species) %>%
+  summarise(num_replicates = n()) %>%
+  arrange(desc(num_replicates))
+```
+
+**Remove plant species that had no sightings from any hummingbird species, pre or post**
+```{r}
 ##1. Combine data
 #2. Log-transform HETO calories removed
 #3. Remove plants without flower counts (GINGY and MARA-VER)
 visit_data_for_analysis <- visit_data_marked %>%
   bind_rows(visit_data) %>%
-  left_join(heto_removed) %>%
+  left_join(heto_removed) %>% 
+  filter(plant_species == "HETO" | plant_species %in% nonheto_species_with_sightings$plant_species) %>%
   mutate(exp_phase = factor(exp_phase, levels = c("pre", "post"))) %>%
   mutate(control_treatment = factor(control_treatment, levels = c("control", "treatment"))) %>%
   mutate(year_patch = paste(year, patch, sep = "_")) %>%
   mutate(log_calories_removed_per_ha = log(calories_removed_per_ha + 1)) %>%
   filter(!is.na(flowers) & flowers != "NA") %>%
   select(analysis, subanalysis, bird_group, everything())
+
+#Check: how many plant species, including HETO?
+unique(visit_data_for_analysis$plant_species) %>% length()
 ```
 
 **Import functions**
 ```{r step1a}
-source("../../code/helper_functions/Modeling_helper_functions.R")
-source("../../code/helper_functions/Plotting_helper_functions.R")
-source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("code/helper_functions/Modeling_helper_functions.R")
+source("code/helper_functions/Plotting_helper_functions.R")
+source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
 ```
 
 ## Step 2: Create datasets for each analysis 
@@ -137,7 +165,7 @@ data <- base_table %>%
 
 For count data, there multiple possible distributions. I need to choose between Poisson and negative binomial (nbinom1 and nbinom2) and also see if there is support for zero-inflation or not. Will check assumptions for all models again later on.
 
-**Heliconia visitation rate, all birds (not marked)**
+**Heliconia visitation rate: all birds, including marked birds**
 ```{r, include = FALSE, eval = FALSE}
 fit_data01 <- data %>%
   filter(analysis == "camera_HETO" & subanalysis == "all_birds" & bird_group == "all_spp" & model_type == "categorical") %>%
@@ -176,7 +204,7 @@ model_fitting01$dharma_overdisp_plot[[3]]
 model_fitting01$dharma_zeroinfl_plot[[3]]
 ```
 
-**Non-Heliconia visitation rate, all birds (not marked)**
+**Non-Heliconia visitation rate (all plant species together): all birds, including marked birds**
 ```{r, include = FALSE, eval = FALSE}
 fit_data02 <- data %>%
   filter(analysis == "camera_non-HETO" & subanalysis == "all_birds" & bird_group == "all_spp" & model_type == "categorical") %>%
@@ -217,7 +245,69 @@ model_fitting02$dharma_zeroinfl_plot[[3]]
 #model 4 (ZI model) is technically best in terms of AIC, but does not converge for GREH/VISA; using second-best model (model 3) instead, because assumptions look fine and it converges for GREH/VISA (and is the best model for that group in terms of AIC)
 ```
 
-**Heliconia visitation rate, marked birds**
+**Non-Heliconia visitation rate (plant species separate): all birds, including marked birds**
+
+Function to automate model fitting for separate non-Heliconia plant species
+```{r}
+fit_model <- function(dataset, plant_species){
+  
+  fit_data <- dataset %>%
+    filter(analysis == "camera_non-HETO" & subanalysis == "all_birds" & model_type == "categorical") %>%
+    filter(bird_group == "all_spp") %>%
+    pull(data) %>%
+    as.data.frame() %>%
+    filter(plant_species == !!plant_species)
+
+  m1 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data, na.action = na.omit, family = "poisson", ziformula = ~0)
+  
+  m2 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data, na.action = na.omit, family = "poisson", ziformula = ~1)
+  
+  m3 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data, na.action = na.omit, family = "nbinom1", ziformula = ~0)
+  
+  m4 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data, na.action = na.omit, family = "nbinom1", ziformula = ~1)
+  
+  m5 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data, na.action = na.omit, family = "nbinom2", ziformula = ~0)
+  
+  m6 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data, na.action = na.omit, family = "nbinom2", ziformula = ~1)
+
+  #Combine models
+  model_fitting <- tibble(model_name = c("m1", "m2", "m3", "m4", "m5", "m6"), model = list(m1, m2, m3, m4, m5, m6)) %>%
+    mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+    mutate(dharma_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "basic")),
+           dharma_zeroinfl_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "zeroinflation")),
+           dharma_overdisp_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "overdispersion"))) %>%
+    mutate(AICc = map(model, MuMIn::AICc))
+
+  return(model_fitting)
+
+}
+```
+
+Initial model fitting for separate non-Heliconia plant species
+```{r}
+#Only look at species with at least 10 replicates/20 rows 
+model_fitting_nonheto_separate <- nonheto_species_sample_size %>%
+  filter(num_replicates > 10) %>%
+  mutate(fit_with_info = map(plant_species, ~fit_model(dataset = data, plant_species = .)))
+
+#Extract AICc ranks
+AICc_ranks <- model_fitting_nonheto_separate %>%
+    select(plant_species, num_replicates, fit_with_info) %>%
+    unnest(fit_with_info) %>%
+    select(plant_species, num_replicates, model_name, AICc)
+    arrange(AICc)
+
+#Top AICc models
+AICc_best_models <- AICc_ranks %>%
+  group_by(plant_species, num_replicates) %>%
+  slice(which.min(AICc)) %>%
+  arrange(desc(num_replicates))
+
+#model 3 is best for all except for CEPO (m1), COSTBAR (m1), and BOCA-ROJA (m5 - but AICc is basically the same as m3) 
+#will use mmodel 3 (nbinom1) for most species and model 1 (Poisson) for CEPO + COSTBAR
+```
+
+**Heliconia visitation rate: marked birds only**
 ```{r, include = FALSE, eval = FALSE}
 fit_data03 <- data %>%
   filter(analysis == "camera_HETO" & subanalysis == "marked_birds" & bird_group == "all_spp" & model_type == "categorical") %>%
@@ -256,7 +346,7 @@ model_fitting03$dharma_plot[[1]]
 model_fitting03$dharma_overdisp_plot[[1]]
 ```
 
-**Non-Heliconia visitation rate, marked birds**
+**Non-Heliconia visitation rate: marked birds only**
 ```{r, include = FALSE, eval = FALSE}
 fit_data04 <- data %>%
   filter(analysis == "camera_non-HETO" & subanalysis == "marked_birds" & bird_group == "all_spp" & model_type == "categorical") %>%
@@ -294,7 +384,7 @@ model_fitting04$dharma_plot[[5]]
 model_fitting04$dharma_overdisp_plot[[5]]
 ```
 
-## Step 4: Fit models
+## Step 4: Create models
 ```{r}
 #Function to make model for given analysis
 #Alternative optimizer (default is nlminb)
