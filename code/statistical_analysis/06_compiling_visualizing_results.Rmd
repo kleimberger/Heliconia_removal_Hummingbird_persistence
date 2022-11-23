@@ -36,20 +36,20 @@ library(ggpubr)
 ```
 
 ```{r}
-source("../../code/helper_functions/Modeling_helper_functions.R")
-source("../../code/helper_functions/Plotting_helper_functions.R")
-source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
-source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+source("code/helper_functions/Modeling_helper_functions.R")
+source("code/helper_functions/Plotting_helper_functions.R")
+source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("code/helper_functions/Calculate_basic_summary_stats.R")
 ```
 
 ## Step 1: Get results (rds files)
 
 ```{r}
-cameras <- readRDS("../../results/statistical_analysis/rds_files/Camera_results.rds")
-captures <- readRDS("../../results/statistical_analysis/rds_files/Capture_results.rds")
-telemetry <- readRDS("../../results/statistical_analysis/rds_files/Telemetry_results.rds")
-pollen_tubes <- readRDS("../../results/statistical_analysis/rds_files/Pollen_tube_results.rds")
-body_mass <- readRDS("../../results/statistical_analysis/rds_files/Body_mass_results.rds")
+cameras <- readRDS("results/statistical_analysis/rds_files/Camera_results.rds")
+captures <- readRDS("results/statistical_analysis/rds_files/Capture_results.rds")
+telemetry <- readRDS("results/statistical_analysis/rds_files/Telemetry_results.rds")
+pollen_tubes <- readRDS("results/statistical_analysis/rds_files/Pollen_tube_results.rds")
+body_mass <- readRDS("results/statistical_analysis/rds_files/Body_mass_results.rds")
 
 results <- cameras %>%
   bind_rows(captures) %>%
@@ -62,13 +62,18 @@ results <- cameras %>%
 
 #How many total models?
 length(results$model_number)
+
+#What non-Heliconia species were analyzed? Plant species scientific names fpr plots
+nonheto_species <- read.csv("data/export/supp_tables/Non-Heliconia_camera_species_list.csv") %>%
+  filter(plant_species %in% results$plant_species) %>%
+  select(plant_species, plant_scientific_name, num_replicates)
 ```
 
 ## Step 2: Create model summaries, calculate confidence intervals, and tidy results into dataframe for export
 
 ```{r step2, message = FALSE}
 #Columns to keep when extract the results
-col_names <- c("model_number", "analysis", "subanalysis", "bird_group", "yvar")
+col_names <- c("model_number", "analysis", "subanalysis", "model_type", "bird_group", "plant_species", "yvar")
 
 #Extract model summaries
 results_tidy <- results %>%
@@ -113,7 +118,8 @@ I will use estimated marginal means to visualize and help interpret results. Sin
 ```{r step 4b, message = FALSE}
 #Models for cameras have offset; I want to calculate the number of visits per 12-hour day
 emmeans_cameras <- results_categorical %>%
-  filter(analysis == "camera_HETO" | analysis == "camera_non-HETO") %>%
+  filter(analysis == "camera_HETO" | analysis == "camera_non-HETO" | analysis == "camera_non-HETO_separate") %>%
+  filter(plant_species != "RABO") %>% #RABO model was weird, fit better with hours as covariate instead of offset
   mutate(ggeffects = map(model, ~ggemmeans(., terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(hours = 12)))) %>%
   mutate(emmeans = map(model, ~emmeans(., specs = ~exp_phase:control_treatment, type = "response", offset = log(12))))
 
@@ -181,7 +187,7 @@ The solution to this problem is to calculate ["risk ratios", aka "proportion rat
 
 #CAMERAS AND CAPTURES (log link)
 contrasts_cameras_captures <- results_categorical %>%
-  filter(analysis == "camera_HETO" | analysis == "camera_non-HETO" | (analysis == "captures" & subanalysis == "captures")) %>%
+  filter(analysis == "camera_HETO" | analysis == "camera_non-HETO" | analysis == "camera_non-HETO_separate" | (analysis == "captures" & subanalysis == "captures")) %>%
   mutate(emm = map(model, ~emmeans(., specs = ~exp_phase:control_treatment))) %>%
   mutate(contrast = map(emm, ~as.data.frame(confint(contrast(., method = "revpairwise", by = c("control_treatment")), type = "response")))) %>%
   mutate(contrast_of_contrast = map(emm, ~as.data.frame(confint(contrast(emmeans(., specs = ~exp_phase:control_treatment), interaction = ("revpairwise")), type = "response")))) %>%
@@ -413,7 +419,7 @@ recapture_label <- c(expression(atop(bold("Mist net recaptures"), atop(textstyle
 ```
 
 ```{r}
-#MAIN PLOT: Cameras (HETO and non-HETO), Captures, Telemetry
+#MAIN PLOT: Captures, Telemetry, Cameras (HETO and non-HETO)
 contrast_plot_main <- contrasts_of_contrasts_df %>%
   filter((analysis == "camera_HETO" & subanalysis == "all_birds") |
            (analysis == "camera_non-HETO" & subanalysis == "all_birds") |
@@ -422,13 +428,13 @@ contrast_plot_main <- contrasts_of_contrasts_df %>%
   mutate(analysis = factor(analysis, levels = c("captures", "telemetry", "camera_HETO", "camera_non-HETO"), ordered = TRUE)) %>%
   arrange(analysis) %>%
   mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id", shading = "below") +
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
     scale_x_discrete(labels = c(captures_label, telemetry_label, camera_heto_label, camera_nonheto_label)) +
     scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 1.5, 2, 3)) +
     coord_cartesian(ylim = c(0, 3), xlim = c(1, 4), clip = "off") +
     theme(legend.position = "none")
-
-#contrast_plot_main
+    
+contrast_plot_main
 
 #POLLEN TUBES
 contrast_plot_pollination <- contrasts_of_contrasts_df %>%
@@ -436,13 +442,28 @@ contrast_plot_pollination <- contrasts_of_contrasts_df %>%
   mutate(subanalysis = factor(subanalysis, levels = c("HETO", "HAPA"), ordered = TRUE)) %>%
   arrange(subanalysis) %>%
   mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id", shading = "below") +
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
     scale_x_discrete(labels = c(pollination_heto_label, pollination_hapa_label)) +
     scale_y_continuous(limits = c(0, 7), breaks = c(0, 0.5, 1, 2, 4, 6, 7)) +
     coord_cartesian(ylim = c(0, 7), xlim = c(1, 2), clip = "off") +
+    annotate("rect", xmin = -Inf, xmax = Inf, ymax = 0.5, ymin = 0, alpha = alpha_value, fill = fill_color) +
     theme(legend.position = "none")
 
-#contrast_plot_pollination
+contrast_plot_pollination
+
+#VISTATION TO INDIVIDUAL NON-HETO PLANT SPECIES
+contrast_plot_nonheto <-  contrasts_of_contrasts_df %>%
+  filter(analysis == "camera_non-HETO_separate") %>%
+  left_join(nonheto_species) %>%
+  mutate(plant_scientific_name = forcats::fct_reorder(plant_scientific_name, num_replicates)) %>%
+  arrange(desc(plant_scientific_name)) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "plant_scientific_name") +
+    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 1.5, 2, 3)) +
+    coord_cartesian(ylim = c(0, 3), xlim = c(1, 9), clip = "off") +
+    theme(legend.position = "none") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1))
+   
+contrast_plot_nonheto
 
 #MARKED BIRDS + RECAPTURES
 contrast_plot_marked_and_recaps <- contrasts_of_contrasts_df %>%
@@ -452,26 +473,26 @@ contrast_plot_marked_and_recaps <- contrasts_of_contrasts_df %>%
   mutate(analysis = factor(analysis, levels = c("captures", "camera_HETO", "camera_non-HETO"), ordered = TRUE)) %>%
   arrange(analysis) %>%
   mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id", shading = "below") +
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
     scale_x_discrete(labels = c(recapture_label, camera_heto_marked_label, camera_nonheto_marked_label)) +
     scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 1.5, 2, 3)) +
     coord_cartesian(ylim = c(0, 3), xlim = c(1, 3), clip = "off") +
     theme(legend.position = "none")
 
-#contrast_plot_marked_and_recaps 
+contrast_plot_marked_and_recaps 
 
 #BODY MASS
 contrast_plot_body_mass <- contrasts_of_contrasts_df %>%
   filter(analysis == "body_mass") %>%
   arrange(analysis) %>%
   mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id", shading = "below") +
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
     scale_x_discrete(labels = body_mass_label) +
     scale_y_continuous(limits = c(-0.1, 0.1)) +
     coord_cartesian(ylim = c(-0.1, 0.1), xlim = c(1, 1), clip = "off") +
     theme(legend.position = "none")
 
-#contrast_plot_body_mass
+contrast_plot_body_mass
 ```
 
 Combine contrast plots

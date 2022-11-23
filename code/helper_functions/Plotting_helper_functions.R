@@ -112,63 +112,44 @@ make_control_vs_treatment_plot <- function(ggeffects_df, yvar, ymin, ymax, ybrea
 ###########################################################
 #Will need to customize axes, etc. separately, but this will make the basic plot
 #estimate_name = name of the column that has the point estimate (e.g., odds.ratio, ratio, etc.)
-make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
+make_contrast_plot <- function(contrasts_df, xvar){
   
   legend_text_labels <- c(expression("All species"), expression(paste(italic("Heliconia "), "specialists", sep = "")))
   
   size = 18 #base size
-  
+  fill_color = "#BA0022" #fill for shading
+  alpha_value = 0.8 #alpha for shading
+ 
   plot_data <- contrasts_df %>%
     mutate(order = seq.int(nrow(.)))
   
   #For body mass, line needs to be at ZERO, not one
-  if("body_mass" %in% contrasts_df$analysis & shading == "below"){
+  if("body_mass" %in% contrasts_df$analysis){
     
     plot <- plot_data %>%
-      ggplot(data = ., aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio)) +
-      geom_rect(xmax = Inf, xmin = -Inf, ymax = 0, ymin = -Inf, fill = "grey90", alpha = 1) +
-      geom_point(aes(shape = bird_group), position = position_dodge(.5), size = 3) +
+      ggplot(data = ., aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio, shape = bird_group)) +
+      geom_point(position = position_dodge(.5), size = 3) +
       geom_errorbar(aes(ymax = upper.CL, ymin = lower.CL, group = bird_group), position = position_dodge(.5), width = 0.25, size = 1) + # error bars show 95% confidence intervals
-      geom_hline(yintercept = 0, color = "black", linetype = "dashed", alpha = 0.8) + # add a line at 0 (no effect)
+      geom_hline(yintercept = 0, color = "black", linetype = "dashed", alpha = 0.8, size = 1) + # add a line at 0 (no effect)
       theme_bw(base_size = size) +
       scale_shape_manual(values = c(16, 17), labels = legend_text_labels, limits = c("all_spp", "greh_visa")) +
       theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
             panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
       labs(x = "", y = "Experimental effect", shape = "Bird group")
-    
-    return(plot)
-    
-  }
   
-  if(shading == "below"){
-    
-    plot <- plot_data %>%
-      ggplot(data = ., aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio)) +
-        geom_rect(xmax = Inf, xmin = -Inf, ymax = 1, ymin = 0, fill = "grey90", alpha = 1)
-  }
-  
-  if(shading == "above"){
-    
-    plot <- plot_data %>%
-      ggplot(data = ., aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio)) +
-        geom_rect(xmax = Inf, xmin = -Inf, ymax = Inf, ymin = 1, fill = "grey90", alpha = 1)
-    
-  }
-  
-  if(shading == "none"){
-    
-    plot <- plot_data %>%
-      ggplot(data = ., aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio))
+  return(plot)
     
   }
   
   #For pollination, will not have separate bird groups
   if("pollen_tubes" %in% contrasts_df$analysis){
     
-    plot <- plot +
+    plot <- plot_data %>%
+      ggplot(data = ., aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio)) +
+      annotate("rect", xmin = -Inf, xmax = Inf, ymax = 0.5, ymin = 0, alpha = alpha_value, fill = fill_color) +
       geom_point(position = position_dodge(.5), size = 3) + 
-      geom_errorbar(position = position_dodge(.5), aes(ymax = upper.CL, ymin = lower.CL), width = 0.25, size = 1) + # error bars show 95% confidence intervals
-      geom_hline(yintercept = 1, color = "black", linetype = "dashed", alpha = 0.8) + # add a line at 1 (no effect)
+      geom_errorbar(aes(ymin = lower.CL, ymax = upper.CL),  position = position_dodge(.5), width = 0.25, size = 1) + # error bars show 95% confidence intervals
+      geom_hline(yintercept = 1, color = "black", linetype = "dashed", alpha = 0.8, size = 1) + # add a line at 1 (no effect)
       theme_bw(base_size = size) +
       scale_shape_manual(values = c(16)) +
       theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
@@ -182,10 +163,12 @@ make_contrast_plot <- function(contrasts_df, xvar, shading = "none"){
   #For hummingbird-centric varibles, will have separate bird groups
   if(!("pollen_tubes" %in% contrasts_df$analysis)){
     
-    plot <- plot +
-      geom_point(aes(shape = bird_group), position = position_dodge(.5), size = 3) +
-      geom_errorbar(aes(ymax = upper.CL, ymin = lower.CL, group = bird_group), position = position_dodge(.5), width = 0.25, size = 1) + # error bars show 95% confidence intervals
-      geom_hline(yintercept = 1, color = "black", linetype = "dashed", alpha = 0.8) + # add a line at 1 (no effect)
+    plot <- plot_data %>%
+      ggplot(data = ., aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio)) +
+      annotate("rect", xmin = -Inf, xmax = Inf, ymax = 0.5, ymin = 0, alpha = alpha_value, fill = fill_color) +
+      geom_point(aes(shape = bird_group), position = position_dodge(.5), size = 3) + 
+      geom_errorbar(data = plot_data, aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio, ymin = lower.CL, ymax = upper.CL, group = bird_group), position = position_dodge(.5), width = 0.25, size = 1) + # error bars show 95% confidence intervals
+      geom_hline(yintercept = 1, color = "black", linetype = "dashed", alpha = 0.8, size = 1) + # add a line at 1 (no effect)
       theme_bw(base_size = size) +
       scale_shape_manual(values = c(16, 17), labels = legend_text_labels, limits = c("all_spp", "greh_visa")) +
       theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
