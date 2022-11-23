@@ -168,20 +168,22 @@ base_table <- heto_nonheto_combined_base_table %>%
 ```{r}
 subset_data <- function(dataset, analysis, subanalysis, bird_group, plant_species){
   
-  if(analysis == "camera_non-HETO_separate"){
-    
-    dataset <- dataset %>%
-      filter(analysis == "camera_non-HETO" & plant_species == {{ plant_species }}) %>%
-      filter(subanalysis == {{ subanalysis}}) %>%
-      filter(bird_group == {{ bird_group }})
-  }
-  
   if(analysis != "camera_non-HETO_separate"){
     
     dataset <- dataset %>%
       filter(analysis == {{ analysis }}) %>%
       filter(subanalysis == {{ subanalysis}}) %>%
       filter(bird_group == {{ bird_group }})
+    
+  }
+  
+  if(analysis == "camera_non-HETO_separate"){
+    
+    dataset <- dataset %>%
+      filter(analysis == "camera_non-HETO") %>%
+      filter(subanalysis == {{ subanalysis}}) %>%
+      filter(bird_group == {{ bird_group }}) %>%
+      filter(plant_species == {{ plant_species }})
   }
   
   #Scale continuous predictors
@@ -284,26 +286,16 @@ model_fitting02$dharma_zeroinfl_plot[[3]]
 **Non-Heliconia visitation rate (plant species separate): all birds, including unmarked birds**
 ```{r, include = FALSE, eval = FALSE}
 #Function to automate model fitting for separate non-Heliconia plant species
-fit_model <- function(dataset, plant_species){
-  
-  fit_data <- dataset %>%
-    filter(analysis == "camera_non-HETO_separate" & plant_species == {{ plant_species }}) %>%
-    filter(subanalysis == "all_birds") %>%
-    filter(bird_group == "all_spp") %>%
-    filter(model_type == "categorical") %>%
-    pull(data) %>%
-    as.data.frame()
+fit_model <- function(dataset){
   
   #Don't have enough data to model zero-inflation without errors/convergence issues so will not include ZI-models here
-  m1 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data, na.action = na.omit, family = "poisson", ziformula = ~0,
-                         control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+  m1 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = dataset, na.action = na.omit, family = "poisson", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
 
-  m3 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data, na.action = na.omit, family = "nbinom1", ziformula = ~0,
-                         control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+  m3 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+                        
 
-  m5 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = fit_data, na.action = na.omit, family = "nbinom2", ziformula = ~0,
-                         control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
-
+  m5 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = dataset, na.action = na.omit, family = "nbinom2", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+                        
   #Combine models
   model_fitting <- tibble(model_name = c("m1", "m3", "m5"), model = list(m1, m3, m5)) %>%
     mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
@@ -333,13 +325,14 @@ fit_model <- function(dataset, plant_species){
 model_fitting_nonheto_separate <- nonheto_species_sample_size %>%
   filter(num_replicates > 10) %>%
   arrange(plant_species) %>%
-  mutate(fit_with_info = map(plant_species, ~fit_model(dataset = data, plant_species = .)))
+  left_join(data) %>%
+  mutate(fit_with_info = map(data, ~fit_model(dataset = .)))
 
 #Extract AICc ranks
 AICc_ranks <- model_fitting_nonheto_separate %>%
-    select(plant_species, num_replicates, fit_with_info) %>%
-    unnest(fit_with_info) %>%
-    select(plant_species, num_replicates, model_name, AICc)
+  select(plant_species, num_replicates, fit_with_info) %>%
+  unnest(fit_with_info) %>%
+  select(plant_species, num_replicates, model_name, AICc)
 
 #Top AICc models
 AICc_best_models <- AICc_ranks %>%
@@ -349,30 +342,39 @@ AICc_best_models <- AICc_ranks %>%
 
 #According to AICc, model 3 is best for all except for BOCA-ROJA (m5 - but AICc is basically the same as m1 and m3), CEPO (m1 - but AICc is <3 from m3 and m5), and COSTBAR (m1)
 #But...do best models according to AICc meet assumptions? OR are other models better? Check to make sure assumptions look OK. I've noted best model(s) according to assumptions below.
-model_fitting_nonheto_separate %>% filter(plant_species == "BOCA-ROJA") %>% unnest(fit_with_info) %>% pull(dharma_plot) #m1
-model_fitting_nonheto_separate %>% filter(plant_species == "CEPO") %>% unnest(fit_with_info) %>% pull(dharma_plot) #m5
-model_fitting_nonheto_separate %>% filter(plant_species == "COSTBAR") %>% unnest(fit_with_info) %>% pull(dharma_plot) #any (m1 lower AIC)
-model_fitting_nonheto_separate %>% filter(plant_species == "HAPA") %>% unnest(fit_with_info) %>% pull(dharma_plot) #m1, m5 (m5 lower AIC)
-model_fitting_nonheto_separate %>% filter(plant_species == "MARA") %>% unnest(fit_with_info) %>% pull(dharma_plot) #m1, m3 (m3 lower AIC)
-model_fitting_nonheto_separate %>% filter(plant_species == "PALU") %>% unnest(fit_with_info) %>% pull(dharma_plot) #m3 
-model_fitting_nonheto_separate %>% filter(plant_species == "PAV-ROJ-AMA") %>% unnest(fit_with_info) %>% pull(dharma_plot) #any (m3 lower AIC but all values <2)
-model_fitting_nonheto_separate %>% filter(plant_species == "RABO") %>% unnest(fit_with_info) %>% pull(dharma_plot) #m3 but still rather squiggly :(
+model_fitting_nonheto_separate %>% filter(plant_species == "BOCA-ROJA") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m1
+model_fitting_nonheto_separate %>% filter(plant_species == "CEPO") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m5
+model_fitting_nonheto_separate %>% filter(plant_species == "COSTBAR") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #any (m1 lower AIC)
+model_fitting_nonheto_separate %>% filter(plant_species == "HAPA") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m1, m5 (m5 lower AIC)
+model_fitting_nonheto_separate %>% filter(plant_species == "MARA") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m1, m3 (m3 lower AIC)
+model_fitting_nonheto_separate %>% filter(plant_species == "PALU") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m3 
+model_fitting_nonheto_separate %>% filter(plant_species == "PAV-ROJ-AMA") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #any (m3 lower AIC but all values <2)
+model_fitting_nonheto_separate %>% filter(plant_species == "RABO") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m3 but still rather squiggly :(
 model_fitting_nonheto_separate %>% filter(plant_species == "TUBO-AMA") %>% unnest(fit_with_info) %>% pull(dharma_plot) #m3, m5 (m3 lower AIC)
 
 #Troubleshooting RABO models...
-rabo_data <- data %>% filter(plant_species == "RABO") %>% pull(data) %>% as.data.frame()
-rabo_fit_zip <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = rabo_data, na.action = na.omit, family = "poisson", ziformula = ~1, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+rabo_data <- visit_data_for_analysis %>% filter(plant_species == "RABO" & subanalysis == "all_birds" & bird_group == "all_spp") #This dataset does not have any scaled variables so can experiment with hours as covariate (not offset) more easily
 
-rabo_fit_genpois <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = rabo_data, na.action = na.omit, family = "genpois", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+rabo_fit_zip <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + scale(flowers) + offset(log(hours)) + (1|patch/year_patch), data = rabo_data, na.action = na.omit, family = "poisson", ziformula = ~1, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
 
-rabo_fit_flowers2 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + I(flowers^2) + offset(log(hours)) + (1|patch/year_patch), data = rabo_data, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+rabo_fit_genpois <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + scale(flowers) + offset(log(hours)) + (1|patch/year_patch), data = rabo_data, na.action = na.omit, family = "genpois", ziformula = ~0)
 
-rabo_fit_flowers2_no_offset <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + I(flowers^2) + hours + (1|patch/year_patch), data = rabo_data, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+rabo_fit_log_flowers <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + scale(log(flowers)) + offset(log(hours)) + (1|patch/year_patch), data = rabo_data, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+
+rabo_fit_log_flowers_no_offset <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + scale(log(flowers)) + scale(hours) + (1|patch/year_patch), data = rabo_data, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+
+rabo_fit_flowers2 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + I(scale(flowers)^2) + offset(log(hours)) + (1|patch/year_patch), data = rabo_data, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+
+rabo_fit_flowers2_no_offset <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + I(scale(flowers)^2) + scale(hours) + (1|patch/year_patch), data = rabo_data, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
 
 simulateResiduals(rabo_fit_zip) %>% plot()
 simulateResiduals(rabo_fit_genpois) %>% plot()
+simulateResiduals(rabo_fit_log_flowers) %>% plot()
+simulateResiduals(rabo_fit_log_flowers_no_offset) %>% plot()
 simulateResiduals(rabo_fit_flowers2) %>% plot()
 simulateResiduals(rabo_fit_flowers2_no_offset) %>% plot()
+
+map(list(rabo_fit_zip, rabo_fit_genpois, rabo_fit_log_flowers, rabo_fit_log_flowers_no_offset, rabo_fit_flowers2, rabo_fit_flowers2_no_offset), MuMIn::AICc)
 
 #DECISION:
 #Model 1 (Poisson) for BOCA-ROJA, COSTBAR
@@ -472,15 +474,13 @@ create_model <- function(dataset, analysis, subanalysis, treatment_variable, pla
     
     if(subanalysis == "all_birds"){
       
-      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0,
-                       control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
       
     }
     
     if(subanalysis == "marked_birds"){
       
-       model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch/color_id)")), data = dataset, na.action = na.omit, family = "poisson", ziformula = ~0,
-                        control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+       model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch/color_id)")), data = dataset, na.action = na.omit, family = "poisson", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
        
     }
     
@@ -490,16 +490,15 @@ create_model <- function(dataset, analysis, subanalysis, treatment_variable, pla
     
     if(subanalysis == "all_birds"){
       
-      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch/plant_species)")), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0,
-                       control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch/plant_species)")), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+                       
       
     }
     
     if(subanalysis == "marked_birds"){
       
-       model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch/plant_species) + (1|color_id)")), data = dataset, na.action = na.omit, family = "nbinom2", ziformula = ~0,
-                        control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
-       
+       model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch/plant_species) + (1|color_id)")), data = dataset, na.action = na.omit, family = "nbinom2", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+                        
     }
     
   }
@@ -510,8 +509,7 @@ create_model <- function(dataset, analysis, subanalysis, treatment_variable, pla
     #For these two plant species, use Poisson
     if(plant_species == "BOCA-ROJA" | plant_species == "COSTBAR"){
       
-      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "poisson", ziformula = ~0,
-                       control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "poisson", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
       
     }
     
@@ -519,24 +517,24 @@ create_model <- function(dataset, analysis, subanalysis, treatment_variable, pla
     nbinom2_species <- c("MARA", "PALU", "PAV-ROJ-AMA", "TUBO-AMA")
     if(plant_species %in% nbinom2_species){
       
-      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0,
-                       control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
 
     }
     
     #For these two plant species, use nbinom2
     if(plant_species == "CEPO" | plant_species == "HAPA"){
       
-      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "nbinom2", ziformula = ~0,
-                       control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+      model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "nbinom2", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
 
     }
     
     #Model for RABO is tricky...only meets assumptions with the following modifications (squared term for flowers and no offset for hours)
     if(plant_species == "RABO"){
       
-      model <- glmmTMB(as.formula("sightings ~ control_treatment * exp_phase + I(flowers^2) + hours + (1|patch/year_patch)"), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0,
-                       control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+      dataset <- dataset %>%
+        mutate(across(c(hours), ~c(scale(.)))) #Need to standardize hours here because wasn't scaled in function earlier
+      
+      model <- glmmTMB(as.formula("sightings ~ control_treatment * exp_phase + I(flowers^2) + hours + (1|patch/year_patch)"), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
 
     }
     
@@ -547,10 +545,10 @@ create_model <- function(dataset, analysis, subanalysis, treatment_variable, pla
 }
 
 #Testing function
-# test01 <- create_model(dataset = data[[12]][[1]], analysis = "camera_HETO", subanalysis = "all_birds", treatment_variable = "control_treatment", plant_species = NA)
-# test02 <- create_model(dataset = data[[12]][[13]], analysis = "camera_non-HETO_separate", subanalysis = "all_birds", treatment_variable = "control_treatment", plant_species = "BOCA-ROJA")
-# summary(test01)
-# summary(test02)
+test01 <- create_model(dataset = data[[12]][[1]], analysis = "camera_HETO", subanalysis = "all_birds", treatment_variable = "control_treatment", plant_species = NA)
+test02 <- create_model(dataset = data[[12]][[20]], analysis = "camera_non-HETO_separate", subanalysis = "all_birds", treatment_variable = "control_treatment", plant_species = "RABO")
+summary(test01)
+summary(test02)
 
 #Create models
 models <- data %>%
