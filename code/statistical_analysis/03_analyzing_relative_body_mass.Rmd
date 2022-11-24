@@ -330,16 +330,17 @@ mass_wing_regressions_multiplot
 
 ## Step 4: Calculate relative body mass
 ```{r}
-recaptures_relative_mass_for_analysis <- bind_rows(mass_wing_regressions_without_outliers$data_augment) %>%
+experiment_birds_relative_mass_for_analysis <- bind_rows(mass_wing_regressions_without_outliers$data_augment) %>%
   filter(experiment_bird == "yes") %>%
-  select(-experiment_bird) %>%
   rename(predicted_log_mass = ".fitted") %>%
+  mutate(relative_mass = log_mass/predicted_log_mass) %>%
   select(-starts_with(".")) %>%
-  mutate(relative_mass = log_mass/predicted_log_mass)
+  select(-experiment_bird)
 
 #Add relative mass to rest of data
 data_for_analysis <- recaptures_experiment_for_analysis %>%
-  left_join(recaptures_relative_mass_for_analysis)
+  left_join(experiment_birds_relative_mass_for_analysis) %>%
+  distinct() #For some reason this join is producing 8 rows/row (??)
 ```
 
 ## Step 5: Analyze how relative body mass changes (or not) in response to *Heliconia* removal
@@ -373,7 +374,8 @@ subset_data <- function(dataset, analysis, subanalysis, bird_group){
     filter(analysis == {{ analysis }}) %>%
     filter(subanalysis == {{ subanalysis}}) %>%
     filter(bird_group == {{ bird_group }}) %>%
-    mutate(across(c(log_calories_removed_per_ha), ~c(scale(.))))
+    mutate(across(c(log_calories_removed_per_ha), ~c(scale(.)))) %>%
+    mutate(exp_phase = factor(exp_phase, levels = c("pre", "post")))
       
   return(dataset)
   
