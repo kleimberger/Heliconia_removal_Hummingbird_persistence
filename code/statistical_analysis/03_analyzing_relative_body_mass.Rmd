@@ -186,7 +186,7 @@ Write functions
 subset_data <- function(dataset, bird_species){
   
   data <- dataset %>%
-    filter(bird_species == bird_species)
+    filter(bird_species == {{ bird_species }})
   
   return(data)
   
@@ -330,7 +330,8 @@ mass_wing_regressions_multiplot
 
 ## Step 4: Calculate relative body mass
 ```{r}
-experiment_birds_relative_mass_for_analysis <- bind_rows(mass_wing_regressions_without_outliers$data_augment) %>%
+#Get relative mass for birds in experiment (2016-2018)
+relative_mass_for_analysis <- bind_rows(mass_wing_regressions_without_outliers$data_augment) %>%
   filter(experiment_bird == "yes") %>%
   rename(predicted_log_mass = ".fitted") %>%
   mutate(relative_mass = log_mass/predicted_log_mass) %>%
@@ -339,8 +340,7 @@ experiment_birds_relative_mass_for_analysis <- bind_rows(mass_wing_regressions_w
 
 #Add relative mass to rest of data
 data_for_analysis <- recaptures_experiment_for_analysis %>%
-  left_join(experiment_birds_relative_mass_for_analysis) %>%
-  distinct() #For some reason this join is producing 8 rows/row (??)
+  left_join(relative_mass_for_analysis)
 ```
 
 ## Step 5: Analyze how relative body mass changes (or not) in response to *Heliconia* removal
