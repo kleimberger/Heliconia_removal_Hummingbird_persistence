@@ -117,8 +117,8 @@ make_contrast_plot <- function(contrasts_df, xvar){
   legend_text_labels <- c(expression("All species"), expression(paste(italic("Heliconia "), "specialists", sep = "")))
   
   size = 18 #base size
-  fill_color = "#BA0022" #fill for shading
-  alpha_value = 0.8 #alpha for shading
+  fill_color = "#999999" #fill for shading
+  alpha_value = 0.75 #alpha for shading
  
   plot_data <- contrasts_df %>%
     mutate(order = seq.int(nrow(.)))

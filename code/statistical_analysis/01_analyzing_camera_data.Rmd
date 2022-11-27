@@ -118,8 +118,11 @@ visit_data_for_analysis <- visit_data_marked %>%
   filter(!is.na(flowers) & flowers != "NA") %>%
   select(analysis, subanalysis, bird_group, everything())
 
-#Check: how many plant species, including HETO?
-unique(visit_data_for_analysis$plant_species) %>% length()
+#Check: how many plant species, including HETO? All birds dataset
+visit_data_for_analysis %>% filter(subanalysis == "all_birds") %>% pull(plant_species) %>% unique() %>% length()
+
+#Check: how many plant species, including HETO? Marked birds dataset
+visit_data_for_analysis %>% filter(subanalysis == "marked_birds") %>% pull(plant_species) %>% unique() %>% length()
 ```
 
 **Import functions**
