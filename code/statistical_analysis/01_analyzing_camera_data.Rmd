@@ -74,7 +74,7 @@ plant_species_names <- read.csv("data/import/data/Plant_codes_species_list.csv")
   select(plant_family, plant_scientific_name, plant_species)
 ```
 
-**How many non-Heliconia species were had camera data pre and post? Did all species have sightings**
+**How many non-Heliconia species were had camera data pre and post? Did all species have sightings?**
 ```{r}
 #Calculate total number of species in data (and total # with sightings)
 nonheto_data <- visit_data %>%
@@ -82,11 +82,12 @@ nonheto_data <- visit_data %>%
 
 nonheto_species <- nonheto_data %>%
   group_by(plant_species) %>%
-  summarise(sightings = sum(sightings)) %>%
-  arrange(sightings)
+  summarise(num_sightings = sum(sightings)) %>%
+  arrange(num_sightings) %>%
+  ungroup()
 
 nonheto_species_with_sightings <- nonheto_species %>%
-  filter(sightings > 0)
+  filter(num_sightings > 0)
 
 #Which plant species have the most data? In terms of replicates (actual number of rows will be double this, because have data pre and post)
 nonheto_species_sample_size <- nonheto_data %>%
@@ -95,7 +96,8 @@ nonheto_species_sample_size <- nonheto_data %>%
   summarise(num_replicates = n()) %>%
   arrange(desc(num_replicates)) %>%
   left_join(plant_species_names) %>%
-  select(plant_family, plant_scientific_name, plant_species, num_replicates)
+  left_join(nonheto_species) %>%
+  select(plant_family, plant_scientific_name, plant_species, num_replicates, num_sightings)
 
 #Export list for supp material
 write.csv(nonheto_species_sample_size, "data/export/supp_tables/Non-Heliconia_camera_species_list.csv")
