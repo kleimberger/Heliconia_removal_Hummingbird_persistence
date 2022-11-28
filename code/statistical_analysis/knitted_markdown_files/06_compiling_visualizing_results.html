@@ -407,7 +407,7 @@ results &lt;- cameras %&gt;%
 
 #How many total models?
 length(results$model_number)</code></pre>
-<pre><code>## [1] 45</code></pre>
+<pre><code>## [1] 49</code></pre>
 <pre class="r"><code>#What non-Heliconia species were analyzed? Plant species scientific names fpr plots
 nonheto_species &lt;- read.csv(&quot;../../data/export/supp_tables/Non-Heliconia_camera_species_list.csv&quot;) %&gt;%
   filter(plant_species %in% results$plant_species) %&gt;%

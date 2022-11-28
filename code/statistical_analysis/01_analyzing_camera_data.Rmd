@@ -149,8 +149,7 @@ treatment_variable = c("control_treatment", "log_calories_removed_per_ha")
 model_types_names = data.frame(model_type = model_type, model_name = model_name, treatment_variable = treatment_variable)
 
 #Models for HETO visitation and non-HETO visitation (combined across all species)
-heto_nonheto_combined_base_table <- crossing(analysis, subanalysis, bird_group, model_type) %>%
-  filter(!(subanalysis == "marked_birds" & model_type == "quantitative")) #Looking at quantitative models for these "additional" analyses seems excessive
+heto_nonheto_combined_base_table <- crossing(analysis, subanalysis, bird_group, model_type)
 
 #Models for non-HETO visitation (plant species analyzed separately)
 #If want to look at GREH/VISA as well, can cross with 'bird_group". But doing this causes convergence problems for plant species with little to no visitation from these hummingbirds (RABO, MARA)
