@@ -429,8 +429,8 @@ contrast_plot_flower_visits <- contrasts_of_contrasts_df %>%
   mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
   make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
     scale_x_discrete(labels = c(camera_heto_label, camera_nonheto_label)) +
-    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 2, 3)) +
-    coord_cartesian(ylim = c(0, 3), xlim = c(1, 2), clip = "off") +
+    scale_y_continuous(limits = c(0, 2), breaks = c(0, 0.5, 1, 2)) +
+    coord_cartesian(ylim = c(0, 2), xlim = c(1, 2), clip = "off") +
     theme(legend.position = "bottom", legend.justification = c(0.5)) +
     labs(title = "Flower visitation (visits/hr)")
     
@@ -490,8 +490,8 @@ contrast_plot_marked <- contrasts_of_contrasts_df %>%
   mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
   make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
     scale_x_discrete(labels = c(camera_heto_marked_label, camera_nonheto_marked_label)) +
-    scale_y_continuous(limits = c(0, 2), breaks = c(0, 0.5, 1, 2)) +
-    coord_cartesian(ylim = c(0, 2), xlim = c(1, 2), clip = "off") +
+    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 2, 3)) +
+    coord_cartesian(ylim = c(0, 3), xlim = c(1, 2), clip = "off") +
     theme(legend.position = "bottom", legend.justification = c(0.5)) +
     labs(title = "Flower visitation from marked birds (visits/hr)")
 
