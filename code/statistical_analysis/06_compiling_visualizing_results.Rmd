@@ -119,9 +119,10 @@ I will use estimated marginal means to visualize and help interpret results. Sin
 #Models for cameras have offset; I want to calculate the number of visits per 12-hour day
 emmeans_cameras <- results_categorical %>%
   filter(analysis == "camera_HETO" | analysis == "camera_non-HETO" | analysis == "camera_non-HETO_separate") %>%
-  filter(plant_species != "RABO") %>% #RABO model was weird, fit better with hours as covariate instead of offset
+  filter(is.na(plant_species) | plant_species != "RABO") %>% #RABO model was weird, fit better with hours as covariate instead of offset
   mutate(ggeffects = map(model, ~ggemmeans(., terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(hours = 12)))) %>%
-  mutate(emmeans = map(model, ~emmeans(., specs = ~exp_phase:control_treatment, type = "response", offset = log(12))))
+  mutate(emmeans = map(model, ~emmeans(., specs = ~exp_phase:control_treatment, type = "response", offset = log(12)))) %>%
+  arrange(model_number)
 
 #Check to make sure that offset is being applied correctly; looks like log(offset) is needed for emmeans::emmeans() but not ggeffects::ggmmeans()
 emmeans_cameras$ggeffects[[1]]
@@ -141,7 +142,8 @@ emmeans_other <- results_categorical %>%
 emmeans_for_plots <- emmeans_cameras %>%
   bind_rows(emmeans_recaps) %>%
   bind_rows(emmeans_other) %>%
-  select(-emmeans)
+  select(-emmeans) %>%
+  arrange(model_number)
 
 #As data frame
 emmeans_df <- emmeans_for_plots %>%
@@ -292,7 +294,7 @@ There are two ways that I like to visualize the interaction term of interest
 #Calculate max values for each response variable
 #If want to have common axis scaling across variables that will be in same plot, can group again and take max across those variables
 max_values <- emmeans_df %>%
-  group_by(analysis, subanalysis) %>%
+  group_by(analysis, subanalysis, plant_species) %>%
   summarise(ymax = round(max(conf.high) + 0.5, 0)) %>%
   ungroup() %>%
   mutate(ymin = 0) %>%
