@@ -513,18 +513,18 @@ contrast_plot_body_mass
 Combine contrast plots in various ways for publication
 ```{r, fig.width = 13, fig.height = 6.5}
 #Results for captures and telemetry. 2 panel plot; left = captures, right = telemetry
-contrast_multiplot_captures_telemetry <- ggarrange(contrast_plot_captures, contrast_plot_telemetry, common.legend = TRUE, ncol = 2, nrow = 1, align = "hv", legend = "bottom", widths = c(1, 1), labels = c("A", "B"), font.label = list(size = 22, face = "bold"))
+contrast_multiplot_captures_telemetry <- ggarrange(contrast_plot_captures, contrast_plot_telemetry, common.legend = TRUE, ncol = 2, nrow = 1, align = "hv", legend = "bottom", widths = c(1, 1), labels = c("A", "B"), font.label = list(size = 28, face = "plain"))
 
 contrast_multiplot_captures_telemetry
 ```
 
 ```{r, fig.width = 13, fig.height = 13}
 #Results for flower visitation and pollination success. 3-panel plot; upper panel = cameras (HETO, non-HETO overall) and pollinatio, lower panel = individual non-HETO species
-contrast_multiplot_cameras_poll_upper <- ggarrange(contrast_plot_flower_visits, contrast_plot_pollination, ncol = 2, nrow = 1, align = "hv", legend = "none", widths = c(1, 1), labels = c("A", "B"), font.label = list(size = 22, face = "bold"))
+contrast_multiplot_cameras_poll_upper <- ggarrange(contrast_plot_flower_visits, contrast_plot_pollination, ncol = 2, nrow = 1, align = "hv", legend = "none", widths = c(1, 1), labels = c("A", "B"), font.label = list(size = 28, face = "plain"))
 
 contrast_multiplot_cameras_poll_upper
 
-contrast_multiplot_cameras_poll_lower <- ggarrange(contrast_plot_nonheto, labels = c("C"), font.label = list(size = 22, face = "bold"))
+contrast_multiplot_cameras_poll_lower <- ggarrange(contrast_plot_nonheto, labels = c("C"), font.label = list(size = 28, face = "plain"))
 contrast_multiplot_cameras_poll_lower
 
 contrast_multiplot_cameras_poll <- ggarrange(contrast_multiplot_cameras_poll_upper, contrast_multiplot_cameras_poll_lower, ncol = 1, nrow = 2, common.legend = TRUE, legend = "bottom")
@@ -534,7 +534,7 @@ contrast_multiplot_cameras_poll
 ```{r, fig.width = 7, fig.height = 13}
 #Results for "additional response variables". 3-panel plot; upper panel = recaptures, middle panel = flower visitation from marked birds, lower panel = body mass
 contrast_multiplot_addl_analyses <- ggarrange(contrast_plot_recaps, contrast_plot_marked, contrast_plot_body_mass,
-                                              common.legend = TRUE, ncol = 1, nrow = 3, align = "hv", legend = "bottom", labels = c("A", "B", "C"), font.label = list(size = 22, face = "bold"))
+                                              common.legend = TRUE, ncol = 1, nrow = 3, align = "hv", legend = "bottom", labels = c("A", "B", "C"), font.label = list(size = 28, face = "plain"))
                                               
   
 contrast_multiplot_addl_analyses
