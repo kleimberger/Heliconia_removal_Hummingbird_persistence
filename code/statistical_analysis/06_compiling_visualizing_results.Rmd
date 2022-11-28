@@ -522,11 +522,11 @@ contrast_multiplot_captures_telemetry
 
 ```{r, fig.width = 13, fig.height = 13}
 #Results for flower visitation and pollination success. 3-panel plot; upper panel = cameras (HETO, non-HETO overall) and pollinatio, lower panel = individual non-HETO species
-contrast_multiplot_cameras_poll_upper <- ggarrange(contrast_plot_flower_visits, contrast_plot_pollination, ncol = 2, nrow = 1, align = "hv", legend = "none", widths = c(1, 1), labels = c("A", "B"), font.label = list(size = 28, face = "plain"))
+contrast_multiplot_cameras_poll_upper <- ggarrange(contrast_plot_flower_visits, contrast_plot_pollination, ncol = 2, nrow = 1, align = "hv", legend = "none", widths = c(1, 1), labels = c("A", "C"), font.label = list(size = 28, face = "plain"))
 
 contrast_multiplot_cameras_poll_upper
 
-contrast_multiplot_cameras_poll_lower <- ggarrange(contrast_plot_nonheto, labels = c("C"), font.label = list(size = 28, face = "plain"))
+contrast_multiplot_cameras_poll_lower <- ggarrange(contrast_plot_nonheto, labels = c("B"), font.label = list(size = 28, face = "plain"))
 contrast_multiplot_cameras_poll_lower
 
 contrast_multiplot_cameras_poll <- ggarrange(contrast_multiplot_cameras_poll_upper, contrast_multiplot_cameras_poll_lower, ncol = 1, nrow = 2, common.legend = TRUE, legend = "bottom")
