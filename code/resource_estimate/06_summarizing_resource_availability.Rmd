@@ -76,6 +76,17 @@ source("../../code/helper_functions/Make_barplot_for_weights.R")
 ## Step 2: Make list of all plant species detected, for Supp methods, then filter data for resource estimate
 
 ```{r step2a}
+#How many species in each site?
+species_per_site <- resource_data %>%
+  distinct(patch, year, plant_family, plant_scientific_name, plant_species) %>%
+  group_by(patch, year) %>%
+  summarise(num_species = n()) %>%
+  ungroup()
+
+#What was mean/median number of species per site?
+species_per_site_sum <- species_per_site %>%
+  calculate_basic_summary_stats(variable = num_species)
+
 #How many species total?
 species_list <- resource_data %>%
   distinct(plant_family, plant_scientific_name, plant_species, plant_species_for_calories) %>%
@@ -528,6 +539,7 @@ write.csv(proportion_calories_removed_tailored_supp, "../../data/export/supp_tab
 write.csv(proportion_calories_removed_tailored_sum, "../../data/export/supp_tables/Proportion_calories_removed_sum.csv", row.names = FALSE)
 write.csv(heto_densities, "../../data/export/supp_tables/Heliconia_densities.csv", row.names = FALSE)
 write.csv(heto_densities_sum, "../../data/export/supp_tables/Heliconia_densities_sum.csv", row.names = FALSE)
+write.csv(species_per_site_sum, "../../data/export/supp_tables/Plant_species_per_site_sum.csv", row.names = FALSE)
 
 #Figures
 path_name <- c("../../results/resource_estimate/figures")

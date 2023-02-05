@@ -448,7 +448,18 @@ source(&quot;../../code/helper_functions/Make_barplot_for_weights.R&quot;)</code
 <div id="step-2-make-list-of-all-plant-species-detected-for-supp-methods-then-filter-data-for-resource-estimate" class="section level2">
 <h2>Step 2: Make list of all plant species detected, for Supp methods,
 then filter data for resource estimate</h2>
-<pre class="r"><code>#How many species total?
+<pre class="r"><code>#How many species in each site?
+species_per_site &lt;- resource_data %&gt;%
+  distinct(patch, year, plant_family, plant_scientific_name, plant_species) %&gt;%
+  group_by(patch, year) %&gt;%
+  summarise(num_species = n()) %&gt;%
+  ungroup()
+
+#What was mean/median number of species per site?
+species_per_site_sum &lt;- species_per_site %&gt;%
+  calculate_basic_summary_stats(variable = num_species)
+
+#How many species total?
 species_list &lt;- resource_data %&gt;%
   distinct(plant_family, plant_scientific_name, plant_species, plant_species_for_calories) %&gt;%
   mutate(known_vs_unknown = ifelse(grepl(&quot;UNKN&quot;, plant_species), &quot;unknown&quot;, &quot;known&quot;)) %&gt;%
@@ -939,6 +950,7 @@ write.csv(proportion_calories_removed_tailored_supp, &quot;../../data/export/sup
 write.csv(proportion_calories_removed_tailored_sum, &quot;../../data/export/supp_tables/Proportion_calories_removed_sum.csv&quot;, row.names = FALSE)
 write.csv(heto_densities, &quot;../../data/export/supp_tables/Heliconia_densities.csv&quot;, row.names = FALSE)
 write.csv(heto_densities_sum, &quot;../../data/export/supp_tables/Heliconia_densities_sum.csv&quot;, row.names = FALSE)
+write.csv(species_per_site_sum, &quot;../../data/export/supp_tables/Plant_species_per_site_sum.csv&quot;, row.names = FALSE)
 
 #Figures
 path_name &lt;- c(&quot;../../results/resource_estimate/figures&quot;)
