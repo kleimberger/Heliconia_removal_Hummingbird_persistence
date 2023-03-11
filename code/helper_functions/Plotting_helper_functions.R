@@ -10,10 +10,10 @@ make_interaction_plot <- function(ggeffects_df, yvar, ymin, ymax, ybreak, yaccur
   shapes <- c(16, 17) #circle, triangle (filled)
   
   #Label for y-axis
-  if(yvar == "sightings"){ylabel <- c("Visits/day")}
-  if(yvar == "num_birds"){ylabel <-  c("Birds captured")}
-  if(yvar == "prop_time_in_patch"){ylabel <- c("Proportion time in focal area")}
-  if(yvar == "prop_with_tubes"){ylabel <- c("Proportion flowers pollinated")}
+  if(yvar == "sightings"){ylabel <- c("Visits per hour")}
+  if(yvar == "num_birds"){ylabel <-  c("Number of birds captured")}
+  if(yvar == "prop_time_in_patch"){ylabel <- c("Time spent in focal area (%)")}
+  if(yvar == "prop_with_tubes"){ylabel <- c("Flowers pollinated (%)")}
   if(yvar == "relative_mass"){ylabel <- c("Relative body mass")}
   
   #Group/legend labels
@@ -32,8 +32,8 @@ make_interaction_plot <- function(ggeffects_df, yvar, ymin, ymax, ybreak, yaccur
       ymax <- ymax * 100
       ymin <- ymin * 100
       
-      if(yvar == "prop_time_in_patch"){ylabel <- c("% time in focal area")}
-      if(yvar == "prop_with_tubes"){ylabel <- c("% flowers pollinated")}
+      if(yvar == "prop_time_in_patch"){ylabel <- c("Time spent in focal area (%)")}
+      if(yvar == "prop_with_tubes"){ylabel <- c("Flowers pollinated (%)")}
 
       }
     
@@ -47,7 +47,11 @@ make_interaction_plot <- function(ggeffects_df, yvar, ymin, ymax, ybreak, yaccur
       geom_line(aes(group = group), position = position_dodge(0.25), alpha = 0.6, size = 1) +
       geom_errorbar(aes(ymin = conf.low, ymax = conf.high), position = position_dodge(width = 0.25), width = 0.00, size = 1) +
       theme_bw(base_size = 18) +
-      theme(legend.position = "bottom", legend.direction = "horizontal", panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+      theme(legend.position = "bottom",
+            legend.direction = "horizontal",
+            legend.text = element_text(size = 18),
+            legend.title = element_text(size = 18),
+            panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
       scale_y_continuous(limits = c(ymin, ymax), breaks = seq(from = ymin, to = ymax, by = ybreak), labels = scales::number_format(accuracy = yaccuracy)) +
       scale_color_manual(values = colors, labels = group_labels) +
       scale_shape_manual(values = shapes, labels = group_labels) +
@@ -98,6 +102,8 @@ make_control_vs_treatment_plot <- function(ggeffects_df, yvar, ymin, ymax, ybrea
     theme_bw(base_size = 18) +
     theme(legend.position = "none",
           legend.direction = "horizontal",
+          legend.text = element_text(size = 18),
+          legend.title = element_text(size = 18),
           panel.grid.major = element_blank(),
           panel.grid.minor = element_blank(),
           plot.title = element_text(hjust = 0.5)) +
@@ -133,8 +139,12 @@ make_contrast_plot <- function(contrasts_df, xvar){
       geom_hline(yintercept = 0, color = "black", linetype = "dashed", alpha = 0.8, size = 1) + # add a line at 0 (no effect)
       theme_bw(base_size = size) +
       scale_shape_manual(values = c(16, 17), labels = legend_text_labels, limits = c("all_spp", "greh_visa")) +
-      theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
-            panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+      theme(panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            legend.position = "bottom",
+            legend.justification = "center",
+            legend.text = element_text(size = 18),
+            legend.title = element_text(size = 18)) +
       labs(x = "", y = "Experimental effect", shape = "Bird group")
   
   return(plot)
@@ -152,29 +162,33 @@ make_contrast_plot <- function(contrasts_df, xvar){
       geom_hline(yintercept = 1, color = "black", linetype = "dashed", alpha = 0.8, size = 1) + # add a line at 1 (no effect)
       theme_bw(base_size = size) +
       scale_shape_manual(values = c(16)) +
-      theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
-            panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
+      theme(panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            legend.position = "bottom",
+            legend.justification = "center",
+            legend.text = element_text(size = 18),
+            legend.title = element_text(size = 18)) +
       labs(x = "", y = "Experimental effect")
 
     return(plot)
     
   }
   
-  #For hummingbird-centric varibles, will have separate bird groups
+  #For hummingbird-centric variables, will have separate bird groups
   if(!("pollen_tubes" %in% contrasts_df$analysis)){
     
     plot <- plot_data %>%
       ggplot(data = ., aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio)) +
       annotate("rect", xmin = -Inf, xmax = Inf, ymax = 0.5, ymin = 0, alpha = alpha_value, fill = fill_color) +
-      geom_point(aes(shape = bird_group), position = position_dodge(.5), size = 3) + 
-      geom_errorbar(data = plot_data, aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio, ymin = lower.CL, ymax = upper.CL, group = bird_group), position = position_dodge(.5), width = 0.25, size = 1) + # error bars show 95% confidence intervals
+      geom_point(position = position_dodge(.5), size = 4, shape = 18) + 
+      geom_errorbar(data = plot_data, aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio, ymin = lower.CL, ymax = upper.CL, group = bird_group), position = position_dodge(.5), width = 0, size = 1) + # error bars show 95% confidence intervals
       geom_hline(yintercept = 1, color = "black", linetype = "dashed", alpha = 0.8, size = 1) + # add a line at 1 (no effect)
       theme_bw(base_size = size) +
-      scale_shape_manual(values = c(16, 17), labels = legend_text_labels, limits = c("all_spp", "greh_visa")) +
-      theme(legend.position = "top", legend.justification = "center", legend.text = element_text(size = 18), legend.title = element_text(size = 18),
-            panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
-      labs(x = "", y = "Experimental effect", shape = "Bird group")
-    
+      labs(x = "Bird group", y = "Experimental effect") +
+      theme(panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            legend.position = "none")
+
     return(plot)
     
   }

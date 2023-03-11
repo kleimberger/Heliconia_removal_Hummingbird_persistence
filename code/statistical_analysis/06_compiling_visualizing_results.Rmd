@@ -36,20 +36,20 @@ library(ggpubr)
 ```
 
 ```{r}
-source("../../code/helper_functions/Modeling_helper_functions.R")
-source("../../code/helper_functions/Plotting_helper_functions.R")
-source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
-source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+source("code/helper_functions/Modeling_helper_functions.R")
+source("code/helper_functions/Plotting_helper_functions.R")
+source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("code/helper_functions/Calculate_basic_summary_stats.R")
 ```
 
 ## Step 1: Get results (rds files)
 
 ```{r}
-cameras <- readRDS("../../results/statistical_analysis/rds_files/Camera_results.rds")
-captures <- readRDS("../../results/statistical_analysis/rds_files/Capture_results.rds")
-telemetry <- readRDS("../../results/statistical_analysis/rds_files/Telemetry_results.rds")
-pollen_tubes <- readRDS("../../results/statistical_analysis/rds_files/Pollen_tube_results.rds")
-body_mass <- readRDS("../../results/statistical_analysis/rds_files/Body_mass_results.rds")
+cameras <- readRDS("results/statistical_analysis/rds_files/Camera_results.rds")
+captures <- readRDS("results/statistical_analysis/rds_files/Capture_results.rds")
+telemetry <- readRDS("results/statistical_analysis/rds_files/Telemetry_results.rds")
+pollen_tubes <- readRDS("results/statistical_analysis/rds_files/Pollen_tube_results.rds")
+body_mass <- readRDS("results/statistical_analysis/rds_files/Body_mass_results.rds")
 
 results <- cameras %>%
   bind_rows(captures) %>%
@@ -64,7 +64,7 @@ results <- cameras %>%
 length(results$model_number)
 
 #What non-Heliconia species were analyzed? Plant species scientific names fpr plots
-nonheto_species <- read.csv("../../data/export/supp_tables/Non-Heliconia_camera_species_list.csv") %>%
+nonheto_species <- read.csv("data/export/supp_tables/Non-Heliconia_camera_species_list.csv") %>%
   filter(plant_species %in% results$plant_species) %>%
   select(plant_species, plant_scientific_name, num_replicates)
 ```
@@ -282,12 +282,7 @@ There are two ways that I like to visualize the interaction term of interest
 
 1. Interaction plots, with estimated marginal means for control/treatment and pre/post (pre and post values connected by lines)
 
-- These interaction plots can be confusing without detailed explanation, so they will only be for supplemental information.
-- Not for analysis of recapture rate, since those models do not have an interaction term.
-
 2. Contrast plots, with contrast reflecting the interaction term and its associated confidence intervals
-
-- These is the key plot for the main text
 
 **Make interaction plots**
 ```{r step5a, message = FALSE, fig.width=9, fig.height=9}
@@ -315,7 +310,194 @@ interaction_plots <- emmeans_for_plots %>%
 #interaction_plots %>% filter(model_number == 33) %>% pull(interaction_plot)
 ```
 
-**Divide up interaction plots into reasonably sized panel figures**
+**Make contrast plots**
+
+When making interaction plots, I had one plot per model. Here, I want to combine multiple models per plot, so I'll just do the combinations by hand.
+
+```{r}
+#Labels with same-sized text in each line, following: https://stackoverflow.com/questions/40577023/r-ggplot-annotated-with-atop-using-three-values-and-bgroup
+#textstyle(x)	draw x in normal size
+#scriptstyle(x)	draw x in small size
+#scriptscriptstyle(x)	draw x in very small size
+
+#How to have 3-line label:
+#3lineexample <- c(expression(atop(bold("Flower visitation"), atop(textstyle("visits/hr"), atop(scriptscriptstyle(""), scriptstyle("(focal"~italic(Heliconia)*")"))))))
+
+#Only need labels when there are x-axis tick marks
+camera_heto_label <- c(expression("focal"~italic(Heliconia)))
+camera_nonheto_label <- c(expression(atop("non-"*italic(Heliconia)~"species ("*italic(N)*"=30)")))
+
+camera_heto_marked_label <- c(expression("focal"~italic(Heliconia)))
+camera_nonheto_marked_label <- c(expression(atop("non-"*italic(Heliconia)~"species ("*italic(N)*"=17)")))
+
+pollination_heto_label <- c(expression("focal"~italic(Heliconia)))
+pollination_hapa_label <- c(expression(italic(Hamelia)~italic(patens)))
+
+camera_nonheto_separate_title <- c(expression("Flower visitation to individual non-"*italic(Heliconia)~"species (visits/hr)"))
+
+#CAPTURES
+capture_contrast_plot <- contrasts_of_contrasts_df %>%
+  filter(analysis == "captures" & subanalysis == "captures") %>%
+  make_contrast_plot(contrasts_df = ., xvar = "bird_group") +
+    scale_x_discrete(labels = c("All species", expression(italic(Heliconia)~"specialists")))
+    
+capture_contrast_plot
+
+#TELEMETRY
+telemetry_contrast_plot <- contrasts_of_contrasts_df %>%
+  filter(analysis == "telemetry" & subanalysis == "all_replicates") %>%
+  make_contrast_plot(contrasts_df = ., xvar = "bird_group") +
+    scale_x_discrete(labels = c("All species", expression(italic(Heliconia)~"specialists")))
+
+telemetry_contrast_plot
+
+#FLOWER VISITATION: Cameras (HETO and non-HETO)
+flower_visits_contrast_plot <- contrasts_of_contrasts_df %>%
+  filter((analysis == "camera_HETO" & subanalysis == "all_birds") |
+           (analysis == "camera_non-HETO" & subanalysis == "all_birds")) %>%
+  mutate(analysis = factor(analysis, levels = c("camera_HETO", "camera_non-HETO"), ordered = TRUE)) %>%
+  arrange(analysis) %>%
+  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
+    scale_x_discrete(labels = c(camera_heto_label, camera_nonheto_label)) +
+    scale_y_continuous(limits = c(0, 2), breaks = c(0, 0.5, 1, 2)) +
+    coord_cartesian(ylim = c(0, 2), xlim = c(1, 2), clip = "off") +
+    theme(legend.position = "bottom", legend.justification = c(0.5)) +
+    labs(title = "Flower visitation (visits/hr)")
+    
+flower_visits_contrast_plot
+
+#POLLINATION SUCCESS
+pollination_contrast_plot <- contrasts_of_contrasts_df %>%
+  filter(analysis == "pollen_tubes") %>%
+  mutate(subanalysis = factor(subanalysis, levels = c("HETO", "HAPA"), ordered = TRUE)) %>%
+  arrange(subanalysis) %>%
+  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
+    scale_x_discrete(labels = c(pollination_heto_label, pollination_hapa_label)) +
+    scale_y_continuous(limits = c(0, 7), breaks = c(0, 0.5, 1, 2, 3, 4, 5, 6, 7)) +
+    coord_cartesian(ylim = c(0, 7), xlim = c(1, 2), clip = "off") +
+    theme(legend.position = "none") +
+    labs(title = "Pollination success (% flowers pollinated)")
+
+pollination_contrast_plot
+
+#VISTATION TO INDIVIDUAL NON-HETO PLANT SPECIES
+nonheto_contrast_plot <-  contrasts_of_contrasts_df %>%
+  filter(analysis == "camera_non-HETO_separate") %>%
+  left_join(nonheto_species) %>%
+  mutate(plant_scientific_name = forcats::fct_reorder(plant_scientific_name, num_replicates)) %>%
+  arrange(desc(plant_scientific_name)) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "plant_scientific_name") +
+    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 2, 3)) +
+    coord_cartesian(ylim = c(0, 3), xlim = c(1, 9), clip = "off") +
+    theme(legend.position = "bottom") +
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, face = "italic")) +
+    labs(title = camera_nonheto_separate_title)
+   
+nonheto_contrast_plot
+
+#RECAPTURES
+recaps_contrast_plot <- contrasts_of_contrasts_df %>%
+  filter(analysis == "captures" & subanalysis == "recaptures") %>%
+  mutate(analysis = factor(analysis, levels = c("captures"), ordered = TRUE)) %>%
+  arrange(analysis) %>%
+  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
+    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 2, 3)) +
+    coord_cartesian(ylim = c(0, 3), xlim = c(1, 1), clip = "off") +
+    theme(legend.position = "bottom", legend.justification = c(0.5)) +
+    theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) +
+    labs(title = "Recapture probability (% of birds recaptured)")
+
+recaps_contrast_plot
+
+#MARKED BIRDS
+marked_contrast_plot <- contrasts_of_contrasts_df %>%
+  filter((analysis == "camera_HETO" & subanalysis == "marked_birds") |
+           (analysis == "camera_non-HETO" & subanalysis == "marked_birds")) %>%
+  mutate(analysis = factor(analysis, levels = c("camera_HETO", "camera_non-HETO"), ordered = TRUE)) %>%
+  arrange(analysis) %>%
+  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
+    scale_x_discrete(labels = c(camera_heto_marked_label, camera_nonheto_marked_label)) +
+    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 2, 3)) +
+    coord_cartesian(ylim = c(0, 3), xlim = c(1, 2), clip = "off") +
+    theme(legend.position = "bottom", legend.justification = c(0.5)) +
+    labs(title = "Flower visitation from marked birds (visits/hr)")
+
+marked_contrast_plot
+
+#BODY MASS
+body_mass_contrast_plot <- contrasts_of_contrasts_df %>%
+  filter(analysis == "body_mass") %>%
+  arrange(analysis) %>%
+  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
+  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
+    scale_y_continuous(limits = c(-0.10, 0.10)) +
+    coord_cartesian(ylim = c(-0.10, 0.10), xlim = c(1, 1), clip = "off") +
+    theme(legend.position = "bottom", legend.justification = c(0.5)) +
+    theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) +
+    labs(title = "Bird condition (relative body mass)")
+
+body_mass_contrast_plot
+```
+
+**Organize figures into panel plots for publication**
+
+Figure 3: Captures and Telemetry
+```{r, fig.width=14, fig.height=12}
+#CAPTURES
+capture_interaction_plots <- interaction_plots %>%
+  filter(analysis == "captures") %>%
+  arrange(bird_group)
+
+capture_plots <- list(capture_interaction_plots$interaction_plot[[1]], capture_interaction_plots$interaction_plot[[2]], capture_contrast_plot)
+
+captures_multiplot <- ggarrange(plotlist = capture_plots, nrow = 1, ncol = 3, legend = "none", align = "hv", labels = c("(a)", "(b)", "(c)"), font.label = list(size = 18, face = "plain")) %>%
+  annotate_figure(top = text_grob("Hummingbird abundance", size = 24, face = "plain", hjust = 0, x = 0.01))
+  
+# captures_multiplot
+
+#TELEMETRY
+telemetry_interaction_plots <- interaction_plots %>%
+  filter(analysis == "telemetry" & subanalysis == "all_replicates") %>%
+  arrange(bird_group)
+
+telemetry_plots <- list(telemetry_interaction_plots$interaction_plot[[1]], telemetry_interaction_plots$interaction_plot[[2]], telemetry_contrast_plot)
+
+telemetry_multiplot <- ggarrange(plotlist = telemetry_plots, nrow = 1, ncol = 3, legend = "none", align = "hv", labels = c("(d)", "(e)", "(f)"), font.label = list(size = 18, face = "plain")) %>%
+  annotate_figure(top = text_grob("Hummingbird space use", size = 24, face = "plain",  hjust = 0, x = 0.01))
+
+# telemetry_multiplot
+
+#CAPTURES + TELEMETRY
+#First, get legend for interaction plots; will handle it separately because contrast plot doesn't have legend (which makes alignment go wonky)
+interaction_plot_legend <- get_legend(capture_interaction_plots$interaction_plot[[1]])
+legend_arranged <- ggarrange(interaction_plot_legend, NA, nrow = 1, ncol = 2, widths = c(1, 0.5)) #This makes the legend centered under the interaction plots instead of under all plots
+
+captures_telemetry_multiplot <- ggarrange(captures_multiplot, NA, telemetry_multiplot, legend_arranged, nrow = 4, ncol = 1, heights = c(1, 0.05, 1, 0.05))
+ggview::ggview(captures_telemetry_multiplot, width = 14, height = 12, units = "in")
+```
+
+Figure 4: Flower visitation
+```{r}
+
+```
+
+Figure 5: Pollination success
+```{r}
+
+```
+
+Figure 6: Additional response variables (recaptures, individual marked birds, relative body mass)
+```{r}
+
+```
+
+## BELOW HERE IS OLD AS OF 03/10/2023
+
+Divide up interaction plots into reasonably sized panel figures
 ```{r}
 #CAMERAS (ALL BIRDS)
 interaction_plots_cameras_all <- interaction_plots %>%
@@ -360,156 +542,6 @@ interaction_plots_body_mass <- interaction_plots %>%
 
 interaction_multiplot_body_mass <- ggarrange(plotlist = interaction_plots_body_mass$interaction_plot, nrow = 1, ncol = 2, common.legend = TRUE, legend = "bottom", align = "hv", labels = "AUTO", font.label = list(size = 16, face = "plain"))
 interaction_multiplot_body_mass
-```
-
-**Contrast plots**
-
-When making interaction plots, I had one plot per model. Here, I want to combine multiple models per plot, so I'll just do the combinations by hand.
-
-First, I need to get the labels sorted out.
-```{r}
-#Labels with same-sized text in each line, following: https://stackoverflow.com/questions/40577023/r-ggplot-annotated-with-atop-using-three-values-and-bgroup
-#textstyle(x)	draw x in normal size
-#scriptstyle(x)	draw x in small size
-#scriptscriptstyle(x)	draw x in very small size
-
-#How to have 3-line label:
-#3lineexample <- c(expression(atop(bold("Flower visitation"), atop(textstyle("visits/hr"), atop(scriptscriptstyle(""), scriptstyle("(focal"~italic(Heliconia)*")"))))))
-
-#Only need labels when there are x-axis tick marks
-camera_heto_label <- c(expression("focal"~italic(Heliconia)))
-camera_nonheto_label <- c(expression(atop("non-"*italic(Heliconia)~"species ("*italic(N)*"=30)")))
-
-camera_heto_marked_label <- c(expression("focal"~italic(Heliconia)))
-camera_nonheto_marked_label <- c(expression(atop("non-"*italic(Heliconia)~"species ("*italic(N)*"=17)")))
-
-pollination_heto_label <- c(expression("focal"~italic(Heliconia)))
-pollination_hapa_label <- c(expression(italic(Hamelia)~italic(patens)))
-
-camera_nonheto_separate_title <- c(expression("Flower visitation to individual non-"*italic(Heliconia)~"species (visits/hr)"))
-```
-
-```{r}
-#CAPTURES
-contrast_plot_captures <- contrasts_of_contrasts_df %>%
-  filter((analysis == "captures" & subanalysis == "captures")) %>%
-  mutate(analysis = factor(analysis, levels = c("captures"), ordered = TRUE)) %>%
-  arrange(analysis) %>%
-  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
-    scale_y_continuous(limits = c(0, 2), breaks = c(0, 0.5, 1, 2)) +
-    coord_cartesian(ylim = c(0, 2), xlim = c(1, 1), clip = "off") +
-    theme(legend.position = "bottom", legend.justification = c(0.5)) +
-    theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) +
-    labs(title = "Abundance (# hummingbirds captured)")
-
-contrast_plot_captures
-
-#TELEMETRY
-contrast_plot_telemetry <- contrasts_of_contrasts_df %>%
-  filter(analysis == "telemetry" & subanalysis == "all_replicates") %>%
-  mutate(analysis = factor(analysis, levels = c("telemetry"), ordered = TRUE)) %>%
-  arrange(analysis) %>%
-  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
-    scale_y_continuous(limits = c(0, 2), breaks = c(0, 0.5, 1, 2)) +
-    coord_cartesian(ylim = c(0, 2), xlim = c(1, 1), clip = "off") +
-    theme(legend.position = "bottom", legend.justification = c(0.5)) +
-    theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) +
-    labs(title = "Space use (% time spent in focal area)")
-
-contrast_plot_telemetry
-
-#FLOWER VISITATION: Cameras (HETO and non-HETO)
-contrast_plot_flower_visits <- contrasts_of_contrasts_df %>%
-  filter((analysis == "camera_HETO" & subanalysis == "all_birds") |
-           (analysis == "camera_non-HETO" & subanalysis == "all_birds")) %>%
-  mutate(analysis = factor(analysis, levels = c("camera_HETO", "camera_non-HETO"), ordered = TRUE)) %>%
-  arrange(analysis) %>%
-  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
-    scale_x_discrete(labels = c(camera_heto_label, camera_nonheto_label)) +
-    scale_y_continuous(limits = c(0, 2), breaks = c(0, 0.5, 1, 2)) +
-    coord_cartesian(ylim = c(0, 2), xlim = c(1, 2), clip = "off") +
-    theme(legend.position = "bottom", legend.justification = c(0.5)) +
-    labs(title = "Flower visitation (visits/hr)")
-    
-contrast_plot_flower_visits
-
-#POLLINATION SUCCESS
-contrast_plot_pollination <- contrasts_of_contrasts_df %>%
-  filter(analysis == "pollen_tubes") %>%
-  mutate(subanalysis = factor(subanalysis, levels = c("HETO", "HAPA"), ordered = TRUE)) %>%
-  arrange(subanalysis) %>%
-  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
-    scale_x_discrete(labels = c(pollination_heto_label, pollination_hapa_label)) +
-    scale_y_continuous(limits = c(0, 7), breaks = c(0, 0.5, 1, 2, 3, 4, 5, 6, 7)) +
-    coord_cartesian(ylim = c(0, 7), xlim = c(1, 2), clip = "off") +
-    theme(legend.position = "none") +
-    labs(title = "Pollination success (% flowers pollinated)")
-
-contrast_plot_pollination
-
-#VISTATION TO INDIVIDUAL NON-HETO PLANT SPECIES
-contrast_plot_nonheto <-  contrasts_of_contrasts_df %>%
-  filter(analysis == "camera_non-HETO_separate") %>%
-  left_join(nonheto_species) %>%
-  mutate(plant_scientific_name = forcats::fct_reorder(plant_scientific_name, num_replicates)) %>%
-  arrange(desc(plant_scientific_name)) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "plant_scientific_name") +
-    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 2, 3)) +
-    coord_cartesian(ylim = c(0, 3), xlim = c(1, 9), clip = "off") +
-    theme(legend.position = "bottom") +
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, face = "italic")) +
-    labs(title = camera_nonheto_separate_title)
-   
-contrast_plot_nonheto
-
-#RECAPTURES
-contrast_plot_recaps <- contrasts_of_contrasts_df %>%
-  filter(analysis == "captures" & subanalysis == "recaptures") %>%
-  mutate(analysis = factor(analysis, levels = c("captures"), ordered = TRUE)) %>%
-  arrange(analysis) %>%
-  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
-    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 2, 3)) +
-    coord_cartesian(ylim = c(0, 3), xlim = c(1, 1), clip = "off") +
-    theme(legend.position = "bottom", legend.justification = c(0.5)) +
-    theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) +
-    labs(title = "Recapture probability (% of birds recaptured)")
-
-contrast_plot_recaps
-
-#MARKED BIRDS
-contrast_plot_marked <- contrasts_of_contrasts_df %>%
-  filter((analysis == "camera_HETO" & subanalysis == "marked_birds") |
-           (analysis == "camera_non-HETO" & subanalysis == "marked_birds")) %>%
-  mutate(analysis = factor(analysis, levels = c("camera_HETO", "camera_non-HETO"), ordered = TRUE)) %>%
-  arrange(analysis) %>%
-  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
-    scale_x_discrete(labels = c(camera_heto_marked_label, camera_nonheto_marked_label)) +
-    scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 2, 3)) +
-    coord_cartesian(ylim = c(0, 3), xlim = c(1, 2), clip = "off") +
-    theme(legend.position = "bottom", legend.justification = c(0.5)) +
-    labs(title = "Flower visitation from marked birds (visits/hr)")
-
-contrast_plot_marked
-
-#BODY MASS
-contrast_plot_body_mass <- contrasts_of_contrasts_df %>%
-  filter(analysis == "body_mass") %>%
-  arrange(analysis) %>%
-  mutate(analysis_id = paste(analysis, subanalysis, sep = "_")) %>%
-  make_contrast_plot(contrasts_df = ., xvar = "analysis_id") +
-    scale_y_continuous(limits = c(-0.10, 0.10)) +
-    coord_cartesian(ylim = c(-0.10, 0.10), xlim = c(1, 1), clip = "off") +
-    theme(legend.position = "bottom", legend.justification = c(0.5)) +
-    theme(axis.ticks.x = element_blank(), axis.text.x = element_blank()) +
-    labs(title = "Bird condition (relative body mass)")
-
-contrast_plot_body_mass
 ```
 
 Combine contrast plots in various ways for publication
