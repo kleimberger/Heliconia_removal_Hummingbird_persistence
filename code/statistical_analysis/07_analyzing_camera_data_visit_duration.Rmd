@@ -1,0 +1,277 @@
+---
+title: "Analyzing visit duration"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+This is an extra analysis added during peer review.
+
+**Goal:** 
+
+Explore whether there was an experimental effect on sighting length (aka "visit duration"), under the hypothesis that hummingbirds visited flowers longer after *Heliconia* removal to gain additional calories. This behavioral response would be undetected by the primary response variables.
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+#Packages for statistical modeling
+library(glmmTMB)
+library(AICcmodavg)
+library(DHARMa)
+library(emmeans)
+library(ggeffects)
+
+#Packages for data wrangling
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(purrr)
+
+#Packages for plotting
+library(ggplot2)
+library(ggrepel)
+library(ggpubr)
+
+#Set up parallel processing (likelihood profile CI take forever to run!)
+library(future)
+plan(multisession)
+
+#Set seed
+set.seed(1)
+```
+
+## Step 1: Get data
+
+Have already filtered data for analysis in previous script, '02_filtering_summarizing_camera_data'.
+
+Will do some additional filtering here to remove instances of a bird perching on the plant, which would generate extra long sighting ("visit") durations.
+
+Also, some camera sets had >1 plant species in the frame, but the sighting length is for ALL plant species combined. Will not analyze these sightings, because interpretation is a bit awkward; can not interpret results as time spent at each inflorescence of a given plant species. Also, if I keep these sightings, there would be a mismatch between sighting length (for >1 plant species) and the flowers covariate (counted for each plant species).
+```{r}
+##Get data
+data_for_experiment <- read.csv("data/export/intermediate/Camera_data_filtered_for_experiment.csv")
+
+##Source helper functions
+source("code/helper_functions/Calculate_basic_summary_stats.R")
+source("code/helper_functions/Summarize_camera_data.R")
+source("code/helper_functions/Modeling_helper_functions.R")
+
+##Filter out camera sets with >1 plant species
+##Filter out instances of bird perching in frame, based on notes column
+single_species_camera_sets <- data_for_experiment %>%
+  distinct(year, patch, camera_num, plant_species) %>%
+  group_by(year, patch, camera_num) %>%
+  summarise(num_species = n()) %>%
+  filter(num_species == 1)
+
+data_for_sighting_duration <- data_for_experiment %>%
+  left_join(single_species_camera_sets) %>%
+  filter(num_species == 1) %>%
+  select(-num_species, -X) %>%
+  filter(!grepl("perch", sighting_notes, ignore.case = TRUE)) %>%
+  filter(sightings_yes_or_no == "Y") %>%
+  mutate(year_patch = paste(year, patch, sep = "_")) %>%
+  mutate(exp_phase = factor(exp_phase, levels = c("pre", "post")))
+```
+
+## Step 2: Explore data
+
+What is average sighting length?
+```{r}
+#Time per sighting (in seconds) - across all bird and plant species
+data_for_sighting_duration %>%
+  calculate_basic_summary_stats(variable = sighting_length)
+
+#PLOT: Time per sighting (in seconds) - across all bird and plant species
+data_for_sighting_duration %>%
+  ggplot(aes(x = sighting_length), data = .) +
+    geom_histogram(binwidth = 1, center = 0) +
+    theme_bw(base_size = 18) +
+    labs(x = "Time per sighting (seconds)", y = "Count")
+```
+
+```{r, include = FALSE}
+# Create test data for checking/troubleshooting
+test_data <- data_for_sighting_duration %>%
+  filter(!is.na(flowers_camera_video))
+
+# Model without summarizing data (i.e., 1 row = 1 sighting)
+test_model <- glmmTMB::glmmTMB(sighting_length ~ control_treatment * exp_phase + log(flowers_camera_video) + (1|patch/year_patch/plant_species), data = test_data, na.action = na.omit, family = "truncated_genpois")
+
+simulationOutput <- simulateResiduals(fittedModel = test_model)
+plot(simulationOutput)
+plotResiduals(simulationOutput, test_data$control_treatment)
+plotResiduals(simulationOutput, test_data$exp_phase)
+plotResiduals(simulationOutput, as.numeric(test_data$flowers_camera_video))
+
+#Test for 1-inflation and 2-inflation, from DHARMa: https://cran.r-project.org/web/packages/DHARMa/vignettes/DHARMa.html#zero-inflation-k-inflation-or-deficits
+countOnes <- function(x) sum(x == 1)  # testing for number of 1s
+testGeneric(simulationOutput, summary = countOnes, alternative = "greater") # "greater" = 1-inflation
+
+countTwos <- function(x) sum(x == 2)  # testing for number of 2s
+testGeneric(simulationOutput, summary = countTwos, alternative = "greater") # "greater" = 2-inflation
+
+countThrees <- function(x) sum(x == 3)  # testing for number of 3s
+testGeneric(simulationOutput, summary = countThrees, alternative = "greater") # "greater" = 3-inflation
+
+countFours <- function(x) sum(x == 4)  # testing for number of 4s
+testGeneric(simulationOutput, summary = countFours, alternative = "greater") # "greater" = 4-inflation
+
+countFives <- function(x) sum(x == 5)  # testing for number of 5s
+testGeneric(simulationOutput, summary = countFives, alternative = "greater") # "greater" = 5-inflation
+
+#Have more ones, twos, threes, and fours than expected...
+```
+
+## Step 3: Summarize data
+
+These are the same summaries for visitation rate analyses, *except* that I am using a dataset that has sightings with perching filtered out.
+```{r}
+sighting_durations_all_spp = calculate_sighting_rates(data = data_for_sighting_duration, level_org = "plant_species", level_time = "exp_phase", level_bird = "camera_spp_combined", sightings = "with_visit", include_unknown_spp = FALSE) %>%
+  mutate(bird_group = "all_spp") #Replace "camera_spp_combined" with "all_spp"
+
+sighting_durations_greh_visa = calculate_sighting_rates(data = data_for_sighting_duration, level_org = "plant_species", level_time = "exp_phase", level_bird = list(greh_visa = c("GREH", "VISA")), sightings = "with_visit", include_unknown_spp = FALSE)
+ 
+#Combine various summaries
+sighting_durations <- sighting_durations_all_spp %>%
+  bind_rows(sighting_durations_greh_visa) %>%
+  select(bird_group, everything()) %>%
+  mutate(time_per_sighting = sightings_time/sightings) #Time is in seconds
+```
+
+Not all plants have sightings pre and post; can only analyze changes in sighting duration if both experimental periods have sightings, so need to remove plant species that do not have sightings pre and post
+```{r}
+#Identify plant species that have sightings for both experimental periods
+species_pre_and_post <- sighting_durations %>%
+  filter(!is.na(sightings_time)) %>%
+  distinct(bird_group, year, patch, control_treatment, plant_species, exp_phase) %>%
+  group_by(bird_group, year, patch, control_treatment, plant_species) %>%
+  summarise(num_periods = n()) %>%
+  ungroup() %>%
+  filter(num_periods == 2)
+
+sighting_durations_for_analysis <- sighting_durations %>%
+  left_join(species_pre_and_post) %>%
+  filter(num_periods == 2) %>%
+  select(-num_periods) %>%
+  mutate(year_patch = paste(year, patch, sep = "_")) %>%
+  mutate(exp_phase = factor(exp_phase, levels = c("pre", "post")))
+
+#Check: are there any NAs in the sighting_duration column?
+check01 <- sighting_durations_for_analysis %>%
+  filter(is.na(sightings_time))
+```
+
+## Step 4: Analyze data
+
+If follow framework used in rest of analyses, I would have 4 models:
+
+1. Heliconia tortuosa (HETO), All hummingbird species
+2. Heliconia tortuosa (HETO), Green hermits and Violet sabrewings (Heliconia specialists)
+3. All non-HETO plant species, All hummingbird species
+4. All non-HETO plant species, Green hermits and Violet sabrewings (Heliconia specialists)
+
+However, here the question is not about visitation rates to HETO vs. non-HETO, so I will analyze all plant species together for simplicity. This approach yields 2 models:
+
+1. All plant species, All hummingbird species
+2. All plant species, Green hermits and Violet sabrewings (Heliconia specialists)
+
+**Model fitting**
+
+For count data, there multiple possible distributions. I need to choose between Poisson and negative binomial (nbinom1 and nbinom2). Also, because the dataset does not include zeroes, I need a truncated distribution.
+
+ALL HUMMINGBIRD SPECIES
+```{r}
+data_all_spp <- sighting_durations_for_analysis %>%
+  filter(bird_group == "all_spp")
+
+m1 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "truncated_poisson")
+
+m2 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "truncated_nbinom1")
+
+m3 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "truncated_nbinom2")
+
+m4 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "truncated_genpois")
+
+m5 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "poisson")
+
+m6 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "nbinom1")
+
+m7 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "nbinom2")
+
+m8 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "genpois")
+
+#Combine models
+model_fitting01 <- tibble(model_name = c("m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8"), model = list(m1, m2, m3, m4, m5, m6, m7, m8)) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "basic")),
+         dharma_zeroinfl_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "overdispersion"))) %>%
+  mutate(AICc = map(model, MuMIn::AICc))
+
+#Which model is best according to AIC?
+model_fitting01 %>%
+  select(model_name, AICc) %>%
+  unnest(AICc) %>%
+  arrange(AICc)
+
+#Check to make sure assumptions look OK
+#The models with the lowest AICc actually do not look great. nbinom2 (m7) is best in terms of DHARMa plots
+model_fitting01$dharma_plot[[7]]
+model_fitting01$dharma_overdisp_plot[[7]]
+
+model_fitting01$model[[7]] %>% summary()
+
+#Assumptions do not look great...would a normal distribution work?
+gaussian_model <- glmmTMB::glmmTMB(time_per_sighting ~ control_treatment * exp_phase + log(flowers) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "gaussian")
+simulateResiduals(gaussian_model) %>% plot()
+
+#Nope, looks even worse...
+```
+
+HELICONIA SPECIALISTS
+```{r}
+data_greh_visa <- sighting_durations_for_analysis %>%
+  filter(bird_group == "greh_visa")
+
+m1 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_greh_visa, na.action = na.omit, family = "truncated_poisson")
+
+m2 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_greh_visa, na.action = na.omit, family = "truncated_nbinom1")
+
+m3 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_greh_visa, na.action = na.omit, family = "truncated_nbinom2")
+
+m4 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_greh_visa, na.action = na.omit, family = "truncated_genpois")
+
+m5 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_greh_visa, na.action = na.omit, family = "poisson")
+
+m6 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_greh_visa, na.action = na.omit, family = "nbinom1")
+
+m7 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_greh_visa, na.action = na.omit, family = "nbinom2")
+
+m8 <- glmmTMB::glmmTMB(sightings_time ~ control_treatment * exp_phase + log(flowers) + offset(log(sightings)) + (1|patch/year_patch/plant_species), data = data_greh_visa, na.action = na.omit, family = "genpois")
+
+#Combine models
+model_fitting02 <- tibble(model_name = c("m1", "m2", "m3", "m4", "m5", "m6", "m7", "m8"), model = list(m1, m2, m3, m4, m5, m6, m7, m8)) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "basic")),
+         dharma_zeroinfl_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "overdispersion"))) %>%
+  mutate(AICc = map(model, MuMIn::AICc))
+
+#Which model is best according to AIC?
+model_fitting02 %>%
+  select(model_name, AICc) %>%
+  unnest(AICc) %>%
+  arrange(AICc)
+
+#Check to make sure assumptions look OK
+#The models with the lowest AICc actually do not look great. genpois (m8) is best in terms of DHARMa plots
+model_fitting02$dharma_plot[[8]]
+model_fitting02$dharma_overdisp_plot[[8]]
+
+#Summary
+model_fitting02$model[[8]] %>% summary()
+```

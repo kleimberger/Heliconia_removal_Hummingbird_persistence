@@ -78,7 +78,6 @@ calculate_sighting_rates <- function(data, level_org = "plant_species_across_sit
     
   }
   
-  
   #Individually marked birds
   if(level_bird == "individual_marked"){
     
@@ -127,7 +126,15 @@ calculate_sighting_rates <- function(data, level_org = "plant_species_across_sit
     group_by_at(bird_vars) %>%  #If not summarizing by individual bird species, then this is just vars.
     summarise(sightings = n()) %>%
     ungroup()
-
+  
+  #-----------------------------------------
+  #Summarize sighting duration (how long the flower was visited, across all sightings)
+  #-----------------------------------------
+  sum_sightings_time <- data_sightings %>%
+    group_by_at(bird_vars) %>%  #If not summarizing by individual bird species, then this is just vars.
+    summarise(sightings_time = sum(sighting_length, na.rm = TRUE)) %>%
+    ungroup()
+  
   #-----------------------------------------
   #Summarize effort and number of flowers
   #-----------------------------------------
@@ -162,6 +169,7 @@ calculate_sighting_rates <- function(data, level_org = "plant_species_across_sit
   rates <- sum_effort %>%
     left_join(sum_flowers) %>%
     left_join(sum_sightings) %>%
+    left_join(sum_sightings_time) %>%
     mutate(sightings = ifelse(is.na(sightings), 0, sightings)) %>% #Fill in zero sightings
     mutate(sightings_per_hour = sightings/hours) %>% #Sighting rate without controlling for number of flowers
     mutate(bird_group = level_bird) #Add info about any subsetting that was done
