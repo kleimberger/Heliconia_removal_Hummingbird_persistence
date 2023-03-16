@@ -3,7 +3,7 @@
 ############################
 #Plot estimated marginals means for:
 #control pre, control post, treatment pre, treatment post
-make_interaction_plot <- function(ggeffects_df, yvar, ymin, ymax, ybreak, yaccuracy, text_size, point_size, line_size, as_percent = TRUE){
+make_interaction_plot <- function(ggeffects_df, yvar, ymin, ymax, ybreak, yaccuracy, text_size, point_size, line_size, as_percent = TRUE, ylabel = NULL){
   
   #Colors and shapes
   colors <- c("#0E0D37", "#BA0022") #blue, red

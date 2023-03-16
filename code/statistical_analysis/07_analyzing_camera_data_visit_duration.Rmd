@@ -12,7 +12,11 @@ This is an extra analysis added during peer review.
 
 **Goal:** 
 
-Explore whether there was an experimental effect on sighting length (aka "visit duration"), under the hypothesis that hummingbirds visited flowers longer after *Heliconia* removal to gain additional calories. This behavioral response would be undetected by the primary response variables.
+Explore whether there was an experimental effect on sighting length (aka "visit duration", aka how long hummingbird was at inflorescence in camera frame)
+
+**Hypothesis:**
+
+If hummingbirds visited flowers longer after *Heliconia* removal to gain additional calories, then there should be a pre-to-post increase in sighting lengths in treatment replicates (relative to control replicates). This behavioral response would be undetected by the primary response variables.
 
 ```{r setup, include = FALSE}
 knitr::opts_chunk$set(message = FALSE, warning = FALSE)
@@ -51,16 +55,18 @@ Will do some additional filtering here to remove instances of a bird perching on
 
 Also, some camera sets had >1 plant species in the frame, but the sighting length is for ALL plant species combined. Will not analyze these sightings, because interpretation is a bit awkward; can not interpret results as time spent at each inflorescence of a given plant species. Also, if I keep these sightings, there would be a mismatch between sighting length (for >1 plant species) and the flowers covariate (counted for each plant species).
 ```{r}
-##Get data
+#Get data
 data_for_experiment <- read.csv("data/export/intermediate/Camera_data_filtered_for_experiment.csv")
 
-##Source helper functions
+#Source helper functions
 source("code/helper_functions/Calculate_basic_summary_stats.R")
 source("code/helper_functions/Summarize_camera_data.R")
 source("code/helper_functions/Modeling_helper_functions.R")
+source("code/helper_functions/Plotting_helper_functions.R")
 
-##Filter out camera sets with >1 plant species
-##Filter out instances of bird perching in frame, based on notes column
+#Filter out camera sets with >1 plant species
+#Filter out instances of bird perching in frame, based on notes column
+#Filter out videos without flower counts; I need to include flowers as a covariate, because expect longer sightings when there are more flowers to visit
 single_species_camera_sets <- data_for_experiment %>%
   distinct(year, patch, camera_num, plant_species) %>%
   group_by(year, patch, camera_num) %>%
@@ -73,6 +79,7 @@ data_for_sighting_duration <- data_for_experiment %>%
   select(-num_species, -X) %>%
   filter(!grepl("perch", sighting_notes, ignore.case = TRUE)) %>%
   filter(sightings_yes_or_no == "Y") %>%
+  filter(!is.na(flowers_camera_video)) %>%
   mutate(year_patch = paste(year, patch, sep = "_")) %>%
   mutate(exp_phase = factor(exp_phase, levels = c("pre", "post")))
 ```
@@ -93,39 +100,6 @@ data_for_sighting_duration %>%
     labs(x = "Time per sighting (seconds)", y = "Count")
 ```
 
-```{r, include = FALSE}
-# Create test data for checking/troubleshooting
-test_data <- data_for_sighting_duration %>%
-  filter(!is.na(flowers_camera_video))
-
-# Model without summarizing data (i.e., 1 row = 1 sighting)
-test_model <- glmmTMB::glmmTMB(sighting_length ~ control_treatment * exp_phase + log(flowers_camera_video) + (1|patch/year_patch/plant_species), data = test_data, na.action = na.omit, family = "truncated_genpois")
-
-simulationOutput <- simulateResiduals(fittedModel = test_model)
-plot(simulationOutput)
-plotResiduals(simulationOutput, test_data$control_treatment)
-plotResiduals(simulationOutput, test_data$exp_phase)
-plotResiduals(simulationOutput, as.numeric(test_data$flowers_camera_video))
-
-#Test for 1-inflation and 2-inflation, from DHARMa: https://cran.r-project.org/web/packages/DHARMa/vignettes/DHARMa.html#zero-inflation-k-inflation-or-deficits
-countOnes <- function(x) sum(x == 1)  # testing for number of 1s
-testGeneric(simulationOutput, summary = countOnes, alternative = "greater") # "greater" = 1-inflation
-
-countTwos <- function(x) sum(x == 2)  # testing for number of 2s
-testGeneric(simulationOutput, summary = countTwos, alternative = "greater") # "greater" = 2-inflation
-
-countThrees <- function(x) sum(x == 3)  # testing for number of 3s
-testGeneric(simulationOutput, summary = countThrees, alternative = "greater") # "greater" = 3-inflation
-
-countFours <- function(x) sum(x == 4)  # testing for number of 4s
-testGeneric(simulationOutput, summary = countFours, alternative = "greater") # "greater" = 4-inflation
-
-countFives <- function(x) sum(x == 5)  # testing for number of 5s
-testGeneric(simulationOutput, summary = countFives, alternative = "greater") # "greater" = 5-inflation
-
-#Have more ones, twos, threes, and fours than expected...
-```
-
 ## Step 3: Summarize data
 
 These are the same summaries for visitation rate analyses, *except* that I am using a dataset that has sightings with perching filtered out.
@@ -144,7 +118,7 @@ sighting_durations <- sighting_durations_all_spp %>%
 
 Not all plants have sightings pre and post; can only analyze changes in sighting duration if both experimental periods have sightings, so need to remove plant species that do not have sightings pre and post
 ```{r}
-#Identify plant species that have sightings for both experimental periods
+#Identify plant species that have sightings during both experimental periods
 species_pre_and_post <- sighting_durations %>%
   filter(!is.na(sightings_time)) %>%
   distinct(bird_group, year, patch, control_treatment, plant_species, exp_phase) %>%
@@ -153,6 +127,7 @@ species_pre_and_post <- sighting_durations %>%
   ungroup() %>%
   filter(num_periods == 2)
 
+#Filter out species that did not have sightings during both experimental periods
 sighting_durations_for_analysis <- sighting_durations %>%
   left_join(species_pre_and_post) %>%
   filter(num_periods == 2) %>%
@@ -221,15 +196,8 @@ model_fitting01 %>%
 #Check to make sure assumptions look OK
 #The models with the lowest AICc actually do not look great. nbinom2 (m7) is best in terms of DHARMa plots
 model_fitting01$dharma_plot[[7]]
+model_fitting01$dharma_zeroinfl_plot[[7]]
 model_fitting01$dharma_overdisp_plot[[7]]
-
-model_fitting01$model[[7]] %>% summary()
-
-#Assumptions do not look great...would a normal distribution work?
-gaussian_model <- glmmTMB::glmmTMB(time_per_sighting ~ control_treatment * exp_phase + log(flowers) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "gaussian")
-simulateResiduals(gaussian_model) %>% plot()
-
-#Nope, looks even worse...
 ```
 
 HELICONIA SPECIALISTS
@@ -270,8 +238,122 @@ model_fitting02 %>%
 #Check to make sure assumptions look OK
 #The models with the lowest AICc actually do not look great. genpois (m8) is best in terms of DHARMa plots
 model_fitting02$dharma_plot[[8]]
+model_fitting02$dharma_zeroinfl_plot[[8]]
 model_fitting02$dharma_overdisp_plot[[8]]
-
-#Summary
-model_fitting02$model[[8]] %>% summary()
 ```
+
+```{r, include = FALSE}
+#Potential analysis option that doesn't use an offset: use average time per sighting as response variable, with normal distribution
+gaussian_model <- glmmTMB::glmmTMB(time_per_sighting ~ control_treatment * exp_phase + log(flowers) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "gaussian")
+simulateResiduals(gaussian_model) %>% plot() #Nope, looks even worse...
+```
+
+```{r, include = FALSE}
+#Potential analysis option that doesn't use an offset: analyze unsummarized data (i.e., 1 row = 1 sighting)
+#Remove plant species that do not have sightings pre and post
+unsummarized_data_all_spp <- data_for_sighting_duration %>%
+  left_join(species_pre_and_post) %>%
+  filter(bird_group == "all_spp") %>%
+  filter(num_periods == 2) %>%
+  select(-num_periods)
+
+#Need a truncated distribution because there are no zeroes for sighting length (always at least 1s)
+m1 <- glmmTMB::glmmTMB(sighting_length ~ control_treatment * exp_phase + log(flowers_camera_video) + (1|patch/year_patch/plant_species), data = unsummarized_data_all_spp, na.action = na.omit, family = "truncated_poisson")
+
+m2 <- glmmTMB::glmmTMB(sighting_length ~ control_treatment * exp_phase + log(flowers_camera_video) + (1|patch/year_patch/plant_species), data = unsummarized_data_all_spp, na.action = na.omit, family = "truncated_nbinom1")
+
+m3 <- glmmTMB::glmmTMB(sighting_length ~ control_treatment * exp_phase + log(flowers_camera_video) + (1|patch/year_patch/plant_species), data = unsummarized_data_all_spp, na.action = na.omit, family = "truncated_nbinom2")
+
+m4 <- glmmTMB::glmmTMB(sighting_length ~ control_treatment * exp_phase + log(flowers_camera_video) + (1|patch/year_patch/plant_species), data = unsummarized_data_all_spp, na.action = na.omit, family = "truncated_genpois")
+
+#Combine models
+model_fitting03 <- tibble(model_name = c("m1", "m2", "m3", "m4"), model = list(m1, m2, m3, m4)) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "basic")),
+         dharma_zeroinfl_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "overdispersion"))) %>%
+  mutate(AICc = map(model, MuMIn::AICc))
+
+#Which model is best according to AIC?
+model_fitting03 %>%
+  select(model_name, AICc) %>%
+  unnest(AICc) %>%
+  arrange(AICc)
+
+#Check to make sure assumptions look OK
+model_fitting03$dharma_plot[[3]]
+model_fitting03$dharma_zeroinfl_plot[[3]]
+model_fitting03$dharma_overdisp_plot[[3]]
+
+simulationOutput <- model_fitting03$dharma_object[[3]]
+
+plotResiduals(simulationOutput, unsummarized_data_all_spp$control_treatment)
+plotResiduals(simulationOutput, unsummarized_data_all_spp$exp_phase)
+plotResiduals(simulationOutput, as.numeric(unsummarized_data_all_spp$flowers_camera_video))
+
+#Test for k-inflation, from DHARMa: https://cran.r-project.org/web/packages/DHARMa/vignettes/DHARMa.html#zero-inflation-k-inflation-or-deficits
+countOnes <- function(x) sum(x == 1)  # testing for number of 1s
+testGeneric(simulationOutput, summary = countOnes, alternative = "less") # "greater" = inflation, "less" = deficit
+
+countTwos <- function(x) sum(x == 2)  # testing for number of 2s
+testGeneric(simulationOutput, summary = countTwos, alternative = "greater")
+
+countThrees <- function(x) sum(x == 3)  # testing for number of 3s
+testGeneric(simulationOutput, summary = countThrees, alternative = "greater") 
+
+countFours <- function(x) sum(x == 4)  # testing for number of 4s
+testGeneric(simulationOutput, summary = countFours, alternative = "greater") 
+
+countFives <- function(x) sum(x == 5)  # testing for number of 5s
+testGeneric(simulationOutput, summary = countFives, alternative = "greater")
+
+#Seems like a tough dataset to analyze without using offset. Fewer 1s than expected but more of other numbers...?
+```
+
+**Compile results**
+```{r}
+model_all_spp <- model_fitting01$model[[7]]
+model_greh_visa <- model_fitting02$model[[8]]
+
+#Model summaries
+summary(model_all_spp)
+summary(model_greh_visa)
+
+#Estimated marginal means
+#Condition argument (sightings = 1) gives the average sighting length (i.e., estimated amount of time, in seconds, for 1 sighting)
+ggeffects_all_spp <- ggemmeans(model_all_spp, terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(sightings = 1)) %>%
+  mutate_if(is.numeric, ~round(., digits = 2))
+
+ggeffects_greh_visa <- ggemmeans(model_greh_visa, terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(sightings = 1)) %>%
+  mutate_if(is.numeric, ~round(., digits = 2))
+```
+
+**Plot results (interaction plots)**
+```{r}
+#Recommended figure widths from journal (pixels @ 300 dpi)
+column1x <- 945 #single-column
+column1.5x <- 1476 #1.5 columns
+column2x <- 1961 #double column
+
+#Sizes for plot elements
+size = 6
+label_size = size
+title_size = size * 1.15
+shape_size = 1
+line_width = 0.25
+
+#Plots
+plot_all_spp <- make_interaction_plot(ggeffects_df = ggeffects_all_spp, yvar = "visit_duration", ymin = 5, ymax = 10, ybreak = 1, yaccuracy = 1, text_size = size, point_size = shape_size, line_size = line_width, ylabel = "Visit duration (seconds)")
+
+ggview::ggview(plot_all_spp, width = column1x, height = column1x, units = "px")
+
+plot_greh_visa <- make_interaction_plot(ggeffects_df = ggeffects_greh_visa, yvar = "visit_duration", ymin = 5, ymax = 10, ybreak = 1, yaccuracy = 1, text_size = size, point_size = shape_size, line_size = line_width, ylabel = "Visit duration (seconds)")
+
+# ggview::ggview(plot_greh_visa, width = column1x, height = column1x, units = "px")
+
+#Combine into one plot
+multiplot <- ggarrange(plot_all_spp, plot_greh_visa, nrow = 2, common.legend = TRUE, legend = "bottom", labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.08, label.y = 0.96)
+
+ggview::ggview(multiplot, width = column1x, height = column1x, units = "px")
+```
+
