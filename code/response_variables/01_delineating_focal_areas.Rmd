@@ -68,7 +68,7 @@ ids <- resource_data %>%
 
 #Combining to make SpatialPointsDataframe
 spdf_utm <- SpatialPointsDataFrame(coords = coords_utm, data = ids)
-spdf_ll <- SpatialPointsDataFrame(coords=coords_ll, data=ids) #Coords in lat/long, for export as kml
+spdf_ll <- SpatialPointsDataFrame(coords = coords_ll, data=ids) #Coords in lat/long, for export as kml
 
 View(spdf_utm@data)
 View(spdf_utm@coords)
@@ -101,7 +101,7 @@ Problem: in 2016, we only surveyed for resources in the treatment sites, but we 
 Solution: substitute 2017 patch areas/outlines for 2016 controls that are missing resource counts (and therefore focal area outlines). In 2017, we used the same sites as 2016.
 ```{r}
 #Get experiment info
-exp_info <- read.csv("../../data/import/data/Experiment_dates_2016-2018.csv")%>%
+exp_info <- read.csv("../../data/import/data/Experiment_dates_2016-2018.csv") %>%
   distinct(year, patch, control_treatment) %>%
   mutate_all(as.character)
 

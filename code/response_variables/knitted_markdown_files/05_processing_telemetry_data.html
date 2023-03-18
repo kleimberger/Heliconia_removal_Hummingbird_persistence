@@ -388,9 +388,10 @@ telem_data &lt;- read.csv(&quot;../../data/import/data/telemetry/Telemetry_data_
 
 #Get focal area outlines, for determining whether or not a GPS point was in the patch
 #Here, &quot;patch&quot; and &quot;focal area&quot; are used interchangeably
-focal_area_outlines &lt;- sf::st_read(&quot;../../data/export/intermediate/focal_areas_2016-2018.shp&quot;)</code></pre>
+focal_area_outlines &lt;- sf::st_read(&quot;../../data/export/intermediate/focal_areas_2016-2018.shp&quot;) %&gt;%
+  rename(control_treatment = cntrl_t) #st_write column names are limited to 10 characters, so this strange abbreviated version was created during export</code></pre>
 <pre><code>## Reading layer `focal_areas_2016-2018&#39; from data source 
-##   `C:\Users\leimberk\Box\CR_hummingbird_project\GitHub_projects\hummingbird-persistence\data\export\intermediate\focal_areas_2016-2018.shp&#39; 
+##   `C:\Users\leimberk\Box\PhD_files_from_OSU_Box\GitHub_projects\hummingbird-persistence\data\export\intermediate\focal_areas_2016-2018.shp&#39; 
 ##   using driver `ESRI Shapefile&#39;
 ## Simple feature collection with 32 features and 5 fields
 ## Geometry type: POLYGON

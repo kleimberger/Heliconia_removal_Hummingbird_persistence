@@ -43,7 +43,8 @@ telem_data <- read.csv("../../data/import/data/telemetry/Telemetry_data_2016-201
 
 #Get focal area outlines, for determining whether or not a GPS point was in the patch
 #Here, "patch" and "focal area" are used interchangeably
-focal_area_outlines <- sf::st_read("../../data/export/intermediate/focal_areas_2016-2018.shp")
+focal_area_outlines <- sf::st_read("../../data/export/intermediate/focal_areas_2016-2018.shp") %>%
+  rename(control_treatment = cntrl_t) #st_write column names are limited to 10 characters, so this strange abbreviated version was created during export
 
 #Net location info, for determining centroid of area where bird caught (and radio-tagged)
 nets <- read.csv("../../data/import/data/captures/Nets_2016-2018.csv")
@@ -290,5 +291,3 @@ write.csv(telem_data04, "../../data/export/intermediate/Telemetry_data_2016-2018
 ```
 
 *Note: for analysis, will still need to filter out rows with missing data. But, some of these rows have information about telemetry effort, so leaving them in here for now.*
-
-

@@ -299,7 +299,7 @@ dates_per_bird_sum
 ```
 
 ## Step 8: Calculate more summary stats for methods
-```{r}
+```{r step8}
 #Total number of locations
 total_points <- length(telem_data_for_analysis$row_id)
 total_points
@@ -325,7 +325,7 @@ points_with_unknown_time_leave/total_points
 ## Step 9: Calculate mean time spent at location (for analysis of activity level/torpor)
 
 *As of 9/1/22, do not have plans to analyze this, since we still would not be able to rule out nighttime torpor. But it's here just in case.*
-```{r step8}
+```{r step9}
 time_at_location_sum <- telem_data_for_analysis %>%
   filter(!is.na(frequency)) %>%
   group_by(year, patch, control_treatment, frequency, bird_species, bird_sex, exp_phase) %>%
@@ -358,8 +358,46 @@ time_at_location_plot <- time_at_location_for_analysis %>%
 time_at_location_plot
 ```
 
-## Step 9: Export data
-```{r, step9}
+## Step 10: Summarize information about bird's vertical location (canopy vs understory)
+
+One potential explanation for hummingbird persistence is that birds increasingly foraged in the canopy. To try and understand if this was occurred, we collected data on vertical location ('bird_height') in the last year of study (2018).
+```{r}
+bird_heights <- telem_data_for_analysis %>%
+  filter(!is.na(bird_height) & bird_height != "")
+
+bird_heights_sum <- bird_heights %>%
+  group_by(bird_height) %>%
+  summarise(num_obs = n()) %>%
+  ungroup()
+
+num_bird_heights_known <- bird_heights_sum %>%
+  filter(bird_height != "unknown") %>%
+  summarise(num_obs = sum(num_obs)) %>%
+  pull(num_obs)
+
+num_bird_heights_canopy <- bird_heights_sum %>%
+  filter(bird_height == "canopy") %>%
+  pull(num_obs)
+
+num_bird_heights_understory <- bird_heights_sum %>%
+  filter(bird_height == "understory") %>%
+  pull(num_obs)
+
+#What percentage of bird heights (where height was considered "known") were in the canopy vs in the understory?
+num_bird_heights_canopy/num_bird_heights_known #percentage of bird locations in canopy
+num_bird_heights_understory/num_bird_heights_known #percentage of bird locations in canopy
+
+#Information about instances where bird was in canopy. How many individuals and what were they doing? etc
+bird_heights_canopy <- bird_heights %>%
+  filter(bird_height == "canopy")
+
+unique(bird_heights_canopy$band_number)
+```
+
+*Because there were only 7 observations of birds in the canopy, formal analysis of these data was not possible.*
+
+## Step 11: Export data
+```{r, step11}
 write.csv(prop_time_for_analysis, "../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv", row.names = FALSE)
 write.csv(telem_data_for_analysis, "../../data/export/intermediate/Telemetry_data_filtered_for_analysis.csv", row.names = FALSE)
 
