@@ -56,27 +56,27 @@ column1.5x <- 1476 #1.5 columns
 column2x <- 1961 #double column
 
 #Sizes for plot elements
-size = 8
+size = 9
 label_size = size
 title_size = size * 1.15
 shape_size = 1
 line_width = 0.25
 
-path_name <- c("results/statistical_analysis/figures")
+path_name <- c("../../results/statistical_analysis/figures")
 colors <- c("#0E0D37", "#BA0022")
 ```
 
 ```{r}
-make_plot = function(dataset, yvar, ylabel, size, shape_size, line_width){
+make_plot = function(dataset, yvar, ylabel, text_size, point_size, line_size){
   
   plot <- 
   ggplot(data = dataset, aes_string(x = "control_treatment", y = yvar)) +
   
     #Boxplots in different position than points
-    geom_boxplot(aes(fill = control_treatment), colour = "black", width = 0.15, position = position_nudge(x = c(-0.15, 0.15)), alpha = 0.5, outlier.shape = NA, size = line_width) +
-    stat_summary(fun = mean, position = position_nudge(x = c(-0.15, 0.15)), geom = "point", shape = 18, size = shape_size) +
-    geom_point(aes(fill = control_treatment), colour = "black", shape = 21, position = position_dodge(width = 0.45), alpha = 1, size = shape_size, stroke = line_width) +
-    theme_bw(base_size = size) +
+    geom_boxplot(aes(fill = control_treatment), colour = "black", width = 0.15, position = position_nudge(x = c(-0.15, 0.15)), alpha = 0.5, outlier.shape = NA, size = line_size) +
+    stat_summary(fun = mean, position = position_nudge(x = c(-0.15, 0.15)), geom = "point", shape = 18, size = point_size) +
+    geom_point(aes(fill = control_treatment), colour = "black", shape = 21, position = position_dodge(width = 0.45), alpha = 1, size = shape_size, stroke = line_size) +
+    theme_bw(base_size = text_size) +
     scale_fill_manual(values = colors) +
     scale_color_manual(values = colors) +
     theme_bw(base_size = size) +
@@ -92,13 +92,13 @@ make_plot = function(dataset, yvar, ylabel, size, shape_size, line_width){
     
 } 
 
-(elevation_plot <- make_plot(dataset = site_characteristics, yvar = "elevation", ylabel = "Elevation (m)", size = size, shape_size = shape_size, line_width = line_width))
-(focal_area_plot <- make_plot(dataset = site_characteristics, yvar = "focal_area_size", ylabel = "Focal area size (ha)", size = size, shape_size = shape_size, line_width = line_width))
-(heto_density_plot <- make_plot(dataset = site_characteristics, yvar = "log_heto_calories_per_ha", ylabel = expression("Ln"~italic(Heliconia)~"calories/ha"), size = size, shape_size = shape_size , line_width = line_width))
+(elevation_plot <- make_plot(dataset = site_characteristics, yvar = "elevation", ylabel = "Elevation (m)", text_size = size, point_size = shape_size, line_size = line_width))
+(focal_area_plot <- make_plot(dataset = site_characteristics, yvar = "focal_area_size", ylabel = "Focal area size (ha)", text_size = size, point_size = shape_size, line_size = line_width))
+(heto_density_plot <- make_plot(dataset = site_characteristics, yvar = "log_heto_calories_per_ha", ylabel = expression("Ln"~italic(Heliconia)~"calories/ha"), text_size = size, point_size = shape_size , line_size = line_width))
 
 site_characteristic_multiplot <- ggpubr::ggarrange(elevation_plot, focal_area_plot, heto_density_plot, nrow = 1, ncol = 3, labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "plain"))
 
-ggview::ggview(site_characteristic_multiplot, width = column2x, height = column2x/3, units = "px")
+# ggview::ggview(site_characteristic_multiplot, width = column2x, height = column2x/3, units = "px")
 ggsave(file.path(path_name, "FigSX_Site_characteristics.png"), site_characteristic_multiplot, dpi = 300, width = column2x, height = column2x/3, units = "px", bg = "white", device = "tiff")
 ```
 
