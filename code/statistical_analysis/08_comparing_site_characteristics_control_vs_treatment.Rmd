@@ -31,10 +31,10 @@ library(ggplot2)
 
 ```{r}
 #Elevation
-elevation <- readxl::read_excel("data/import/data/Site_elevations.xlsx")
+elevation <- readxl::read_excel("../../data/import/data/Site_elevations.xlsx")
 
 #Focal area size + Heliconia density
-heto_densities <- read.csv("data/export/supp_tables/Heliconia_densities.csv") %>%
+heto_densities <- read.csv("../../data/export/supp_tables/Heliconia_densities.csv") %>%
   select(year, patch, focal_area_size = area, heto_calories_per_ha = calories_per_ha) %>%
   mutate(log_focal_area_size = log(focal_area_size)) %>%
   mutate(log_heto_calories_per_ha = log(heto_calories_per_ha))
@@ -56,7 +56,7 @@ column1.5x <- 1476 #1.5 columns
 column2x <- 1961 #double column
 
 #Sizes for plot elements
-size = 6
+size = 8
 label_size = size
 title_size = size * 1.15
 shape_size = 1
