@@ -1,0 +1,110 @@
+---
+title: "Comparing site characteristics in control versus treatment replicates"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Goal**
+
+Check to see if there are any differences in site characteristics between control and treatment replicates.
+
+**Site characteristics considered**
+
+- Elevation
+- Focal area size
+- *Heliconia* density (calories/ha)
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidyr)
+library(purrr)
+library(ggplot2)
+```
+
+## Step 1: Get data
+
+```{r}
+#Elevation
+elevation <- readxl::read_excel("data/import/data/Site_elevations.xlsx")
+
+#Focal area size + Heliconia density
+heto_densities <- read.csv("data/export/supp_tables/Heliconia_densities.csv") %>%
+  select(year, patch, focal_area_size = area, heto_calories_per_ha = calories_per_ha) %>%
+  mutate(log_focal_area_size = log(focal_area_size)) %>%
+  mutate(log_heto_calories_per_ha = log(heto_calories_per_ha))
+
+#Combine into one table
+site_characteristics <- elevation %>%
+  left_join(heto_densities) %>%
+  mutate(control_treatment = factor(control_treatment, levels = c("control", "treatment"), labels = c("Control", "Treatment"))) %>%
+  unite(col = "year_patch", year, patch, sep = "_", remove = FALSE)
+```
+
+Note: Focal area size and *Heliconia* density are unavailable for 2016 control replicates, because resource surveys were not conducted in these years.
+
+## Step 2: Visualize data
+```{r}
+#Recommended figure widths from journal (pixels @ 300 dpi)
+column1x <- 945 #single-column
+column1.5x <- 1476 #1.5 columns
+column2x <- 1961 #double column
+
+#Sizes for plot elements
+size = 6
+label_size = size
+title_size = size * 1.15
+shape_size = 1
+line_width = 0.25
+
+path_name <- c("results/statistical_analysis/figures")
+colors <- c("#0E0D37", "#BA0022")
+```
+
+```{r}
+make_plot = function(dataset, yvar, ylabel, size, shape_size, line_width){
+  
+  plot <- 
+  ggplot(data = dataset, aes_string(x = "control_treatment", y = yvar)) +
+  
+    #Boxplots in different position than points
+    geom_boxplot(aes(fill = control_treatment), colour = "black", width = 0.15, position = position_nudge(x = c(-0.15, 0.15)), alpha = 0.5, outlier.shape = NA, size = line_width) +
+    stat_summary(fun = mean, position = position_nudge(x = c(-0.15, 0.15)), geom = "point", shape = 18, size = shape_size) +
+    geom_point(aes(fill = control_treatment), colour = "black", shape = 21, position = position_dodge(width = 0.45), alpha = 1, size = shape_size, stroke = line_width) +
+    theme_bw(base_size = size) +
+    scale_fill_manual(values = colors) +
+    scale_color_manual(values = colors) +
+    theme_bw(base_size = size) +
+    theme(legend.position = "none",
+          legend.direction = "horizontal",
+          panel.grid.major = element_blank(),
+          panel.grid.minor = element_blank(),
+          strip.background = element_blank(),
+          panel.border = element_rect(colour = "black", fill = NA))+
+    labs(x = "", y = ylabel, fill = "", colour = "")
+    
+  return(plot)
+    
+} 
+
+(elevation_plot <- make_plot(dataset = site_characteristics, yvar = "elevation", ylabel = "Elevation (m)", size = size, shape_size = shape_size, line_width = line_width))
+(focal_area_plot <- make_plot(dataset = site_characteristics, yvar = "focal_area_size", ylabel = "Focal area size (ha)", size = size, shape_size = shape_size, line_width = line_width))
+(heto_density_plot <- make_plot(dataset = site_characteristics, yvar = "log_heto_calories_per_ha", ylabel = expression("Ln"~italic(Heliconia)~"calories/ha"), size = size, shape_size = shape_size , line_width = line_width))
+
+site_characteristic_multiplot <- ggpubr::ggarrange(elevation_plot, focal_area_plot, heto_density_plot, nrow = 1, ncol = 3, labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "plain"))
+
+ggview::ggview(site_characteristic_multiplot, width = column2x, height = column2x/3, units = "px")
+ggsave(file.path(path_name, "FigSX_Site_characteristics.png"), site_characteristic_multiplot, dpi = 300, width = column2x, height = column2x/3, units = "px", bg = "white", device = "tiff")
+```
+
+## Step 3: Test whether there are any statistical differences in site characteristics (control vs. treatment replicates)
+```{r}
+t.test(elevation ~ control_treatment, data = site_characteristics)
+t.test(focal_area_size ~ control_treatment, data = site_characteristics, var.equal = FALSE)
+t.test(log_heto_calories_per_ha ~ control_treatment, data = site_characteristics, var.equal = FALSE)
+```
