@@ -49,7 +49,7 @@ captures <- read.csv("../../data/import/data/captures/Hummingbird_captures_2010-
   filter(status != "DR") %>%
   filter(!(grepl("died", notes))) %>%
   mutate(bird_id = ifelse(is.na(band_number), paste(year, patch, bird_species, colors, sep = "_"), paste(year, patch, bird_species, band_number, sep = "_"))) %>%
-  mutate(date = lubridate::mdy(date)) %>%
+  mutate(date = lubridate::ymd(date)) %>%
   mutate(across(c(year, patch), as.character)) %>% 
   mutate(trap_id = as.integer(trap_id))
 

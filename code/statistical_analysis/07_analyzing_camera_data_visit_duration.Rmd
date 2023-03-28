@@ -56,13 +56,13 @@ Will do some additional filtering here to remove instances of a bird perching on
 Also, some camera sets had >1 plant species in the frame, but the sighting length is for ALL plant species combined. Will not analyze these sightings, because interpretation is a bit awkward; can not interpret results as time spent at each inflorescence of a given plant species. Also, if I keep these sightings, there would be a mismatch between sighting length (for >1 plant species) and the flowers covariate (counted for each plant species).
 ```{r}
 #Get data
-data_for_experiment <- read.csv("data/export/intermediate/Camera_data_filtered_for_experiment.csv")
+data_for_experiment <- read.csv("../../data/export/intermediate/Camera_data_filtered_for_experiment.csv")
 
 #Source helper functions
-source("code/helper_functions/Calculate_basic_summary_stats.R")
-source("code/helper_functions/Summarize_camera_data.R")
-source("code/helper_functions/Modeling_helper_functions.R")
-source("code/helper_functions/Plotting_helper_functions.R")
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+source("../../code/helper_functions/Summarize_camera_data.R")
+source("../../code/helper_functions/Modeling_helper_functions.R")
+source("../../code/helper_functions/Plotting_helper_functions.R")
 
 #Filter out camera sets with >1 plant species
 #Filter out instances of bird perching in frame, based on notes column
@@ -159,7 +159,7 @@ However, here the question is not about visitation rates to HETO vs. non-HETO, s
 For count data, there multiple possible distributions. I need to choose between Poisson and negative binomial (nbinom1 and nbinom2). Also, because the dataset does not include zeroes, I need a truncated distribution.
 
 ALL HUMMINGBIRD SPECIES
-```{r}
+```{r, fig.show='hide', results='hide'}
 data_all_spp <- sighting_durations_for_analysis %>%
   filter(bird_group == "all_spp")
 
@@ -192,7 +192,9 @@ model_fitting01 %>%
   select(model_name, AICc) %>%
   unnest(AICc) %>%
   arrange(AICc)
+```
 
+```{r}
 #Check to make sure assumptions look OK
 #The models with the lowest AICc actually do not look great. nbinom2 (m7) is best in terms of DHARMa plots
 model_fitting01$dharma_plot[[7]]
@@ -201,7 +203,7 @@ model_fitting01$dharma_overdisp_plot[[7]]
 ```
 
 HELICONIA SPECIALISTS
-```{r}
+```{r, fig.show='hide', results='hide'}
 data_greh_visa <- sighting_durations_for_analysis %>%
   filter(bird_group == "greh_visa")
 
@@ -234,7 +236,9 @@ model_fitting02 %>%
   select(model_name, AICc) %>%
   unnest(AICc) %>%
   arrange(AICc)
+```
 
+```{r}
 #Check to make sure assumptions look OK
 #The models with the lowest AICc actually do not look great. genpois (m8) is best in terms of DHARMa plots
 model_fitting02$dharma_plot[[8]]
@@ -242,13 +246,13 @@ model_fitting02$dharma_zeroinfl_plot[[8]]
 model_fitting02$dharma_overdisp_plot[[8]]
 ```
 
-```{r, include = FALSE}
+```{r, include=FALSE, eval=FALSE, fig.show='hide', results='hide'}
 #Potential analysis option that doesn't use an offset: use average time per sighting as response variable, with normal distribution
 gaussian_model <- glmmTMB::glmmTMB(time_per_sighting ~ control_treatment * exp_phase + log(flowers) + (1|patch/year_patch/plant_species), data = data_all_spp, na.action = na.omit, family = "gaussian")
 simulateResiduals(gaussian_model) %>% plot() #Nope, looks even worse...
 ```
 
-```{r, include = FALSE}
+```{r, include=FALSE, eval=FALSE, fig.show='hide', results='hide'}
 #Potential analysis option that doesn't use an offset: analyze unsummarized data (i.e., 1 row = 1 sighting)
 #Remove plant species that do not have sightings pre and post
 unsummarized_data_all_spp <- data_for_sighting_duration %>%
@@ -321,15 +325,17 @@ summary(model_greh_visa)
 
 #Estimated marginal means
 #Condition argument (sightings = 1) gives the average sighting length (i.e., estimated amount of time, in seconds, for 1 sighting)
-ggeffects_all_spp <- ggemmeans(model_all_spp, terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(sightings = 1)) %>%
-  mutate_if(is.numeric, ~round(., digits = 2))
+(ggeffects_all_spp <- ggemmeans(model_all_spp, terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(sightings = 1)) %>%
+  as.data.frame() %>%
+  mutate_if(is.numeric, ~round(., digits = 2)))
 
-ggeffects_greh_visa <- ggemmeans(model_greh_visa, terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(sightings = 1)) %>%
-  mutate_if(is.numeric, ~round(., digits = 2))
+(ggeffects_greh_visa <- ggemmeans(model_greh_visa, terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(sightings = 1)) %>%
+  as.data.frame() %>%
+  mutate_if(is.numeric, ~round(., digits = 2)))
 ```
 
 **Plot results (interaction plots)**
-```{r}
+```{r, fig.width=3, fig.height=4.5, fig.align='center'}
 #Recommended figure widths from journal (pixels @ 300 dpi)
 column1x <- 945 #single-column
 column1.5x <- 1476 #1.5 columns
@@ -345,7 +351,7 @@ line_width = 0.25
 #Plots
 plot_all_spp <- make_interaction_plot(ggeffects_df = ggeffects_all_spp, yvar = "visit_duration", ymin = 5, ymax = 10, ybreak = 1, yaccuracy = 1, text_size = size, point_size = shape_size, line_size = line_width, ylabel = "Visit duration (seconds)")
 
-ggview::ggview(plot_all_spp, width = column1x, height = column1x, units = "px")
+# ggview::ggview(plot_all_spp, width = column1x, height = column1x, units = "px")
 
 plot_greh_visa <- make_interaction_plot(ggeffects_df = ggeffects_greh_visa, yvar = "visit_duration", ymin = 5, ymax = 10, ybreak = 1, yaccuracy = 1, text_size = size, point_size = shape_size, line_size = line_width, ylabel = "Visit duration (seconds)")
 
@@ -354,6 +360,7 @@ plot_greh_visa <- make_interaction_plot(ggeffects_df = ggeffects_greh_visa, yvar
 #Combine into one plot
 multiplot <- ggarrange(plot_all_spp, plot_greh_visa, nrow = 2, common.legend = TRUE, legend = "bottom", labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.08, label.y = 0.96)
 
-ggview::ggview(multiplot, width = column1x, height = column1x, units = "px")
+multiplot
+# ggview::ggview(multiplot, width = column1x, height = column1x*1,5, units = "px")
 ```
 

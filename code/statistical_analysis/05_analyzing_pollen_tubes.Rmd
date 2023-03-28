@@ -53,12 +53,11 @@ set.seed(1)
 ```{r}
 #Pollen tube data
 tube_data <- read.csv("../../data/export/for_analysis/Pollen_tube_pollination_success.csv") %>%
-  select(-X) %>%
   filter(plant_species == "HETO" | plant_species == "HAPA")
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
 heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
-  select(-X, -area)
+  select(-area)
 
 ##1. Combine data
 #2. Log-transform HETO calories removed
@@ -212,11 +211,13 @@ create_model <- function(dataset, analysis, subanalysis, treatment_variable){
 models <- data %>%
    mutate(model_quietly = pmap(list(data, analysis, subanalysis, treatment_variable), safely(function(a, b, c, d){model <- create_model(dataset = a, analysis = b, subanalysis = c, treatment_variable = d)})),
           model = map(model_quietly, get_result),
-          warning = map(model_quietly, get_warning), 
+          error = map(model_quietly, get_error), 
+          warning = map(model_quietly, get_warning),
           convergence = map(model, check_convergence)) %>%
   mutate(xvar_table = map(model, ~data.frame(xvar = all.vars(terms(.))[-1])))
 
 #Make sure there weren't any problems + check to make sure table of predictor variables is correct
+# models$error
 # models$warning
 # models$convergence
 # models$xvar_table
@@ -243,7 +244,6 @@ assumption_checks <- models %>%
   mutate(plotname4 = paste("dharma_zeroinfl_diagnostics_", model_number, ".png", sep = "")) %>%
   mutate(plotname5 = paste("dharma_overdisp_diagnostics_", model_number, ".png", sep = ""))
 
-
 #Export diagnostic plots because they load very slowly in RStudio
 path_name <- c("../../results/statistical_analysis/assumption_checks/pollen_tubes")
 walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
@@ -255,8 +255,13 @@ walk2(assumption_checks$plotname5, assumption_checks$dharma_overdisp_plot, ~ggsa
 #Check for highly influential replicates
 #Make plots of DFBETAS and Cook's distance
 influence_checks <- models %>%
-  mutate(influence_plot = pmap(list(model, data, title, subtitle), ~make_influence_plot(model = ..1, dataset = ..2, plot_title = ..3, plot_subtitle = ..4, group_id = "year_patch"))) %>%
-  mutate(plotname6 = paste("influence_diagnostics_", model_number, ".png", sep = ""))
+    mutate(influence_plot_quietly = pmap(list(model, data, title, subtitle), safely(function(a, b, c, d){influence <- make_influence_plot(model = a, dataset = b, plot_title = c, plot_subtitle = d, group_id = "year_patch")})),
+          influence_plot = map(influence_plot_quietly, get_result),
+          error = map(influence_plot_quietly, get_error)) %>%
+    mutate(plotname6 = paste("influence_diagnostics_", model_number, ".png", sep = ""))
+  
+#There is an error for the third influence plot - NaNs produced/infinite or missing values in 'x' - but dataset used in model does not have any missing data...I suspect it's an issue of complete separation when one replicate is removed to calculate the influence measure
+# influence_checks$error
 
 #Export plots
 walk2(influence_checks$plotname6, influence_checks$influence_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
@@ -279,4 +284,4 @@ results <- models %>%
 saveRDS(results, "../../results/statistical_analysis/rds_files/Pollen_tube_results.rds")
 ```
 
-*WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES IN ONE MASTER SCRIPT*
+*WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES LATER ON IN SINGLE SCRIPT*

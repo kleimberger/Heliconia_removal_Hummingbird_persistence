@@ -51,7 +51,7 @@ set.seed(1)
 #Capture data. Number of birds captured per capture session, with capture effort
 capture_data <- read.csv("../../data/export/for_analysis/Capture_rates.csv") %>%
   mutate(subanalysis = "captures") %>%
-  select(-X, -date)
+  select(-date)
 
 head(capture_data)
 
@@ -61,14 +61,13 @@ head(capture_data)
 recapture_data <- read.csv("../../data/export/for_analysis/Recapture_rates.csv") %>%
   mutate(subanalysis = "recaptures") %>%
   filter(!is.na(recap_rate)) %>%  
-  filter(!(patch == "203" & year == "2017")) %>%
-  select(-X)
+  filter(!(patch == "203" & year == "2017"))
 
 head(recapture_data)
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
 heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
-  select(-X, -area)
+  select(-area)
 
 ##1. Combine data
 #2. Log-transform HETO calories removed
@@ -338,4 +337,4 @@ results <- models %>%
 saveRDS(results, "../../results/statistical_analysis/rds_files/Capture_results.rds")
 ```
 
-*WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES IN ONE MASTER SCRIPT*
+*WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES LATER ON IN SINGLE SCRIPT*
