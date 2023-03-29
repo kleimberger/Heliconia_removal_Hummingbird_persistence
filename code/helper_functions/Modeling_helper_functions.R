@@ -12,7 +12,6 @@ calculate_ci <- function(model, method_name){
   
 }
 
-
 #########################################################
 #Extract information from model object about convergence
 ########################################################

@@ -36,24 +36,32 @@ library(ggpubr)
 ```
 
 ```{r}
-source("code/helper_functions/Modeling_helper_functions.R")
-source("code/helper_functions/Plotting_helper_functions.R")
-source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
-source("code/helper_functions/Calculate_basic_summary_stats.R")
+source("../../code/helper_functions/Modeling_helper_functions.R")
+source("../../code/helper_functions/Plotting_helper_functions.R")
+source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 ```
 
 ## Step 1: Get results (rds files)
 
 ```{r}
-cameras <- readRDS("results/statistical_analysis/rds_files/Camera_results.rds")
-captures <- readRDS("results/statistical_analysis/rds_files/Capture_results.rds")
-telemetry <- readRDS("results/statistical_analysis/rds_files/Telemetry_results.rds")
-pollen_tubes <- readRDS("results/statistical_analysis/rds_files/Pollen_tube_results.rds")
-body_mass <- readRDS("results/statistical_analysis/rds_files/Body_mass_results.rds")
+captures <- readRDS("../../results/statistical_analysis/rds_files/Capture_results.rds")
 
-results <- cameras %>%
-  bind_rows(captures) %>%
+telemetry <- readRDS("../../results/statistical_analysis/rds_files/Telemetry_results.rds")
+
+cameras <- readRDS("../../results/statistical_analysis/rds_files/Camera_results.rds") %>%
+  mutate(plant_species = factor(plant_species, levels = c("MARA", "PAV-ROJ-AMA", "CEPO", "TUBO-AMA", "HAPA", "PALU", "RABO", "BOCA-ROJA", "COSTBAR"), ordered = TRUE)) %>%
+  arrange(plant_species)
+  
+pollen_tubes <- readRDS("../../results/statistical_analysis/rds_files/Pollen_tube_results.rds") %>%
+  mutate(subanalysis = factor(subanalysis, levels = c("HETO", "HAPA"), ordered = TRUE)) %>%
+  arrange(subanalysis)
+
+body_mass <- readRDS("../../results/statistical_analysis/rds_files/Body_mass_results.rds")
+
+results <- captures %>%
   bind_rows(telemetry) %>%
+  bind_rows(cameras) %>%
   bind_rows(pollen_tubes) %>%
   bind_rows(body_mass) %>%
   select(-model_number) %>% #Model number within a given analysis. Replace with unique #
@@ -63,8 +71,8 @@ results <- cameras %>%
 #How many total models?
 length(results$model_number)
 
-#What non-Heliconia species were analyzed? Plant species scientific names fpr plots
-nonheto_species <- read.csv("data/export/supp_tables/Non-Heliconia_camera_species_list.csv") %>%
+#What non-Heliconia species were analyzed? Plant species scientific names for plots
+nonheto_species <- read.csv("../../data/export/supp_tables/Non-Heliconia_camera_species_list.csv") %>%
   filter(plant_species %in% results$plant_species) %>%
   select(plant_species, plant_scientific_name, num_replicates)
 ```
@@ -96,60 +104,70 @@ results_tidy_confint <- results_tidy %>%
   mutate_at(vars(estimate, std.error, statistic, lowerCI, upperCI, estimate_exp, lowerCI_exp, upperCI_exp), ~round(., digits = 2)) %>%
   mutate(pvalue_round = format.pval(pv = round(p.value, 3), digits = 3, nsmall = 3, eps = 0.001)) %>%
   select(model_number:term, estimate, lowerCI, upperCI, statistic, pvalue_round, pvalue = p.value, std_error = std.error, everything())
-
-#Extract number of reps for each dataset
-sample_size <- results %>%
-  filter(model_type == "categorical") %>% #Will be the same for both models; only need oen
-  select(append(append(col_names, "num_obs"), "num_reps")) %>%
-  unnest(cols = num_reps) %>%
-  mutate(num_obs = unlist(num_obs)) %>%
-  pivot_wider(names_from = control_treatment, values_from = n)
 ```
 
 ## Step 3: Calculate estimated marginal means for categorical models
 
+I will calculate estimated marginal means to visualize and help interpret results. However, since I am using mixed models, I need to adjust the estimated values for the random effects (i.e., 'bias adjustment': https://cran.r-project.org/web/packages/emmeans/vignettes/transformations.html#bias-adj). The adjustment is implemented using the 'bias.adjust' and 'sigma' arguments in emmeans, where sigma is calculated from the random effect standard deviations (i.e., sqrt(SD1^2 + SD2^2)).
+
+Calculate sigma
 ```{r}
-#For the means and contrasts, will only look at categorical models
-results_categorical <- results %>%
-  filter(model_type == "categorical")
+#In general, you should always use the VarCorr() results to obtain sigma when you have a mixed model.
+#Example in the emmeans vignette manually extracts the elements of VarCorr(), e.g., VarCorr(model)$cond$`bird_id:year_patch:patch`[[1]] - but that approach seems unwieldy since I already have the SDs in a tidy format! Will just summarize there.
+bias_adjust_values <- results_tidy_confint %>%
+  filter(effect == "ran_pars") %>%
+  mutate(estimate2 = estimate^2) %>%
+  group_by(model_number, analysis, subanalysis, bird_group, plant_species, yvar) %>%
+  summarise(sum_estimate2 = sum(estimate2)) %>%
+  ungroup() %>%
+  mutate(sigma = sqrt(sum_estimate2))
 ```
 
-I will use estimated marginal means to visualize and help interpret results. Since I will be plotting these data, I'll use the 'ggeffects' package, which organizes results in a standardized framework.
+```{r}
+#For the means and contrasts, will only look at categorical models
+#Also need to add sigma for bias adjustment
+results_categorical <- results %>%
+  filter(model_type == "categorical") %>%
+  left_join(bias_adjust_values)
+```
+
 ```{r step 4b, message = FALSE}
 #Models for cameras have offset; I want to calculate the number of visits per 12-hour day
 emmeans_cameras <- results_categorical %>%
   filter(analysis == "camera_HETO" | analysis == "camera_non-HETO" | analysis == "camera_non-HETO_separate") %>%
   filter(is.na(plant_species) | plant_species != "RABO") %>% #RABO model was weird, fit better with hours as covariate instead of offset
-  mutate(ggeffects = map(model, ~ggemmeans(., terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(hours = 12)))) %>%
-  mutate(emmeans = map(model, ~emmeans(., specs = ~exp_phase:control_treatment, type = "response", offset = log(12)))) %>%
+  mutate(emmeans = pmap(list(model, sigma), ~emmeans(..1, specs = ~exp_phase:control_treatment, type = "response", offset = log(12), bias.adjust = TRUE, sigma = ..2))) %>%
+  mutate(emmeans = map(emmeans, as.data.frame)) %>%
   arrange(model_number)
 
-#Check to make sure that offset is being applied correctly; looks like log(offset) is needed for emmeans::emmeans() but not ggeffects::ggmmeans()
-emmeans_cameras$ggeffects[[1]]
+#Check to make sure that offset is being applied correctly; looks like log(offset) is needed for emmeans::emmeans()
 emmeans_cameras$emmeans[[1]]
 
 #Models for recaps do not have the interaction between treatment and exp_phase
 emmeans_recaps <- results_categorical %>%
   filter(subanalysis == "recaptures") %>%
-  mutate(ggeffects = map(model, ~ggemmeans(., terms = c("control_treatment"), back.transform = TRUE)))
+  mutate(emmeans = pmap(list(model, sigma), ~emmeans(..1, specs = ~control_treatment, type = "response", bias.adjust = TRUE, sigma = ..2))) %>%
+  mutate(emmeans = map(emmeans, as.data.frame))
 
 #Other models
 emmeans_other <- results_categorical %>%
   filter(!(model_number %in% emmeans_cameras$model_number) & !(model_number %in% emmeans_recaps$model_number)) %>%
-  mutate(ggeffects = map(model, ~ggemmeans(., terms = c("exp_phase", "control_treatment"), back.transform = TRUE)))
-
-#Tibble where each model has a data frame of results to plot
-emmeans_for_plots <- emmeans_cameras %>%
-  bind_rows(emmeans_recaps) %>%
-  bind_rows(emmeans_other) %>%
-  select(-emmeans) %>%
-  arrange(model_number)
+  mutate(emmeans = pmap(list(model, sigma), ~emmeans(..1, specs = ~exp_phase:control_treatment, type = "response", bias.adjust = TRUE, sigma = ..2))) %>%
+  mutate(emmeans = map(emmeans, as.data.frame))
 
 #As data frame
-emmeans_df <- emmeans_for_plots %>%
-  select(append(col_names, "ggeffects")) %>%
-  unnest(ggeffects) %>%
-  mutate_if(is.numeric, ~round(., digits = 2))
+emmeans_df <- emmeans_cameras %>%
+  bind_rows(emmeans_recaps) %>%
+  bind_rows(emmeans_other) %>%
+  arrange(model_number) %>%
+  select(append(col_names, "emmeans")) %>%
+  unnest(emmeans) %>%
+  mutate_if(is.numeric, ~round(., digits = 2)) %>%
+  select(-SE, -df) %>%
+  unite("estimate", c("rate", "prob", "response", "emmean"), na.rm = TRUE) %>%
+  mutate(across(c(estimate, lower.CL, upper.CL), as.numeric))
+
+#Will need to filter these data for each plot
 ```
 
 ## Step 4: Calculate relevant contrasts
@@ -192,8 +210,8 @@ contrasts_cameras_captures <- results_categorical %>%
   filter(analysis == "camera_HETO" | analysis == "camera_non-HETO" | analysis == "camera_non-HETO_separate" | (analysis == "captures" & subanalysis == "captures")) %>%
   mutate(emm = map(model, ~emmeans(., specs = ~exp_phase:control_treatment))) %>%
   mutate(contrast = map(emm, ~as.data.frame(confint(contrast(., method = "revpairwise", by = c("control_treatment")), type = "response")))) %>%
-  mutate(contrast_of_contrast = map(emm, ~as.data.frame(confint(contrast(emmeans(., specs = ~exp_phase:control_treatment), interaction = ("revpairwise")), type = "response")))) %>%
-  mutate(contrast_pval_check = map(emm, ~summary(contrast(emmeans(., specs = ~exp_phase:control_treatment), interaction = ("revpairwise")), type = "response")))
+  mutate(contrast_of_contrast = map(emm, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response")))) %>%
+  mutate(contrast_pval_check = map(emm, ~as.data.frame(summary(contrast(., interaction = "revpairwise"), type = "response"))))
 
 #TELEMETRY AND POLLEN TUBES (logit link)
 contrasts_telemetry_pollen_tubes <- results_categorical %>%
@@ -201,8 +219,8 @@ contrasts_telemetry_pollen_tubes <- results_categorical %>%
   mutate(emm = map(model, ~emmeans(., specs = ~exp_phase:control_treatment))) %>%
   mutate(emm_regrid = map(emm, ~regrid(., transform = "log"))) %>%
   mutate(contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise", by = c("control_treatment")), type = "response")))) %>%
-  mutate(contrast_of_contrast = map(emm_regrid, ~as.data.frame(confint(contrast(emmeans(., specs = ~exp_phase:control_treatment), interaction = "revpairwise"), type = "response")))) %>%
-  mutate(contrast_pval_check = map(emm_regrid, ~summary(contrast(emmeans(., specs = ~exp_phase:control_treatment), interaction = "revpairwise"), type = "response")))
+  mutate(contrast_of_contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response")))) %>%
+  mutate(contrast_pval_check = map(emm_regrid, ~as.data.frame(summary(contrast(., interaction = "revpairwise"), type = "response"))))
 
 #RECAPTURES (logit link, but don't have the treatment x period interaction)
 contrasts_recaps <- results_categorical %>%
@@ -210,7 +228,7 @@ contrasts_recaps <- results_categorical %>%
   mutate(emm = map(model, ~emmeans(., specs = ~control_treatment))) %>%
   mutate(emm_regrid = map(emm, ~regrid(., transform = "log"))) %>%
   mutate(contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response")))) %>%
-  mutate(contrast_pval_check = map(emm_regrid, ~summary(contrast(., interaction = "revpairwise"), type = "response")))
+  mutate(contrast_pval_check = map(emm_regrid, ~as.data.frame(summary(contrast(., interaction = "revpairwise"), type = "response"))))
 
 #BODY MASS (Gaussian, so change will be relative to ZERO, not 1)
 contrasts_body_mass <- results_categorical %>%
@@ -237,24 +255,6 @@ contrasts_of_contrasts <- contrasts_recaps %>%
   bind_rows(contrasts_body_mass)
 ```
 
-```{r, include = FALSE, eval = FALSE}
-#Check: compare p-value of coefficient of interest to p-value with contrast of interest; they should be pretty close
-results_categorical %>% filter(model_number == 1) %>% pull(summary)
-contrasts_of_contrasts %>% filter(model_number == 1) %>% pull(contrast_pval_check)                                
-                                 
-results_categorical %>% filter(model_number == 17) %>% pull(summary)
-contrasts_of_contrasts %>% filter(model_number == 17) %>% pull(contrast_pval_check) 
-
-results_categorical %>% filter(model_number == 29) %>% pull(summary)
-contrasts_of_contrasts %>% filter(model_number == 29) %>% pull(contrast_pval_check)
-
-results_categorical %>% filter(model_number == 33) %>% pull(summary)
-contrasts_of_contrasts %>% filter(model_number == 33) %>% pull(contrast_pval_check)
-
-results_categorical %>% filter(model_number == 21) %>% pull(summary)
-contrasts_of_contrasts %>% filter(model_number == 21) %>% pull(contrast_pval_check)
-```
-
 Extract contrast results
 ```{r step4d, messsage = FALSE}
 #Contrasts for control and treatment replicates separately
@@ -267,13 +267,99 @@ contrasts_df <- contrasts %>%
   select(-exp_phase_revpairwise) %>%
   select(model_number:contrast, control_treatment, ratio, lower.CL, upper.CL, everything())
 
-#Contrasts for treatment effect; for specialization models, this is the contrast representing the interaction term (contrast of contrasts)
+#Contrasts for treatment effect; for models with treatment x period interaction, this is the contrast representing that interaction term (contrast of contrasts)
 contrasts_of_contrasts_df <- contrasts_of_contrasts %>%
   select(append(col_names, "contrast_of_contrast")) %>%
   unnest(contrast_of_contrast) %>%
   arrange(model_number) %>%
   mutate_if(is.numeric, ~signif(., digits = 2)) %>%
   select(model_number:starts_with("control_treatment"), starts_with("exp_phase"), ratio, lower.CL, upper.CL, everything())
+
+#P-values reflecting treatment effect contrasts (from emmeans)
+#As a sanity check, I will compare them to the p-value associated with interaction term (from model summary)
+contrasts_of_contrasts_pvalues_df <- contrasts_of_contrasts %>%
+  select(append(col_names, "contrast_pval_check")) %>%
+  unnest(contrast_pval_check) %>%
+  arrange(model_number) %>%
+  mutate_if(is.numeric, ~signif(., digits = 3)) %>%
+  select(analysis, subanalysis, bird_group, plant_species, yvar, categorical_p_from_emmeans = p.value)
+```
+
+Combine all model results into summary table(s) for Supporting information
+```{r}
+#This table will include the relevant contrast for the experimental effect alongside the p-value associated with the interaction term
+results_supp_table <- results_tidy_confint %>%
+  filter(term == "control_treatmenttreatment:exp_phasepost" | term == "log_calories_removed_per_ha:exp_phasepost" |
+           (subanalysis == "recaptures" & (term == "control_treatmenttreatment" | term == "log_calories_removed_per_ha"))) %>%
+  select(model_type, analysis, subanalysis, bird_group, plant_species, yvar, z = statistic, p = pvalue_round) %>%
+  pivot_wider(names_from = model_type, names_glue = "{model_type}_{.value}", values_from = c(z, p)) %>%
+  left_join(contrasts_of_contrasts_df) %>%
+  select(analysis:yvar, ratio, lower.CL, upper.CL, starts_with("categorical"), starts_with("quantitative")) %>%
+  
+  #For Supp info, may need to split into two tables: primary response variables + additional response variables
+  mutate(primary_vs_additional = ifelse(subanalysis == "recaptures" | subanalysis == "marked_birds" | subanalysis == "body_mass", "additional", "primary")) %>% 
+  mutate(analysis = factor(analysis, levels = c("captures", "telemetry", "camera_HETO", "camera_non-HETO", "camera_non-HETO_separate", "pollen_tubes"))) %>%
+  arrange(desc(primary_vs_additional), analysis)
+```
+
+```{r, eval = FALSE, include = FALSE}
+#Sanity check: to make sure I calculated the contrast of contrasts correctly, will compare p-value of coefficient of interest to p-value with contrast of interest; they should be pretty close.
+sanity_check <- results_supp_table %>%
+  rename(categorical_p_from_model = categorical_p) %>%
+  left_join(contrasts_of_contrasts_pvalues_df) %>%
+  select(analysis, subanalysis, bird_group, plant_species, yvar, starts_with("categorical_p")) %>%
+  mutate(p_diff = abs(as.numeric(categorical_p_from_model) - categorical_p_from_emmeans)) %>%
+  arrange(desc(p_diff))
+
+####################################################################################
+#P-values are pretty close, except for the telemetry models. Will explore further...
+telemetry_test_model <- telemetry %>%
+  filter(model_type == "categorical" & bird_group == "all_spp" & subanalysis == "all_replicates") %>%
+  pull(model)
+
+telemetry_test_model <- telemetry_test_model[[1]]
+
+#P-value from model summary
+summary(telemetry_test_model) #p = 0.6101
+
+#P-value from Likelihood Ratio Test
+library(glmmTMB)
+dataset <- telemetry %>%
+  filter(model_type == "categorical" & bird_group == "all_spp" & subanalysis == "all_replicates") %>%
+  pull(data)
+
+dataset <- dataset[[1]]
+
+telemetry_test_model_no_interaction <- update(telemetry_test_model, ".~. - control_treatment:exp_phase", data = dataset)
+anova(telemetry_test_model, telemetry_test_model_no_interaction) #p = 0.6063
+
+#Seems like model summary p-value is indeed correct, so seems like it's related to emmeans...
+
+#EMMEANS
+#Estimated marginal means, back-transformed
+emmeans(telemetry_test_model, specs = ~exp_phase:control_treatment, type = "response") 
+
+#Contrasts as risk ratios
+emm = emmeans(telemetry_test_model, specs = ~exp_phase:control_treatment)
+emm_regrid = regrid(emm, transform = "log")
+contrast(emm_regrid, interaction = "revpairwise") %>% summary(type = "response") #p = 0.4954
+contrast(emm, interaction = "revpairwise") %>% summary(type = "response") #p = 0.6119 --> OK, get the correct p-value if do not use regrid! Which makes sense, since statistical tests should be run on the scale of the model, rather than the backtransformed data
+```
+
+Create summary of sample sizes for Supporting information
+```{r}
+#Extract number of control and treatment replicates for each dataset
+#Will be the same for both model types (categorical and quantitative), so only need one
+sample_size <- results_categorical %>%
+  select(append(append(col_names, "num_obs"), "num_reps")) %>%
+  unnest(cols = num_reps) %>%
+  mutate(num_obs = unlist(num_obs)) %>%
+  pivot_wider(names_from = control_treatment, values_from = n) %>%
+  
+  #For Supp info, may need to split into two tables: primary response variables + additional response variables
+  mutate(primary_vs_additional = ifelse(subanalysis == "recaptures" | subanalysis == "marked_birds" | subanalysis == "body_mass", "additional", "primary")) %>% 
+  mutate(analysis = factor(analysis, levels = c("captures", "telemetry", "camera_HETO", "camera_non-HETO", "camera_non-HETO_separate", "pollen_tubes"))) %>%
+  arrange(desc(primary_vs_additional), analysis)
 ```
 
 ## Step 5: Plot results
@@ -298,7 +384,7 @@ title_size = size * 1.15
 shape_size = 1
 line_width = 0.25
 
-path_name <- c("results/statistical_analysis/figures")
+path_name <- c("../../results/statistical_analysis/figures")
 ```
 
 **Make interaction plots**
@@ -307,22 +393,34 @@ path_name <- c("results/statistical_analysis/figures")
 #If want to have common axis scaling across variables that will be in same plot, can group again and take max across those variables
 max_values <- emmeans_df %>%
   group_by(analysis, subanalysis, plant_species) %>%
-  summarise(ymax = round(max(conf.high) + 0.5, 0)) %>%
+  summarise(ymax = round(max(upper.CL) + 0.5, 0)) %>%
   ungroup() %>%
   mutate(ymin = 0) %>%
   mutate(ybreak = 1) %>%
   mutate(yaccuracy = 1)
 
+#Make a bunch of interaction plots
 #Adjust axis limits and breaks as needed (NOTE: body mass plot was kind of complicated so tailored it in function)
-#Make a bunch of plots
-interaction_plots <- emmeans_for_plots %>%
+#Filter emmeans data to each analysis
+interaction_plots <- results_categorical %>%
   filter(subanalysis != "recaptures") %>%
   left_join(max_values) %>%
-  mutate(ymax = ifelse(analysis == "camera_non-HETO" & subanalysis == "all_birds" & bird_group == "greh_visa", 1, ymax)) %>%
+  mutate(ymax = ifelse(analysis == "camera_non-HETO" & subanalysis == "all_birds" & bird_group == "greh_visa", 3, ymax)) %>%
+  mutate(ymax = ifelse(analysis == "telemetry", 0.6, ymax)) %>%
   mutate(ybreak = ifelse(analysis == "camera_HETO" & subanalysis == "all_birds", 3, ybreak)) %>%
   mutate(ybreak = ifelse(analysis == "pollen_tubes" | analysis == "telemetry", 25, ybreak)) %>%
   mutate(ybreak = ifelse(analysis == "captures" & subanalysis == "captures", 3, ybreak)) %>%
-  mutate(interaction_plot = pmap(list(ggeffects, yvar, ymin, ymax, ybreak, yaccuracy), ~make_interaction_plot(ggeffects_df = ..1, yvar = ..2, ymin = ..3, ymax = ..4, ybreak = ..5, yaccuracy = ..6, text_size = size, point_size = shape_size, line_size = line_width, as_percent = TRUE)))
+  mutate(emmeans_data = map(model_number, ~filter(emmeans_df, model_number == .))) %>%
+  mutate(interaction_plot = pmap(list(emmeans_data, yvar, ymin, ymax, ybreak, yaccuracy), ~make_interaction_plot(emmeans_df = ..1, yvar = ..2, ymin = ..3, ymax = ..4, ybreak = ..5, yaccuracy = ..6, text_size = size, point_size = shape_size, line_size = line_width, as_percent = TRUE)))
+
+#Make control vs. treatment plots
+#This is only for recapture probability (recaptures were only quantified during 'post' period)
+control_vs_treatment_plots <- results_categorical %>%
+  filter(subanalysis == "recaptures") %>%
+  left_join(max_values) %>%
+  arrange(bird_group) %>%
+  mutate(emmeans_data = map(model_number, ~filter(emmeans_df, model_number == .))) %>%
+  mutate(control_vs_treatment_plot = pmap(list(emmeans_data, yvar, ymin, ymax, ybreak, yaccuracy), ~make_control_vs_treatment_plot(emmeans_df = ..1, yvar = ..2, ymin = ..3, ymax = ..4, ybreak = ..5, yaccuracy = ..6, text_size = size, point_size = shape_size, line_size = line_width, as_percent = TRUE)))
 ```
 
 **Make contrast plots**
@@ -473,11 +571,11 @@ telemetry_multiplot <- ggarrange(plotlist = telemetry_plots, nrow = 1, ncol = 3,
 #CAPTURES + TELEMETRY
 #First, get legend for interaction plots; will handle it separately because contrast plot doesn't have legend (which makes alignment go wonky)
 interaction_plot_legend <- get_legend(capture_interaction_plots$interaction_plot[[1]])
-legend_arranged <- ggarrange(interaction_plot_legend, NA, nrow = 1, ncol = 2, widths = c(1, 0.5)) #This makes the legend centered under the interaction plots instead of under all plots
+legend_arranged <- ggarrange(interaction_plot_legend, NULL, nrow = 1, ncol = 2, widths = c(1, 0.5)) #This makes the legend centered under the interaction plots instead of under all plots
 
-captures_telemetry_multiplot <- ggarrange(captures_multiplot, NA, telemetry_multiplot, NA, legend_arranged, nrow = 5, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05))
+captures_telemetry_multiplot <- ggarrange(captures_multiplot, NULL, telemetry_multiplot, NULL, legend_arranged, nrow = 5, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05))
 ggview::ggview(captures_telemetry_multiplot, width = column1.5x, height = column1.5x*0.75, units = "px")
-ggsave(file.path(path_name, "Fig3_Captures_and_Telemetry.png"), captures_telemetry_multiplot, dpi = 300, width = column1.5x, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
+ggsave(file.path(path_name, "Fig4_Captures_and_Telemetry.png"), captures_telemetry_multiplot, dpi = 300, width = column1.5x, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
 ```
 
 Figure 4: Flower visitation
@@ -502,7 +600,7 @@ nonheto_visits_plots <- list(nonheto_visits_interaction_plots$interaction_plot[[
 
 nonheto_visits_multiplot <- ggarrange(plotlist = nonheto_visits_plots, nrow = 1, ncol = 3, legend = "none", align = "hv",
                                  labels = c("(d)", "(e)", "(f)"), font.label = list(size = label_size, face = "plain"), label.x = 0.16, label.y = 0.96) %>%
-  annotate_figure(top = text_grob(expression("Flower visitation: non-"*italic(Heliconia)~"analyzed together ("*italic(N)~"= 30 species)"), size = title_size, face = "plain",  hjust = 0, x = 0.00))
+  annotate_figure(top = text_grob(expression("Flower visitation: non-"*italic(Heliconia)~"analyzed together ("*italic(N)~"= 30 species)"), size = title_size, face = "plain", hjust = 0, x = 0.00))
 
 #FLOWER VISITATION: NON-HETO, INDIVIDUAL SPECIES
 #Not technically a panel plot but I'm calling it that for consistency
@@ -510,9 +608,9 @@ nonheto_contrast_multiplot <- ggarrange(nonheto_contrast_plot, labels = c("(g)")
   annotate_figure(top = text_grob(expression("Flower visitation: non-"*italic(Heliconia)~"analyzed separately ("*italic(N)~"= 9 species with largest sample sizes)"), size = title_size, face = "plain",  hjust = 0, x = 0.00))
 
 #FLOWER VISITATION: HETO, NON-HETO TOGETHER, + NON-HETO SEPARATELY
-flower_visits_multiplot <- ggarrange(heto_visits_multiplot, NA, nonheto_visits_multiplot, NA, legend_arranged, NA, nonheto_contrast_multiplot, nrow = 7, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05, 0.05, 1))
+flower_visits_multiplot <- ggarrange(heto_visits_multiplot, NULL, nonheto_visits_multiplot, NULL, legend_arranged, NULL, nonheto_contrast_multiplot, nrow = 7, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05, 0.05, 1))
 ggview::ggview(flower_visits_multiplot, width = column1.5x, height = column1.5x*1.08, units = "px")
-ggsave(file.path(path_name, "Fig4_Camera_visitation.png"), flower_visits_multiplot, dpi = 300, width = column1.5x, height = column1.5x*1.08, units = "px", bg = "white", device = "tiff")
+ggsave(file.path(path_name, "Fig5_Camera_visitation.png"), flower_visits_multiplot, dpi = 300, width = column1.5x, height = column1.5x*1.08, units = "px", bg = "white", device = "tiff")
 ```
 
 Figure 5: Pollination success
@@ -538,11 +636,11 @@ hapa_pollination_multiplot <- ggarrange(plotlist = hapa_pollination_plots, nrow 
   annotate_figure(top = text_grob(expression("Pollination success:"~italic("Hamelia patens")), size = title_size, face = "plain", hjust = 0, x = 0))
   
 #POLLINATION: HETO + HAPA
-#legend_arranged <- ggarrange(interaction_plot_legend, NA, nrow = 1, ncol = 2, widths = c(1, 0.75)) #This makes the legend centered under the interaction plots instead of under all plots. However, depending on export size, the first part gets cut off.
+#legend_arranged <- ggarrange(interaction_plot_legend, NULL, nrow = 1, ncol = 2, widths = c(1, 0.75)) #This makes the legend centered under the interaction plots instead of under all plots. However, depending on export size, the first part gets cut off.
 
-pollination_multiplot <- ggarrange(heto_pollination_multiplot, NA, hapa_pollination_multiplot, NA, interaction_plot_legend, nrow = 5, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05))
+pollination_multiplot <- ggarrange(heto_pollination_multiplot, NULL, hapa_pollination_multiplot, NULL, interaction_plot_legend, nrow = 5, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05))
 ggview::ggview(pollination_multiplot,  width =  column1.5x*0.66, height = column1.5x*0.75, units = "px")
-ggsave(file.path(path_name, "Fig5_Pollination.png"), pollination_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
+ggsave(file.path(path_name, "Fig6_Pollination.png"), pollination_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
 ```
 
 Figure 6: Additional response variables (recaptures, visitation from individual marked birds, relative body mass)
@@ -555,21 +653,14 @@ marked_birds_multiplot <-  ggarrange(heto_visits_marked_contrast_plot, nonheto_v
     annotate_figure(top = text_grob("Flower visitation from marked birds", size = title_size, face = "plain"))
 
 #Combine
-additional_vars_multiplot <- ggarrange(recaps_body_mass_multiplot, NA, marked_birds_multiplot, nrow = 3, ncol = 1, heights = c(1, 0.05, 1), font.label = list(size = label_size, face = "plain"))
+additional_vars_multiplot <- ggarrange(recaps_body_mass_multiplot, NULL, marked_birds_multiplot, nrow = 3, ncol = 1, heights = c(1, 0.05, 1), font.label = list(size = label_size, face = "plain"))
 ggview::ggview(additional_vars_multiplot, width =  column1.5x*0.66, height = column1.5x*0.75, units = "px")
-ggsave(file.path(path_name, "Fig6_Additional_response_variables.png"), additional_vars_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
+ggsave(file.path(path_name, "Fig7_Additional_response_variables.png"), additional_vars_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
 ```
 
 Figure SX: Interaction plots for additional response variables
 ```{r}
 #RECAPTURES
-#Note: recaptures has control vs. treatment plot (not an interaction plot!) since recaptures were only quantified during 'post' period
-control_vs_treatment_plots <- emmeans_for_plots %>%
-  left_join(max_values) %>%
-  filter(subanalysis == "recaptures") %>%
-  arrange(bird_group) %>%
-  mutate(control_vs_treatment_plot = pmap(list(ggeffects, yvar, ymin, ymax, ybreak, yaccuracy), ~make_control_vs_treatment_plot(ggeffects_df = ..1, yvar = ..2, ymin = ..3, ymax = ..4, ybreak = ..5, yaccuracy = ..6, text_size = size, point_size = shape_size, line_size = line_width, as_percent = TRUE)))
-
 control_vs_treatment_plots$control_vs_treatment_plot
 
 #BODY MASS + VISITATION FROM MARKED BIRDS
@@ -587,20 +678,21 @@ additional_vars_interaction_multiplot <- ggarrange(plotlist = additional_vars_su
 additional_vars_interaction_multiplot
 ggview::ggview(additional_vars_interaction_multiplot, width =  column1.5x*0.66, height = column1.5x*1.33, units = "px")
 ggsave(file.path(path_name, "FigSX_Additional_response_variables_interactions.png"), additional_vars_interaction_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*1.33, units = "px", bg = "white", device = "tiff")
-
-#BODY MASS ONLY
-# body_mass_interaction_multiplot <- ggarrange(plotlist = body_mass_interaction_plots$interaction_plot, nrow = 1, ncol = 2, common.legend = TRUE, legend = "bottom", align = "hv", labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.17, label.y = 0.96)
-# ggview::ggview(body_mass_interaction_multiplot, width =  column1.5x*0.66, height = column1.5x*0.375, units = "px")
 ```
 
 ## Step 6: Export results 
 ```{r}
 #SUMMARY TABLES
 path_name <- c("../../results/statistical_analysis/tables")
-write.csv(results_tidy_confint, file.path(path_name, "Hummingbird_persistence_results_summary_tables.csv"))
-write.csv(sample_size, file.path(path_name, "Hummingbird_persistence_results_sample_size_summary.csv"))
+
+#All results tables
+write.csv(results_tidy_confint, file.path(path_name, "Hummingbird_persistence_results_model_summaries.csv"))
 write.csv(emmeans_df, file.path(path_name,"Hummingbird_persistence_results_emmeans.csv"))
 write.csv(contrasts_df, file.path(path_name,"Hummingbird_persistence_results_contrasts.csv"))
 write.csv(contrasts_of_contrasts_df, file.path(path_name, "Hummingbird_persistence_results_contrasts_of_contrasts.csv"))
+
+#Tables for Supporting information
+write.csv(results_supp_table, file.path(path_name, "Hummingbird_persistence_results_overall_summary.csv"))
+write.csv(sample_size, file.path(path_name, "Hummingbird_persistence_results_sample_size_summary.csv"))
 ```
 
