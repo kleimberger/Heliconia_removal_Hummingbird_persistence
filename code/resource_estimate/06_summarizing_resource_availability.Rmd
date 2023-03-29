@@ -423,14 +423,14 @@ resource_data_sum_calories_subset <- resource_data_to_summarize_with_weights %>%
   group_by(bird_group, count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_calories = sum(calories_per_plant, na.rm = TRUE)) %>%
   ungroup() %>%
-  mutate(estimate_name = "med")
+  mutate(estimate_name = "low_estimate")
 
 #Summarize for WEIGHTED
 resource_data_sum_calories_weighted <- resource_data_to_summarize_with_weights %>%
   group_by(bird_group, count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_calories = sum(weighted_calories_per_plant, na.rm = TRUE)) %>%
   ungroup() %>%
-  mutate(estimate_name = "high")
+  mutate(estimate_name = "high_estimate")
 ```
 
 ## Step 11: Tailor estimates to hummingbird species groups, part III: calculate percentage calories removed using the tailored estimates
@@ -438,7 +438,7 @@ resource_data_sum_calories_weighted <- resource_data_to_summarize_with_weights %
 Combine all estimates + calculate percentage of calories removed
 ```{r step11}
 percentage_calories_removed_tailored <- resource_data_sum_calories %>%
-  mutate(estimate_name = "low") %>%
+  mutate(estimate_name = "base_estimate") %>%
   mutate(bird_group = "all_spp") %>%
   bind_rows(resource_data_sum_calories_subset) %>%
   bind_rows(resource_data_sum_calories_weighted) %>%
@@ -453,9 +453,9 @@ percentage_calories_removed_tailored <- resource_data_sum_calories %>%
 #Get into format of Supp table
 percentage_calories_removed_tailored_supp <- percentage_calories_removed_tailored %>%
   select(estimate_name, count_estimate_high_low, bird_group, year, patch, control_treatment, percentage_removed) %>% 
-  filter(count_estimate_high_low == "high") %>%
+  filter(count_estimate_high_low == "high") %>% #i.e., assuming unknown count unit of inflorescences vs. flower
   pivot_wider(names_from = c(estimate_name, bird_group), values_from = percentage_removed) %>%
-  arrange("low_all_spp")
+  arrange("base_estimate_all_spp")
 
 #Summary stats
 percentage_calories_removed_tailored_sum <- percentage_calories_removed_tailored %>%
@@ -522,13 +522,14 @@ plot_theme =
 
 data_for_boxplots <- percentage_calories_removed_tailored %>%
   filter(count_estimate_high_low == "high") %>%
+  filter(estimate_name == "low_estimate" | estimate_name == "high_estimate") %>%
   mutate(bird_group = factor(bird_group, levels = c("all_spp", "greh_visa"))) %>%
-  mutate(estimate_name = factor(estimate_name, levels = c("low", "med", "high"), labels = c("Low estimate", "Medium estimate", "High estimate")))
+  mutate(estimate_name = factor(estimate_name, levels = c("low_estimate", "high_estimate"), labels = c("Low estimate", "High estimate")))
 
 percentage_calories_removed_boxplots <-  data_for_boxplots %>%
   ggplot(data = ., aes(x = bird_group, y = percentage_removed)) +
     facet_grid(. ~ estimate_name, scales = "free_x") +
-    geom_boxplot(position = position_nudge(x = 0, y = 0), width = 0.15, outlier.shape = NA, alpha = 1, fill = "grey80", size = line_width) +
+    geom_boxplot(position = position_nudge(x = 0, y = 0), width = 0.15, outlier.shape = NA, alpha = 1, fill = "grey80", linewidth = line_width) +
     geom_point(position = position_nudge(x = 0.15, y = 0), size = shape_size/2, colour = "black", alpha = 0.6, stroke = line_width) +
     labs(x = "Hummingbird group", y = "Calories removed (%)") +
     stat_summary(fun = mean, geom = "point", shape = 23, size = shape_size, color = "#BA0022", fill = "#BA0022") +
@@ -536,7 +537,7 @@ percentage_calories_removed_boxplots <-  data_for_boxplots %>%
     plot_theme +
     scale_x_discrete(labels = c("All species", expression(italic(Heliconia)~"specialists")))
 
-# percentage_calories_removed_boxplots
+percentage_calories_removed_boxplots
 ```
 
 Combine weights and % calories removed boxplots into one multi-panel figure.
@@ -626,8 +627,8 @@ write.csv(heto_removed_as_treatment, "../../data/export/for_analysis/Heliconia_r
 write.csv(heto_removed, "../../data/export/supp_tables/Heliconia_resources_removed.csv", row.names = FALSE)
 write.csv(heto_removed_sum, "../../data/export/supp_tables/Heliconia_resources_removed_sum.csv", row.names = FALSE)
 write.csv(weights_for_supp_data, "../../data/export/supp_tables/Weights_for_resource_estimate.csv", row.names = FALSE)
-write.csv(percentage_calories_removed_tailored_supp, "../../data/export/supp_tables/Proportion_calories_removed.csv", row.names = FALSE)
-write.csv(percentage_calories_removed_tailored_sum, "../../data/export/supp_tables/Proportion_calories_removed_sum.csv", row.names = FALSE)
+write.csv(percentage_calories_removed_tailored_supp, "../../data/export/supp_tables/Percentage_calories_removed.csv", row.names = FALSE)
+write.csv(percentage_calories_removed_tailored_sum, "../../data/export/supp_tables/Percentage_calories_removed_sum.csv", row.names = FALSE)
 write.csv(heto_densities, "../../data/export/supp_tables/Heliconia_densities.csv", row.names = FALSE)
 write.csv(heto_densities_sum, "../../data/export/supp_tables/Heliconia_densities_sum.csv", row.names = FALSE)
 write.csv(species_per_site_sum, "../../data/export/supp_tables/Plant_species_per_site_sum.csv", row.names = FALSE)
