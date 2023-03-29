@@ -190,7 +190,7 @@ make_contrast_plot <- function(contrasts_df, xvar, xlabel = "", text_size, point
       annotate("rect", xmin = -Inf, xmax = Inf, ymax = 0.5, ymin = 0, alpha = alpha_value, fill = fill_color) +
       geom_point(position = position_dodge(.5), shape = 18, size = point_size) + 
       geom_errorbar(data = plot_data, aes(x = forcats::fct_reorder(.data[[xvar]], order), y = ratio, ymin = lower.CL, ymax = upper.CL, group = bird_group), position = position_dodge(.5), width = 0, linewidth = line_size) + # error bars show 95% confidence intervals
-      geom_hline(yintercept = 1, color = "black", linetype = "dashed", alpha = 0.8, line_width = line_size) + # add a line at 1 (no effect)
+      geom_hline(yintercept = 1, color = "black", linetype = "dashed", alpha = 0.8, linewidth = line_size) + # add a line at 1 (no effect)
       theme_bw(base_size = text_size) +
       labs(x = xlabel, y = "Experimental effect") +
       theme(panel.grid.major = element_blank(),

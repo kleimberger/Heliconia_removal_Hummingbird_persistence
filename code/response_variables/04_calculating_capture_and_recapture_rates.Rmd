@@ -274,22 +274,21 @@ There were 3 *additional* instances where no GREH or VISA were captured during p
 - 2017 p200 (treatment)
 - 2018 p137 (control) --> also no GREH/VISA during post period
 
-Need to decide whether or not to include replicates that didn't have any captures during 'pre'period. Including would be biased *against* finding a treatment effect (decline in capture numbers), since you can only go up from zero. 
+Need to decide whether or not to include replicates that didn't have any captures during 'pre' period. Including would be biased *against* finding a treatment effect (decline in capture numbers), since you can only go up from zero.
 
-DECISION: For space use variables (captures + telemetry), remove replicates without confirmed presence of hummingbird(s) in focal area during 'pre' period.
+DECISION: For space use variables (captures + telemetry), remove replicates without confirmed presence of hummingbird(s) in focal area during 'pre' period. This also makes since because if bird was not using site during pre period, we wouldn't expect them to register our treatment.
 ```{r}
 no_birds_in_pre_replicates <- capture_rates %>%
   filter(exp_phase == "capture_1" & num_birds == 0) %>%
-  mutate(birds_in_pre = "no")
+  mutate(year_patch_bird_group = paste(year, patch, bird_group, sep = "_"))
 
 no_birds_in_pre_replicates
 
 #This is a consistent problem in p137 and p200 (across years)
 
 capture_rates_birds_in_pre_only <- capture_rates %>%
-  left_join(no_birds_in_pre_replicates) %>%
-  filter(is.na(birds_in_pre)) %>%
-  select(-birds_in_pre)
+  mutate(year_patch_bird_group = paste(year, patch, bird_group, sep = "_")) %>%
+  filter(!(year_patch_bird_group %in% no_birds_in_pre_replicates$year_patch_bird_group))
 ```
 
 ## Step 6: Summarize recapture data for analysis

@@ -629,33 +629,34 @@ period</p>
 captured during pre period - 2016 p200 (control) - 2017 p200 (treatment)
 - 2018 p137 (control) –&gt; also no GREH/VISA during post period</p>
 <p>Need to decide whether or not to include replicates that didn’t have
-any captures during ’pre’period. Including would be biased
+any captures during ‘pre’ period. Including would be biased
 <em>against</em> finding a treatment effect (decline in capture
 numbers), since you can only go up from zero.</p>
 <p>DECISION: For space use variables (captures + telemetry), remove
 replicates without confirmed presence of hummingbird(s) in focal area
-during ‘pre’ period.</p>
+during ‘pre’ period. This also makes since because if bird was not using
+site during pre period, we wouldn’t expect them to register our
+treatment.</p>
 <pre class="r"><code>no_birds_in_pre_replicates &lt;- capture_rates %&gt;%
   filter(exp_phase == &quot;capture_1&quot; &amp; num_birds == 0) %&gt;%
-  mutate(birds_in_pre = &quot;no&quot;)
+  mutate(year_patch_bird_group = paste(year, patch, bird_group, sep = &quot;_&quot;))
 
 no_birds_in_pre_replicates</code></pre>
 <pre><code>## # A tibble: 5 × 10
-##   bird_…¹ year  patch contr…² date       exp_p…³ net_h…⁴ num_b…⁵ captu…⁶ birds…⁷
+##   bird_…¹ year  patch contr…² date       exp_p…³ net_h…⁴ num_b…⁵ captu…⁶ year_…⁷
 ##   &lt;chr&gt;   &lt;chr&gt; &lt;chr&gt; &lt;chr&gt;   &lt;date&gt;     &lt;chr&gt;     &lt;dbl&gt;   &lt;dbl&gt;   &lt;dbl&gt; &lt;chr&gt;  
-## 1 all_spp 2017  137   control 2017-02-28 captur…    48.1       0       0 no     
-## 2 greh_v… 2016  200   control 2016-04-07 captur…    16.9       0       0 no     
-## 3 greh_v… 2017  137   control 2017-02-28 captur…    48.1       0       0 no     
-## 4 greh_v… 2017  200   treatm… 2017-03-24 captur…    49.5       0       0 no     
-## 5 greh_v… 2018  137   control 2018-03-07 captur…    34.7       0       0 no     
+## 1 all_spp 2017  137   control 2017-02-28 captur…    48.1       0       0 2017_1…
+## 2 greh_v… 2016  200   control 2016-04-07 captur…    16.9       0       0 2016_2…
+## 3 greh_v… 2017  137   control 2017-02-28 captur…    48.1       0       0 2017_1…
+## 4 greh_v… 2017  200   treatm… 2017-03-24 captur…    49.5       0       0 2017_2…
+## 5 greh_v… 2018  137   control 2018-03-07 captur…    34.7       0       0 2018_1…
 ## # … with abbreviated variable names ¹​bird_group, ²​control_treatment,
-## #   ³​exp_phase, ⁴​net_hours, ⁵​num_birds, ⁶​capture_rate, ⁷​birds_in_pre</code></pre>
+## #   ³​exp_phase, ⁴​net_hours, ⁵​num_birds, ⁶​capture_rate, ⁷​year_patch_bird_group</code></pre>
 <pre class="r"><code>#This is a consistent problem in p137 and p200 (across years)
 
 capture_rates_birds_in_pre_only &lt;- capture_rates %&gt;%
-  left_join(no_birds_in_pre_replicates) %&gt;%
-  filter(is.na(birds_in_pre)) %&gt;%
-  select(-birds_in_pre)</code></pre>
+  mutate(year_patch_bird_group = paste(year, patch, bird_group, sep = &quot;_&quot;)) %&gt;%
+  filter(!(year_patch_bird_group %in% no_birds_in_pre_replicates$year_patch_bird_group))</code></pre>
 </div>
 <div id="step-6-summarize-recapture-data-for-analysis" class="section level2">
 <h2>Step 6: Summarize recapture data for analysis</h2>
