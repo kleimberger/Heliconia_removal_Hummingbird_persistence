@@ -210,8 +210,7 @@ contrasts_cameras_captures <- results_categorical %>%
   filter(analysis == "camera_HETO" | analysis == "camera_non-HETO" | analysis == "camera_non-HETO_separate" | (analysis == "captures" & subanalysis == "captures")) %>%
   mutate(emm = map(model, ~emmeans(., specs = ~exp_phase:control_treatment))) %>%
   mutate(contrast = map(emm, ~as.data.frame(confint(contrast(., method = "revpairwise", by = c("control_treatment")), type = "response")))) %>%
-  mutate(contrast_of_contrast = map(emm, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response")))) %>%
-  mutate(contrast_pval_check = map(emm, ~as.data.frame(summary(contrast(., interaction = "revpairwise"), type = "response"))))
+  mutate(contrast_of_contrast = map(emm, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response"))))
 
 #TELEMETRY AND POLLEN TUBES (logit link)
 contrasts_telemetry_pollen_tubes <- results_categorical %>%
@@ -219,16 +218,14 @@ contrasts_telemetry_pollen_tubes <- results_categorical %>%
   mutate(emm = map(model, ~emmeans(., specs = ~exp_phase:control_treatment))) %>%
   mutate(emm_regrid = map(emm, ~regrid(., transform = "log"))) %>%
   mutate(contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise", by = c("control_treatment")), type = "response")))) %>%
-  mutate(contrast_of_contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response")))) %>%
-  mutate(contrast_pval_check = map(emm_regrid, ~as.data.frame(summary(contrast(., interaction = "revpairwise"), type = "response"))))
+  mutate(contrast_of_contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response"))))
 
 #RECAPTURES (logit link, but don't have the treatment x period interaction)
 contrasts_recaps <- results_categorical %>%
   filter(subanalysis == "recaptures") %>%
   mutate(emm = map(model, ~emmeans(., specs = ~control_treatment))) %>%
   mutate(emm_regrid = map(emm, ~regrid(., transform = "log"))) %>%
-  mutate(contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response")))) %>%
-  mutate(contrast_pval_check = map(emm_regrid, ~as.data.frame(summary(contrast(., interaction = "revpairwise"), type = "response"))))
+  mutate(contrast = map(emm_regrid, ~as.data.frame(confint(contrast(., interaction = "revpairwise"), type = "response"))))
 
 #BODY MASS (Gaussian, so change will be relative to ZERO, not 1)
 contrasts_body_mass <- results_categorical %>%
@@ -274,15 +271,6 @@ contrasts_of_contrasts_df <- contrasts_of_contrasts %>%
   arrange(model_number) %>%
   mutate_if(is.numeric, ~signif(., digits = 2)) %>%
   select(model_number:starts_with("control_treatment"), starts_with("exp_phase"), ratio, lower.CL, upper.CL, everything())
-
-#P-values reflecting treatment effect contrasts (from emmeans)
-#As a sanity check, I will compare them to the p-value associated with interaction term (from model summary)
-contrasts_of_contrasts_pvalues_df <- contrasts_of_contrasts %>%
-  select(append(col_names, "contrast_pval_check")) %>%
-  unnest(contrast_pval_check) %>%
-  arrange(model_number) %>%
-  mutate_if(is.numeric, ~signif(., digits = 3)) %>%
-  select(analysis, subanalysis, bird_group, plant_species, yvar, categorical_p_from_emmeans = p.value)
 ```
 
 Combine all model results into summary table(s) for Supporting information
@@ -300,50 +288,6 @@ results_supp_table <- results_tidy_confint %>%
   mutate(primary_vs_additional = ifelse(subanalysis == "recaptures" | subanalysis == "marked_birds" | subanalysis == "body_mass", "additional", "primary")) %>% 
   mutate(analysis = factor(analysis, levels = c("captures", "telemetry", "camera_HETO", "camera_non-HETO", "camera_non-HETO_separate", "pollen_tubes"))) %>%
   arrange(desc(primary_vs_additional), analysis)
-```
-
-```{r, eval = FALSE, include = FALSE}
-#Sanity check: to make sure I calculated the contrast of contrasts correctly, will compare p-value of coefficient of interest to p-value with contrast of interest; they should be pretty close.
-sanity_check <- results_supp_table %>%
-  rename(categorical_p_from_model = categorical_p) %>%
-  left_join(contrasts_of_contrasts_pvalues_df) %>%
-  select(analysis, subanalysis, bird_group, plant_species, yvar, starts_with("categorical_p")) %>%
-  mutate(p_diff = abs(as.numeric(categorical_p_from_model) - categorical_p_from_emmeans)) %>%
-  arrange(desc(p_diff))
-
-####################################################################################
-#P-values are pretty close, except for the telemetry models. Will explore further...
-telemetry_test_model <- telemetry %>%
-  filter(model_type == "categorical" & bird_group == "all_spp" & subanalysis == "all_replicates") %>%
-  pull(model)
-
-telemetry_test_model <- telemetry_test_model[[1]]
-
-#P-value from model summary
-summary(telemetry_test_model) #p = 0.6101
-
-#P-value from Likelihood Ratio Test
-library(glmmTMB)
-dataset <- telemetry %>%
-  filter(model_type == "categorical" & bird_group == "all_spp" & subanalysis == "all_replicates") %>%
-  pull(data)
-
-dataset <- dataset[[1]]
-
-telemetry_test_model_no_interaction <- update(telemetry_test_model, ".~. - control_treatment:exp_phase", data = dataset)
-anova(telemetry_test_model, telemetry_test_model_no_interaction) #p = 0.6063
-
-#Seems like model summary p-value is indeed correct, so seems like it's related to emmeans...
-
-#EMMEANS
-#Estimated marginal means, back-transformed
-emmeans(telemetry_test_model, specs = ~exp_phase:control_treatment, type = "response") 
-
-#Contrasts as risk ratios
-emm = emmeans(telemetry_test_model, specs = ~exp_phase:control_treatment)
-emm_regrid = regrid(emm, transform = "log")
-contrast(emm_regrid, interaction = "revpairwise") %>% summary(type = "response") #p = 0.4954
-contrast(emm, interaction = "revpairwise") %>% summary(type = "response") #p = 0.6119 --> OK, get the correct p-value if do not use regrid! Which makes sense, since statistical tests should be run on the scale of the model, rather than the backtransformed data
 ```
 
 Create summary of sample sizes for Supporting information
@@ -536,7 +480,7 @@ body_mass_contrast_plot <- contrasts_of_contrasts_df %>%
   make_contrast_plot(contrasts_df = ., xvar = "bird_group", xlabel = "Bird group", text_size = size, point_size = shape_size, line_size = line_width) +
     scale_y_continuous(limits = c(-0.10, 0.10)) +
     scale_x_discrete(labels = c("All species", expression(italic(Heliconia)~"specialists"))) +
-    labs(title = "Bird condition\n(relative body mass)") +
+    labs(title = "Body mass\n(relative to structural size)") +
     theme(plot.title = element_text(hjust = 0.5, size = size)) #center title
 
 body_mass_contrast_plot

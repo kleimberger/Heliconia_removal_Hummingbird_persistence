@@ -14,7 +14,7 @@ make_interaction_plot <- function(emmeans_df, yvar, ymin, ymax, ybreak, yaccurac
   if(yvar == "num_birds"){ylabel <-  c("Number of birds captured")}
   if(yvar == "prop_time_in_patch"){ylabel <- c("Time spent in focal area (%)")}
   if(yvar == "prop_with_tubes"){ylabel <- c("Flowers pollinated (%)")}
-  if(yvar == "relative_mass"){ylabel <- c("Relative body mass")}
+  if(yvar == "relative_mass"){ylabel <- c("Body mass")}
   
   #Group/legend labels
   group_labels <- c("control" = "Control", "treatment" = "Treatment")
