@@ -325,7 +325,7 @@ fit_model <- function(dataset){
 # (test09 <- fit_model_safely(dataset = data, plant_species = "COSTBAR"))
 
 #Initial model fitting for separate non-Heliconia plant species
-#Only look at species with at least 10 replicates/20 rows 
+#Only look at species with more than 10 replicates/20 rows 
 model_fitting_nonheto_separate <- nonheto_species_sample_size %>%
   filter(num_replicates > 10) %>%
   arrange(plant_species) %>%

@@ -28,9 +28,9 @@ Then, subset this dataset ('full dataset') into different datasets for different
 - Needs cameras to have data from pre AND post periods, because I'm interested in the pre-to-post change
 - Only includes data from pre and post periods, not videos reviewed outside of those periods
 
-2. 'Normal' (unmanipulated) dataset
+2. Natural (unmanipulated) dataset
 
-**Purpose:** Understand 'normal' visitation patterns in this study system. Use to tailor resource estimate to different hummingbird groups & understand 'normal' visitation to *Heliconia tortuosa.*
+**Purpose:** Understand natural visitation patterns in this study system. Use to tailor resource estimate to different hummingbird groups & understand natural visitation to *Heliconia tortuosa.*
 
 - Not bound by the requirements in #1. 
 - Only includes data from control replicates and 'pre' period of treatment replicates; do not want data affected by Heliconia removal
@@ -199,7 +199,7 @@ data_for_experiment %>%
   length()
 ```
 
-## Step 5: Filter data for 'normal' visitation
+## Step 5: Filter data for natural ('normal') visitation
 
 Remove data from 'post' period of treatment replicates (i.e., data affected by experimental *Heliconia* removal)
 ```{r step5}
@@ -311,7 +311,7 @@ duplicated_marks <- captures_marked_birds %>%
 num_marked_individuals_on_camera/num_marked_indivduals
 ```
 
-## Step 7: Explore data related to *Heliconia*, using 'normal' visitation data
+## Step 7: Explore data related to *Heliconia*, using natural ('normal') visitation data
 
 What species visit Heliconia?
 ```{r step7a}

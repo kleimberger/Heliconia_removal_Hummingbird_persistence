@@ -322,7 +322,7 @@ column1.5x <- 1476 #1.5 columns
 column2x <- 1961 #double column
 
 #Sizes for plot elements
-size = 6
+size = 6.5
 label_size = size
 title_size = size * 1.15
 shape_size = 1
@@ -549,7 +549,7 @@ nonheto_visits_multiplot <- ggarrange(plotlist = nonheto_visits_plots, nrow = 1,
 #FLOWER VISITATION: NON-HETO, INDIVIDUAL SPECIES
 #Not technically a panel plot but I'm calling it that for consistency
 nonheto_contrast_multiplot <- ggarrange(nonheto_contrast_plot, labels = c("(g)"), font.label = list(size = label_size, face = "plain"), label.x = 0.16/3, label.y = 0.96) %>%
-  annotate_figure(top = text_grob(expression("Flower visitation: non-"*italic(Heliconia)~"analyzed separately ("*italic(N)~"= 9 species with largest sample sizes)"), size = title_size, face = "plain",  hjust = 0, x = 0.00))
+  annotate_figure(top = text_grob(expression("Flower visitation: non-"*italic(Heliconia)~"analyzed separately ("*italic(N)~"= 9 species)"), size = title_size, face = "plain",  hjust = 0, x = 0.00))
 
 #FLOWER VISITATION: HETO, NON-HETO TOGETHER, + NON-HETO SEPARATELY
 flower_visits_multiplot <- ggarrange(heto_visits_multiplot, NULL, nonheto_visits_multiplot, NULL, legend_arranged, NULL, nonheto_contrast_multiplot, nrow = 7, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05, 0.05, 1))
