@@ -617,11 +617,11 @@ additional_vars_interaction_plots$interaction_plot
 #Combine into one multiplot
 additional_vars_supp_plots <- append(control_vs_treatment_plots$control_vs_treatment_plot, additional_vars_interaction_plots$interaction_plot)
 
-additional_vars_interaction_multiplot <- ggarrange(plotlist = additional_vars_supp_plots, nrow = 4, ncol = 2, common.legend = TRUE, legend = "bottom", align = "hv", labels = c("(a)", "(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)"), font.label = list(size = label_size, face = "plain"), label.x = 0.17, label.y = 0.96)
+additional_vars_interaction_multiplot <- ggarrange(plotlist = additional_vars_supp_plots, nrow = 4, ncol = 2, common.legend = TRUE, legend = "bottom", align = "hv", labels = c("(a)", "(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)"), font.label = list(size = label_size, face = "plain"), label.x = c(rep(0.18, 5), 0.19, 0.18, 0.18), label.y = 0.96)
 
 additional_vars_interaction_multiplot
 ggview::ggview(additional_vars_interaction_multiplot, width =  column1.5x*0.66, height = column1.5x*1.33, units = "px")
-ggsave(file.path(path_name, "FigSX_Additional_response_variables_interactions.png"), additional_vars_interaction_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*1.33, units = "px", bg = "white", device = "tiff")
+ggsave(file.path(path_name, "FigS3_Additional_response_variables_interactions.png"), additional_vars_interaction_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*1.33, units = "px", bg = "white", device = "tiff")
 ```
 
 ## Step 6: Export results 

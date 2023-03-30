@@ -454,7 +454,7 @@ write.csv(data_for_analysis, "../../data/export/for_analysis/Relative_body_mass.
 
 #Multiplot of log(mass) ~ log(wing length) regressions
 path_name <- c("../../results/statistical_analysis/figures")
-ggsave(filename = file.path(path_name, "FigSX_Allometric_regression_plots.png"), plot = mass_wing_regressions_multiplot, height = 11.5, width = 15)
+ggsave(filename = file.path(path_name, "FigS2_Allometric_regression_plots.png"), plot = mass_wing_regressions_multiplot, height = 11.5, width = 15)
 
 #Responses to Heliconia removal
 saveRDS(results, "../../results/statistical_analysis/rds_files/Body_mass_results.rds")
