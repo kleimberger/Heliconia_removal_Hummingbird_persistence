@@ -26,7 +26,6 @@ library(glmmTMB)
 library(AICcmodavg)
 library(DHARMa)
 library(emmeans)
-library(ggeffects)
 
 #Packages for data wrangling
 library(dplyr)
@@ -152,11 +151,11 @@ If follow framework used in rest of analyses, I would have 4 models:
 However, here the question is not about visitation rates to HETO vs. non-HETO, so I will analyze all plant species together for simplicity. This approach yields 2 models:
 
 1. All plant species, All hummingbird species
-2. All plant species, Green hermits and Violet sabrewings (Heliconia specialists)
+2. All plant species, Green hermits and Violet Sabrewings ("*Heliconia* specialists")
 
 **Model fitting**
 
-For count data, there multiple possible distributions. I need to choose between Poisson and negative binomial (nbinom1 and nbinom2). Also, because the dataset does not include zeroes, I need a truncated distribution.
+For count data, there multiple possible distributions. I need to choose between Poisson and negative binomial (nbinom1 and nbinom2). Also, because the dataset does not include zeroes, I might need a truncated distribution.
 
 ALL HUMMINGBIRD SPECIES
 ```{r, fig.show='hide', results='hide'}
@@ -311,7 +310,7 @@ testGeneric(simulationOutput, summary = countFours, alternative = "greater")
 countFives <- function(x) sum(x == 5)  # testing for number of 5s
 testGeneric(simulationOutput, summary = countFives, alternative = "greater")
 
-#Seems like a tough dataset to analyze without using offset. Fewer 1s than expected but more of other numbers...?
+#Seems like a tough dataset to analyze without using offset. Fewer 1s than expected but more of other numbers.
 ```
 
 **Compile results**
@@ -320,47 +319,66 @@ model_all_spp <- model_fitting01$model[[7]]
 model_greh_visa <- model_fitting02$model[[8]]
 
 #Model summaries
-summary(model_all_spp)
-summary(model_greh_visa)
+results_tidy <- broom.mixed::tidy(model_all_spp) %>%
+  mutate(bird_group = "all_spp") %>%
+  bind_rows(broom.mixed::tidy(model_greh_visa)) %>%
+  mutate(bird_group = ifelse(is.na(bird_group), "greh_visa", bird_group)) %>%
+  select(bird_group, everything()) %>%
+  mutate(pvalue_round = format.pval(pv = round(p.value, 3), digits = 3, nsmall = 3, eps = 0.001)) %>%
+  mutate(across(c(estimate, std.error, statistic), ~round(., digits = 3))) %>%
+  select(-p.value)
 
 #Estimated marginal means
-#Condition argument (sightings = 1) gives the average sighting length (i.e., estimated amount of time, in seconds, for 1 sighting)
-(ggeffects_all_spp <- ggemmeans(model_all_spp, terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(sightings = 1)) %>%
+#Bias adjustment using random effect SDs
+bias_adjust_values <- results_tidy %>%
+  filter(effect == "ran_pars") %>%
+  mutate(estimate2 = estimate^2) %>%
+  group_by(bird_group) %>%
+  summarise(sum_estimate2 = sum(estimate2)) %>%
+  ungroup() %>%
+  mutate(sigma = sqrt(sum_estimate2))
+
+sigma_all_spp <- filter(bias_adjust_values, bird_group == "all_spp") %>% pull(sigma)
+sigma_greh_visa <- filter(bias_adjust_values, bird_group == "greh_visa") %>% pull(sigma)
+
+#Offset of 1 gives the average sighting length (i.e., estimated amount of time, in seconds, for 1 sighting)
+(emmeans_all_spp <- emmeans(model_all_spp, specs = ~exp_phase:control_treatment, type = "response", offset = log(1), bias.adjust = TRUE, sigma = sigma_all_spp) %>%
   as.data.frame() %>%
+  rename(estimate = response) %>%
   mutate_if(is.numeric, ~round(., digits = 2)))
 
-(ggeffects_greh_visa <- ggemmeans(model_greh_visa, terms = c("exp_phase", "control_treatment"), back.transform = TRUE, condition = c(sightings = 1)) %>%
+(emmeans_greh_visa <- emmeans(model_greh_visa, specs = ~exp_phase:control_treatment, type = "response", offset = log(1), bias.adjust = TRUE, sigma = sigma_greh_visa) %>%
   as.data.frame() %>%
+  rename(estimate = response) %>%
   mutate_if(is.numeric, ~round(., digits = 2)))
 ```
 
 **Plot results (interaction plots)**
-```{r, fig.width=3, fig.height=4.5, fig.align='center'}
-#Recommended figure widths from journal (pixels @ 300 dpi)
-column1x <- 945 #single-column
-column1.5x <- 1476 #1.5 columns
-column2x <- 1961 #double column
-
+```{r, fig.width=5, fig.height=5, fig.align='center'}
 #Sizes for plot elements
-size = 6
+size = 12
 label_size = size
 title_size = size * 1.15
-shape_size = 1
-line_width = 0.25
+shape_size = 2
+line_width = 1
 
 #Plots
-plot_all_spp <- make_interaction_plot(ggeffects_df = ggeffects_all_spp, yvar = "visit_duration", ymin = 5, ymax = 10, ybreak = 1, yaccuracy = 1, text_size = size, point_size = shape_size, line_size = line_width, ylabel = "Visit duration (seconds)")
+plot_all_spp <- make_interaction_plot(emmeans_df = emmeans_all_spp, yvar = "visit_duration", ymin = 6, ymax = 12, ybreak = 1, yaccuracy = 1, text_size = size, point_size = shape_size, line_size = line_width, ylabel = "Visit duration (seconds)")
 
-# ggview::ggview(plot_all_spp, width = column1x, height = column1x, units = "px")
-
-plot_greh_visa <- make_interaction_plot(ggeffects_df = ggeffects_greh_visa, yvar = "visit_duration", ymin = 5, ymax = 10, ybreak = 1, yaccuracy = 1, text_size = size, point_size = shape_size, line_size = line_width, ylabel = "Visit duration (seconds)")
-
-# ggview::ggview(plot_greh_visa, width = column1x, height = column1x, units = "px")
+plot_greh_visa <- make_interaction_plot(emmeans_df = emmeans_greh_visa, yvar = "visit_duration", ymin = 6, ymax = 12, ybreak = 1, yaccuracy = 1, text_size = size, point_size = shape_size, line_size = line_width, ylabel = "Visit duration (seconds)")
 
 #Combine into one plot
 multiplot <- ggarrange(plot_all_spp, plot_greh_visa, nrow = 2, common.legend = TRUE, legend = "bottom", labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.08, label.y = 0.96)
 
 multiplot
-# ggview::ggview(multiplot, width = column1x, height = column1x*1,5, units = "px")
+```
+
+**Export results**
+```{r}
+#SUMMARY TABLES
+path_name <- c("../../results/statistical_analysis/tables")
+
+#All results tables
+write.csv(results_tidy, file.path(path_name, "Hummingbird_visit_duration_results_model_summaries.csv"))
 ```
 
