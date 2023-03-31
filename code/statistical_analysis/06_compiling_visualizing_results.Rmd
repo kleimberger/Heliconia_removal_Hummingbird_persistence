@@ -36,28 +36,28 @@ library(ggpubr)
 ```
 
 ```{r}
-source("../../code/helper_functions/Modeling_helper_functions.R")
-source("../../code/helper_functions/Plotting_helper_functions.R")
-source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
-source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+source("code/helper_functions/Modeling_helper_functions.R")
+source("code/helper_functions/Plotting_helper_functions.R")
+source("code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("code/helper_functions/Calculate_basic_summary_stats.R")
 ```
 
 ## Step 1: Get results (rds files)
 
 ```{r}
-captures <- readRDS("../../results/statistical_analysis/rds_files/Capture_results.rds")
+captures <- readRDS("results/statistical_analysis/rds_files/Capture_results.rds")
 
-telemetry <- readRDS("../../results/statistical_analysis/rds_files/Telemetry_results.rds")
+telemetry <- readRDS("results/statistical_analysis/rds_files/Telemetry_results.rds")
 
-cameras <- readRDS("../../results/statistical_analysis/rds_files/Camera_results.rds") %>%
+cameras <- readRDS("results/statistical_analysis/rds_files/Camera_results.rds") %>%
   mutate(plant_species = factor(plant_species, levels = c("MARA", "PAV-ROJ-AMA", "CEPO", "TUBO-AMA", "HAPA", "PALU", "RABO", "BOCA-ROJA", "COSTBAR"), ordered = TRUE)) %>%
   arrange(plant_species)
   
-pollen_tubes <- readRDS("../../results/statistical_analysis/rds_files/Pollen_tube_results.rds") %>%
+pollen_tubes <- readRDS("results/statistical_analysis/rds_files/Pollen_tube_results.rds") %>%
   mutate(subanalysis = factor(subanalysis, levels = c("HETO", "HAPA"), ordered = TRUE)) %>%
   arrange(subanalysis)
 
-body_mass <- readRDS("../../results/statistical_analysis/rds_files/Body_mass_results.rds")
+body_mass <- readRDS("results/statistical_analysis/rds_files/Body_mass_results.rds")
 
 results <- captures %>%
   bind_rows(telemetry) %>%
@@ -72,7 +72,7 @@ results <- captures %>%
 length(results$model_number)
 
 #What non-Heliconia species were analyzed? Plant species scientific names for plots
-nonheto_species <- read.csv("../../data/export/supp_tables/Non-Heliconia_camera_species_list.csv") %>%
+nonheto_species <- read.csv("data/export/supp_tables/Non-Heliconia_camera_species_list.csv") %>%
   filter(plant_species %in% results$plant_species) %>%
   select(plant_species, plant_scientific_name, num_replicates)
 ```
@@ -488,7 +488,7 @@ body_mass_contrast_plot
 
 **Organize figures into panel plots for publication**
 
-Figure 3: Captures and Telemetry
+Figure 4: Captures and Telemetry
 ```{r, fig.width = column1.5x/300, fig.height = (column1.5x/300)*0.75}
 #CAPTURES
 capture_interaction_plots <- interaction_plots %>%
@@ -498,7 +498,7 @@ capture_interaction_plots <- interaction_plots %>%
 capture_plots <- list(capture_interaction_plots$interaction_plot[[1]], capture_interaction_plots$interaction_plot[[2]], capture_contrast_plot)
 
 captures_multiplot <- ggarrange(plotlist = capture_plots, nrow = 1, ncol = 3, legend = "none", align = "hv",
-                                labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "plain"), label.x = 0.16, label.y = 0.96) %>%
+                                labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "plain"), label.x = 0.17, label.y = 0.96) %>%
                       annotate_figure(top = text_grob("Hummingbird abundance", size = title_size, face = "plain", hjust = 0, x = 0))
   
 #TELEMETRY
@@ -522,7 +522,7 @@ ggview::ggview(captures_telemetry_multiplot, width = column1.5x, height = column
 ggsave(file.path(path_name, "Fig4_Captures_and_Telemetry.png"), captures_telemetry_multiplot, dpi = 300, width = column1.5x, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
 ```
 
-Figure 4: Flower visitation
+Figure 5: Flower visitation
 ```{r, fig.width=14, fig.height=16}
 #FLOWER VISITATION: HETO
 heto_visits_interaction_plots <- interaction_plots %>%
@@ -532,7 +532,7 @@ heto_visits_interaction_plots <- interaction_plots %>%
 heto_visits_plots <- list(heto_visits_interaction_plots$interaction_plot[[1]], heto_visits_interaction_plots$interaction_plot[[2]], heto_visits_contrast_plot)
 
 heto_visits_multiplot <- ggarrange(plotlist = heto_visits_plots, nrow = 1, ncol = 3, legend = "none", align = "hv",
-                                labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "plain"), label.x = 0.16, label.y = 0.96) %>%
+                                labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "plain"), label.x = 0.17, label.y = 0.96) %>%
   annotate_figure(top = text_grob(expression("Flower visitation: focal"~italic(Heliconia)), size = title_size, face = "plain", hjust = 0, x = 0.0))
   
 #FLOWER VISITATION: NON-HETO
@@ -543,21 +543,21 @@ nonheto_visits_interaction_plots <- interaction_plots %>%
 nonheto_visits_plots <- list(nonheto_visits_interaction_plots$interaction_plot[[1]], nonheto_visits_interaction_plots$interaction_plot[[2]], nonheto_visits_contrast_plot)
 
 nonheto_visits_multiplot <- ggarrange(plotlist = nonheto_visits_plots, nrow = 1, ncol = 3, legend = "none", align = "hv",
-                                 labels = c("(d)", "(e)", "(f)"), font.label = list(size = label_size, face = "plain"), label.x = 0.16, label.y = 0.96) %>%
+                                 labels = c("(d)", "(e)", "(f)"), font.label = list(size = label_size, face = "plain"), label.x = 0.17, label.y = 0.96) %>%
   annotate_figure(top = text_grob(expression("Flower visitation: non-"*italic(Heliconia)~"analyzed together ("*italic(N)~"= 30 species)"), size = title_size, face = "plain", hjust = 0, x = 0.00))
 
 #FLOWER VISITATION: NON-HETO, INDIVIDUAL SPECIES
 #Not technically a panel plot but I'm calling it that for consistency
-nonheto_contrast_multiplot <- ggarrange(nonheto_contrast_plot, labels = c("(g)"), font.label = list(size = label_size, face = "plain"), label.x = 0.16/3, label.y = 0.96) %>%
+nonheto_contrast_multiplot <- ggarrange(nonheto_contrast_plot, labels = c("(g)"), font.label = list(size = label_size, face = "plain"), label.x = 0.17/3, label.y = 0.96) %>%
   annotate_figure(top = text_grob(expression("Flower visitation: non-"*italic(Heliconia)~"analyzed separately ("*italic(N)~"= 9 species)"), size = title_size, face = "plain",  hjust = 0, x = 0.00))
 
 #FLOWER VISITATION: HETO, NON-HETO TOGETHER, + NON-HETO SEPARATELY
-flower_visits_multiplot <- ggarrange(heto_visits_multiplot, NULL, nonheto_visits_multiplot, NULL, legend_arranged, NULL, nonheto_contrast_multiplot, nrow = 7, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05, 0.05, 1))
-ggview::ggview(flower_visits_multiplot, width = column1.5x, height = column1.5x*1.08, units = "px")
+flower_visits_multiplot <- ggarrange(heto_visits_multiplot, NULL, nonheto_visits_multiplot, NULL, legend_arranged, NULL, nonheto_contrast_multiplot, nrow = 7, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05, 0.05, 1.15))
+ggview::ggview(flower_visits_multiplot, width = column1.5x, height = column1.5x*1.15, units = "px")
 ggsave(file.path(path_name, "Fig5_Camera_visitation.png"), flower_visits_multiplot, dpi = 300, width = column1.5x, height = column1.5x*1.08, units = "px", bg = "white", device = "tiff")
 ```
 
-Figure 5: Pollination success
+Figure 6: Pollination success
 ```{r, fig.width=10, fig.height=10}
 #POLLINATION: HETO
 heto_pollination_interaction_plot <- interaction_plots %>%
@@ -566,7 +566,7 @@ heto_pollination_interaction_plot <- interaction_plots %>%
 heto_pollination_plots <- list(heto_pollination_interaction_plot$interaction_plot[[1]], heto_pollination_contrast_plot)
 
 heto_pollination_multiplot <- ggarrange(plotlist = heto_pollination_plots, nrow = 1, ncol = 2, legend = "none", align = "hv",
-                                labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.17, label.y = 0.96) %>% 
+                                labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.18, label.y = 0.96) %>% 
   annotate_figure(top = text_grob(expression("Pollination success: focal"~italic(Heliconia)), size = title_size, face = "plain", hjust = 0, x = 0))
   
 #POLLINATION: HAPA
@@ -576,7 +576,7 @@ hapa_pollination_interaction_plot <- interaction_plots %>%
 hapa_pollination_plots <- list(hapa_pollination_interaction_plot$interaction_plot[[1]], hapa_pollination_contrast_plot)
 
 hapa_pollination_multiplot <- ggarrange(plotlist = hapa_pollination_plots, nrow = 1, ncol = 2, legend = "none", align = "hv",
-                                labels = c("(c)", "(d)"), font.label = list(size = label_size, face = "plain"), label.x = 0.17, label.y = 0.96) %>%
+                                labels = c("(c)", "(d)"), font.label = list(size = label_size, face = "plain"), label.x = 0.18, label.y = 0.96) %>%
   annotate_figure(top = text_grob(expression("Pollination success:"~italic("Hamelia patens")), size = title_size, face = "plain", hjust = 0, x = 0))
   
 #POLLINATION: HETO + HAPA
@@ -587,13 +587,13 @@ ggview::ggview(pollination_multiplot,  width =  column1.5x*0.66, height = column
 ggsave(file.path(path_name, "Fig6_Pollination.png"), pollination_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
 ```
 
-Figure 6: Additional response variables (recaptures, visitation from individual marked birds, relative body mass)
+Figure 7: Additional response variables (recaptures, visitation from individual marked birds, relative body mass)
 ```{r}
 #Upper panel
-recaps_body_mass_multiplot <- ggarrange(recaps_contrast_plot, body_mass_contrast_plot, nrow = 1, ncol = 2, align = "hv", labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.20, label.y = 0.85)
+recaps_body_mass_multiplot <- ggarrange(recaps_contrast_plot, body_mass_contrast_plot, nrow = 1, ncol = 2, align = "hv", labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.21, label.y = 0.85)
 
 #Lower panel
-marked_birds_multiplot <-  ggarrange(heto_visits_marked_contrast_plot, nonheto_visits_marked_contrast_plot, nrow = 1, ncol = 2, align = "hv", labels = c("(c)", "(d)"), font.label = list(size = label_size, face = "plain"), label.x = 0.16, label.y = 0.88) %>%
+marked_birds_multiplot <-  ggarrange(heto_visits_marked_contrast_plot, nonheto_visits_marked_contrast_plot, nrow = 1, ncol = 2, align = "hv", labels = c("(c)", "(d)"), font.label = list(size = label_size, face = "plain"), label.x = 0.17, label.y = 0.88) %>%
     annotate_figure(top = text_grob("Flower visitation from marked birds", size = title_size, face = "plain"))
 
 #Combine
@@ -602,7 +602,7 @@ ggview::ggview(additional_vars_multiplot, width =  column1.5x*0.66, height = col
 ggsave(file.path(path_name, "Fig7_Additional_response_variables.png"), additional_vars_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
 ```
 
-Figure SX: Interaction plots for additional response variables
+Figure S3: Interaction plots for additional response variables
 ```{r}
 #RECAPTURES
 control_vs_treatment_plots$control_vs_treatment_plot
