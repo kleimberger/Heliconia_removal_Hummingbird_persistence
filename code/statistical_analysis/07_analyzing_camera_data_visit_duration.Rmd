@@ -78,6 +78,7 @@ data_for_sighting_duration <- data_for_experiment %>%
   select(-num_species, -X) %>%
   filter(!grepl("perch", sighting_notes, ignore.case = TRUE)) %>%
   filter(sightings_yes_or_no == "Y") %>%
+  filter(visit_type != "none") %>%
   filter(!is.na(flowers_camera_video)) %>%
   mutate(year_patch = paste(year, patch, sep = "_")) %>%
   mutate(exp_phase = factor(exp_phase, levels = c("pre", "post")))
@@ -354,13 +355,13 @@ sigma_greh_visa <- filter(bias_adjust_values, bird_group == "greh_visa") %>% pul
 ```
 
 **Plot results (interaction plots)**
-```{r, fig.width=5, fig.height=5, fig.align='center'}
+```{r, fig.width=5, fig.height=10, fig.align='center'}
 #Sizes for plot elements
-size = 12
+size = 18
 label_size = size
 title_size = size * 1.15
-shape_size = 2
-line_width = 1
+shape_size = 3
+line_width = 0.5
 
 #Plots
 plot_all_spp <- make_interaction_plot(emmeans_df = emmeans_all_spp, yvar = "visit_duration", ymin = 6, ymax = 12, ybreak = 1, yaccuracy = 1, text_size = size, point_size = shape_size, line_size = line_width, ylabel = "Visit duration (seconds)")
@@ -368,9 +369,10 @@ plot_all_spp <- make_interaction_plot(emmeans_df = emmeans_all_spp, yvar = "visi
 plot_greh_visa <- make_interaction_plot(emmeans_df = emmeans_greh_visa, yvar = "visit_duration", ymin = 6, ymax = 12, ybreak = 1, yaccuracy = 1, text_size = size, point_size = shape_size, line_size = line_width, ylabel = "Visit duration (seconds)")
 
 #Combine into one plot
-multiplot <- ggarrange(plot_all_spp, plot_greh_visa, nrow = 2, common.legend = TRUE, legend = "bottom", labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.08, label.y = 0.96)
+multiplot <- ggarrange(plot_all_spp, plot_greh_visa, nrow = 2, common.legend = TRUE, legend = "bottom", labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.15, label.y = 0.96)
 
 multiplot
+# ggview::ggview(multiplot, width = 5, height = 10, unit = "in")
 ```
 
 **Export results**
