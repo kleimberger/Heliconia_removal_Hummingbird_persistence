@@ -88,6 +88,8 @@ species_per_site <- resource_data %>%
 species_per_site_sum <- species_per_site %>%
   calculate_basic_summary_stats(variable = num_species)
 
+species_per_site_sum
+
 #How many species total?
 species_list <- resource_data %>%
   distinct(plant_family, plant_scientific_name, plant_species, plant_species_for_calories) %>%
