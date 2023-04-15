@@ -140,7 +140,7 @@ write.csv(areas_and_centroids , "../../data/export/intermediate/Focal_area_sizes
 ```
 
 Export focal area outlines as ESRI shapefiles and as KML files (for Google Earth)
-```{r}
+```{r, eval = FALSE}
 #'areas' is still an sf dataframe with geometry
 areas_for_export <- areas %>%
   dplyr::select(-area)

@@ -97,7 +97,8 @@ nonheto_species_sample_size <- nonheto_data %>%
   arrange(desc(num_replicates)) %>%
   left_join(plant_species_names) %>%
   left_join(nonheto_species) %>%
-  select(plant_family, plant_scientific_name, plant_species, num_replicates, num_sightings)
+  select(plant_family, plant_scientific_name, plant_species, num_replicates, num_sightings) %>%
+  filter(num_sightings > 0)
 
 #Export list for supp material
 write.csv(nonheto_species_sample_size, "../../data/export/supp_tables/Non-Heliconia_camera_species_list.csv")
@@ -297,7 +298,6 @@ fit_model <- function(dataset){
 
   m3 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
                         
-
   m5 <- glmmTMB::glmmTMB(sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) + (1|patch/year_patch), data = dataset, na.action = na.omit, family = "nbinom2", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
                         
   #Combine models
@@ -344,17 +344,21 @@ AICc_best_models <- AICc_ranks %>%
   slice(which.min(AICc)) %>%
   arrange(desc(num_replicates))
 
-#According to AICc, model 3 is best for all except for BOCA-ROJA (m5 - but AICc is basically the same as m1 and m3), CEPO (m1 - but AICc is <3 from m3 and m5), and COSTBAR (m1)
-#But...do best models according to AICc meet assumptions? OR are other models better? Check to make sure assumptions look OK. I've noted best model(s) according to assumptions below.
+#According to AICc, model 3 is best for all except for:
+#BOCA-ROJA: model 5 - but AICc is basically the same as other models (<1)
+#CEPO: model 1
+#COSTBAR: model 1
+
+#But do best models according to AICc meet assumptions? Check to make sure assumptions look OK. I've noted best model(s) according to assumptions below.
 model_fitting_nonheto_separate %>% filter(plant_species == "BOCA-ROJA") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m1
 model_fitting_nonheto_separate %>% filter(plant_species == "CEPO") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m5
-model_fitting_nonheto_separate %>% filter(plant_species == "COSTBAR") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #any (m1 lower AIC)
+model_fitting_nonheto_separate %>% filter(plant_species == "COSTBAR") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m3
 model_fitting_nonheto_separate %>% filter(plant_species == "HAPA") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m1, m5 (m5 lower AIC)
 model_fitting_nonheto_separate %>% filter(plant_species == "MARA") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m1, m3 (m3 lower AIC)
 model_fitting_nonheto_separate %>% filter(plant_species == "PALU") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m3 
-model_fitting_nonheto_separate %>% filter(plant_species == "PAV-ROJ-AMA") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #any (m3 lower AIC but all values <2)
+model_fitting_nonheto_separate %>% filter(plant_species == "PAV-ROJ-AMA") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #any (m3 lower AIC)
 model_fitting_nonheto_separate %>% filter(plant_species == "RABO") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m3 but still rather squiggly :(
-model_fitting_nonheto_separate %>% filter(plant_species == "TUBO-AMA") %>% unnest(fit_with_info) %>% pull(dharma_plot) #m3, m5 (m3 lower AIC)
+model_fitting_nonheto_separate %>% filter(plant_species == "TUBO-AMA") %>% select(-model_name) %>% unnest(fit_with_info) %>% pull(dharma_plot) #m3, m5 (m3 lower AIC)
 
 #Troubleshooting RABO models...
 rabo_data <- visit_data_for_analysis %>% filter(plant_species == "RABO" & subanalysis == "all_birds" & bird_group == "all_spp") #This dataset does not have any scaled variables so can experiment with hours as covariate (not offset) more easily
@@ -380,11 +384,11 @@ simulateResiduals(rabo_fit_flowers2_no_offset) %>% plot()
 
 map(list(rabo_fit_zip, rabo_fit_genpois, rabo_fit_log_flowers, rabo_fit_log_flowers_no_offset, rabo_fit_flowers2, rabo_fit_flowers2_no_offset), MuMIn::AICc)
 
-#DECISION:
-#Model 1 (Poisson) for BOCA-ROJA, COSTBAR
-#Model 5 (nbinom2) for CEPO, HAPA
-#Model 3 (nbinom1) for MARA, PALU, PAV-ROJ-AMA, TUBO-AMA
+#DECISIONS:
+#Model 1 (Poisson) for BOCA-ROJA
+#Model 3 (nbinom1) for MARA, PALU, PAV-ROJ-AMA, TUBO-AMA, COSTBAR
 #Model 3 (nbinom1) for RABO, but with (A) squared term for flowers, and (B) hours as covariate rather than an offset
+#Model 5 (nbinom2) for CEPO, HAPA
 ```
 
 **Heliconia visitation rate: marked birds only**
@@ -510,22 +514,19 @@ create_model <- function(dataset, analysis, subanalysis, treatment_variable, pla
   #DECISION: Model 1 (Poisson) for BOCA-ROJA, COSTBAR. Model 5 (nbinom2) for CEPO, HAPA. Model 3 (nbinom1) for MARA and the rest.
   if(analysis == "camera_non-HETO_separate"){
     
-    #For these two plant species, use Poisson
-    if(plant_species == "BOCA-ROJA" | plant_species == "COSTBAR"){
+    if(plant_species == "BOCA-ROJA"){
       
       model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "poisson", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
       
     }
     
-    #For these four plant species, use nbinom1
-    nbinom2_species <- c("MARA", "PALU", "PAV-ROJ-AMA", "TUBO-AMA")
-    if(plant_species %in% nbinom2_species){
+    nbinom1_species <- c("MARA", "PALU", "PAV-ROJ-AMA", "TUBO-AMA", "COSTBAR")
+    if(plant_species %in% nbinom1_species){
       
       model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "nbinom1", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
 
     }
     
-    #For these two plant species, use nbinom2
     if(plant_species == "CEPO" | plant_species == "HAPA"){
       
       model <- glmmTMB(as.formula(paste0(base_formula, " + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "nbinom2", ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
@@ -569,7 +570,7 @@ models$xvar_table #hours is technically an offset, not a covariate, in most mode
 ```
 
 ## Step 5: Check assumptions
-```{r, fig.show = 'hide', results = 'hide'}
+```{r, fig.show = 'hide', results = 'hide', eval = FALSE}
 assumption_checks <- models %>%
   mutate(re_plot = pmap(list(model, title, subtitle), ~check_re(model = ..1, plot_title = ..2, plot_subtitle = ..3))) %>%
   mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%

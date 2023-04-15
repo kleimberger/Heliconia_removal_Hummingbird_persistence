@@ -151,7 +151,7 @@ net_hours_total
 
 Question: when was there a pre-to-post difference in capture effort? This will be important to know for the analysis of recaptures, because that analysis does not control for effort.
 
-```{r}
+```{r, fig.width=8, fig.height=6}
 #Add some variables for plotting
 net_hours_to_plot <- net_hours %>%
   mutate(year_patch = paste(year, patch, sep = "_")) %>%
@@ -216,9 +216,5 @@ Whether exact or approximate, p-values do not tell us anything about how differe
 ## Step 6: Export
 
 ```{r}
-#Data
-write.csv(net_hours, "../../data/export/intermediate/Net-hours_2016-2018.csv", row.names = FALSE) 
-
-#Figures
-ggsave("../../results/response_variables/figures/Capture_effort_pre_post.png", plot = pp_effort_plot, width = 8, height = 6, units = "in", dpi = 300)
+write.csv(net_hours, "../../data/export/intermediate/Net-hours_2016-2018.csv", row.names = FALSE)
 ```

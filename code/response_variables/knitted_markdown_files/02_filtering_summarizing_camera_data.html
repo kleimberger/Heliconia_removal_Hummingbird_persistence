@@ -385,11 +385,11 @@ interested in the pre-to-post change</li>
 outside of those periods</li>
 </ul>
 <ol start="2" style="list-style-type: decimal">
-<li>‘Normal’ (unmanipulated) dataset</li>
+<li>Natural (unmanipulated) dataset</li>
 </ol>
-<p><strong>Purpose:</strong> Understand ‘normal’ visitation patterns in
+<p><strong>Purpose:</strong> Understand natural visitation patterns in
 this study system. Use to tailor resource estimate to different
-hummingbird groups &amp; understand ‘normal’ visitation to <em>Heliconia
+hummingbird groups &amp; understand natural visitation to <em>Heliconia
 tortuosa.</em></p>
 <ul>
 <li>Not bound by the requirements in #1.</li>
@@ -498,7 +498,7 @@ hours_total</code></pre>
 <pre><code>## # A tibble: 1 × 1
 ##   video_hours
 ##         &lt;dbl&gt;
-## 1      20759.</code></pre>
+## 1      20735.</code></pre>
 <pre class="r"><code>#How many sightings is this?
 camera_data03 %&gt;%
   filter(visit_type != &quot;none&quot;) %&gt;%
@@ -506,7 +506,7 @@ camera_data03 %&gt;%
   filter(!is.na(sighting_id)) %&gt;%
   pull(sighting_id) %&gt;%
   length()</code></pre>
-<pre><code>## [1] 6656</code></pre>
+<pre><code>## [1] 6655</code></pre>
 </div>
 <div id="step-4-filter-data-for-experimental-analyses" class="section level2">
 <h2>Step 4: Filter data for experimental analyses</h2>
@@ -543,7 +543,7 @@ hours_experiment</code></pre>
 <pre><code>## # A tibble: 1 × 1
 ##   video_hours
 ##         &lt;dbl&gt;
-## 1      19893.</code></pre>
+## 1      19870.</code></pre>
 <pre class="r"><code>#How many sightings is this?
 data_for_experiment %&gt;%
   filter(visit_type != &quot;none&quot;) %&gt;%
@@ -551,10 +551,10 @@ data_for_experiment %&gt;%
   filter(!is.na(sighting_id)) %&gt;%
   pull(sighting_id) %&gt;%
   length()</code></pre>
-<pre><code>## [1] 6438</code></pre>
+<pre><code>## [1] 6437</code></pre>
 </div>
-<div id="step-5-filter-data-for-normal-visitation" class="section level2">
-<h2>Step 5: Filter data for ‘normal’ visitation</h2>
+<div id="step-5-filter-data-for-natural-normal-visitation" class="section level2">
+<h2>Step 5: Filter data for natural (‘normal’) visitation</h2>
 <p>Remove data from ‘post’ period of treatment replicates (i.e., data
 affected by experimental <em>Heliconia</em> removal)</p>
 <pre class="r"><code>data_for_normal_visitation &lt;- camera_data03 %&gt;%
@@ -668,9 +668,9 @@ captures_marked_birds &lt;- captures %&gt;%
 num_marked_individuals_on_camera/num_marked_indivduals</code></pre>
 <pre><code>## [1] 0.3142857</code></pre>
 </div>
-<div id="step-7-explore-data-related-to-heliconia-using-normal-visitation-data" class="section level2">
-<h2>Step 7: Explore data related to <em>Heliconia</em>, using ‘normal’
-visitation data</h2>
+<div id="step-7-explore-data-related-to-heliconia-using-natural-normal-visitation-data" class="section level2">
+<h2>Step 7: Explore data related to <em>Heliconia</em>, using natural
+(‘normal’) visitation data</h2>
 <p>What species visit Heliconia?</p>
 <pre class="r"><code>#To level of species
 heto_sightings_by_species &lt;- calculate_sighting_rates(data = data_for_normal_visitation, level_org = &quot;plant_species_across_sites&quot;, level_time = &quot;all&quot;, level_bird = &quot;camera_spp_separate&quot;, sightings = &quot;with_visit&quot;, include_unknown_spp = TRUE) %&gt;% 
@@ -704,7 +704,7 @@ hours_normal_visitation_heto</code></pre>
 <pre><code>## # A tibble: 1 × 1
 ##   video_hours
 ##         &lt;dbl&gt;
-## 1       1814.</code></pre>
+## 1       1809.</code></pre>
 <p>How many hummingbird sightings per <em>Heliconia</em> plant
 (inflorescence) per day?</p>
 <pre class="r"><code>#Summarize using &#39;normal&#39; data, by camera number. Each camera was positioned at a single Heliconia inflorescence
@@ -718,7 +718,7 @@ heto_sightings_per_date_sum</code></pre>
 <pre><code>## # A tibble: 1 × 6
 ##     min   max  mean    sd median     n
 ##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1     0    25  6.17  5.63      5   171</code></pre>
+## 1     0    25  6.21  5.62      5   170</code></pre>
 <pre class="r"><code>#Sightings per date is the most meaningful metric...but not all dates have 12 hours of video. Can I extrapolate from sightings/hour? Only problem would be if rate isn&#39;t constant throughout day
 heto_sightings_per_12_hours &lt;- heto_sightings_per_date %&gt;%
   mutate(sightings_per_12hours = sightings_per_hour * 12) %&gt;% #Hourly sighting rate multiplied by 12
@@ -731,7 +731,7 @@ heto_sightings_per_12_hours_sum #Slightly higher values when multiply by 12</cod
 <pre><code>## # A tibble: 1 × 6
 ##     min   max  mean    sd median     n
 ##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1     0  31.0  6.95  6.23   5.03   171</code></pre>
+## 1     0  31.0  6.99  6.22   5.03   170</code></pre>
 </div>
 <div id="step-8-export" class="section level2">
 <h2>Step 8: Export</h2>

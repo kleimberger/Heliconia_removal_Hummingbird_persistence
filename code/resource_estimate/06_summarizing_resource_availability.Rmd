@@ -484,7 +484,7 @@ title_size = size * 1.15
 shape_size = 1
 line_width = 0.25
 
-path_name <- c("results/resource_estimate/figures")
+path_name <- c("../../results/resource_estimate/figures")
 ```
 
 Make barplots of relative sighting rates (weights)
@@ -549,7 +549,7 @@ weights_and_percent_multiplot <- ggarrange(weights_barplot_all_spp, weights_barp
 
 ggview::ggview(weights_and_percent_multiplot, width = column1.5x*0.66, height = column1.5x*1.33, units = "px")
 
-ggsave(file.path(path_name, "Fig3_Weights_Percentage_calories.png"), weights_and_percent_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*1.33, units = "px", bg = "white", device = "tiff")
+ggsave(file.path(path_name, "Fig3_Weights_Percentage_calories.png"), weights_and_percent_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*1.33, units = "px", bg = "white", device = "png")
 ```
 
 ## Step 13: What plant species were present in each replicate/site?

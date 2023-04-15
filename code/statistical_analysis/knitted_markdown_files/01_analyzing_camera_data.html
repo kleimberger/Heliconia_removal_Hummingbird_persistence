@@ -422,7 +422,8 @@ nonheto_species_sample_size &lt;- nonheto_data %&gt;%
   arrange(desc(num_replicates)) %&gt;%
   left_join(plant_species_names) %&gt;%
   left_join(nonheto_species) %&gt;%
-  select(plant_family, plant_scientific_name, plant_species, num_replicates, num_sightings)
+  select(plant_family, plant_scientific_name, plant_species, num_replicates, num_sightings) %&gt;%
+  filter(num_sightings &gt; 0)
 
 #Export list for supp material
 write.csv(nonheto_species_sample_size, &quot;../../data/export/supp_tables/Non-Heliconia_camera_species_list.csv&quot;)</code></pre>
@@ -580,22 +581,19 @@ create_model &lt;- function(dataset, analysis, subanalysis, treatment_variable, 
   #DECISION: Model 1 (Poisson) for BOCA-ROJA, COSTBAR. Model 5 (nbinom2) for CEPO, HAPA. Model 3 (nbinom1) for MARA and the rest.
   if(analysis == &quot;camera_non-HETO_separate&quot;){
     
-    #For these two plant species, use Poisson
-    if(plant_species == &quot;BOCA-ROJA&quot; | plant_species == &quot;COSTBAR&quot;){
+    if(plant_species == &quot;BOCA-ROJA&quot;){
       
       model &lt;- glmmTMB(as.formula(paste0(base_formula, &quot; + (1|patch/year_patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;poisson&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
       
     }
     
-    #For these four plant species, use nbinom1
-    nbinom2_species &lt;- c(&quot;MARA&quot;, &quot;PALU&quot;, &quot;PAV-ROJ-AMA&quot;, &quot;TUBO-AMA&quot;)
-    if(plant_species %in% nbinom2_species){
+    nbinom1_species &lt;- c(&quot;MARA&quot;, &quot;PALU&quot;, &quot;PAV-ROJ-AMA&quot;, &quot;TUBO-AMA&quot;, &quot;COSTBAR&quot;)
+    if(plant_species %in% nbinom1_species){
       
       model &lt;- glmmTMB(as.formula(paste0(base_formula, &quot; + (1|patch/year_patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;nbinom1&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
 
     }
     
-    #For these two plant species, use nbinom2
     if(plant_species == &quot;CEPO&quot; | plant_species == &quot;HAPA&quot;){
       
       model &lt;- glmmTMB(as.formula(paste0(base_formula, &quot; + (1|patch/year_patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;nbinom2&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
@@ -629,30 +627,30 @@ summary(test01)</code></pre>
 ## Data: dataset
 ## 
 ##      AIC      BIC   logLik deviance df.resid 
-##    469.0    486.0   -226.5    453.0       54 
+##    468.3    485.3   -226.1    452.3       54 
 ## 
 ## Random effects:
 ## 
 ## Conditional model:
 ##  Groups           Name        Variance Std.Dev.
-##  year_patch:patch (Intercept) 0.05018  0.2240  
-##  patch            (Intercept) 0.21842  0.4673  
+##  year_patch:patch (Intercept) 0.05028  0.2242  
+##  patch            (Intercept) 0.18974  0.4356  
 ## Number of obs: 62, groups:  year_patch:patch, 31; patch, 14
 ## 
-## Dispersion parameter for nbinom1 family ():  2.3 
+## Dispersion parameter for nbinom1 family (): 2.32 
 ## 
 ## Conditional model:
 ##                                          Estimate Std. Error z value Pr(&gt;|z|)
-## (Intercept)                              -0.60560    0.17769  -3.408 0.000654
-## control_treatmenttreatment                0.05589    0.17506   0.319 0.749523
-## exp_phasepost                            -0.16233    0.15261  -1.064 0.287473
-## flowers                                   0.12661    0.08050   1.573 0.115760
-## control_treatmenttreatment:exp_phasepost  0.19977    0.20576   0.971 0.331622
+## (Intercept)                              -0.60613    0.17207  -3.522 0.000428
+## control_treatmenttreatment                0.06920    0.17478   0.396 0.692143
+## exp_phasepost                            -0.16620    0.15303  -1.086 0.277471
+## flowers                                   0.13626    0.07945   1.715 0.086336
+## control_treatmenttreatment:exp_phasepost  0.21947    0.20627   1.064 0.287333
 ##                                             
 ## (Intercept)                              ***
 ## control_treatmenttreatment                  
 ## exp_phasepost                               
-## flowers                                     
+## flowers                                  .  
 ## control_treatmenttreatment:exp_phasepost    
 ## ---
 ## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>

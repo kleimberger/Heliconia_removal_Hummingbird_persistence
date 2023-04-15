@@ -323,7 +323,4 @@ Conclusions/Observations:
 ```{r, export}
 write.csv(effort_date, "../../data/export/intermediate/Telemetry_effort_by_date.csv", row.names = FALSE)
 write.csv(effort_pp, "../../data/export/intermediate/Telemetry_effort_pre_post.csv", row.names = FALSE)
-
-#Figure
-ggsave("../../results/response_variables/figures/Telemetry_effort_density_plot.png", plot = obs_effort_density_plot, width = 10, height = 7.5, units = "in", dpi = 300)
 ```
