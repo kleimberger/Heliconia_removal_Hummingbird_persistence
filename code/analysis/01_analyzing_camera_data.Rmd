@@ -66,8 +66,8 @@ visit_data_marked <- read.csv("../../data/export/for_analysis/Camera_visitation_
   select(-present_during_pre)
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
-heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
-  select(-area)
+heto_removed <- read.csv("../../data/export/for_analysis/Site_and_replicate_characteristics.csv") %>%
+  select(year, patch, control_treatment, calories_removed_per_ha)
 
 #Plant names
 plant_species_names <- read.csv("../../data/import/data/Plant_codes_species_list.csv") %>%
@@ -100,8 +100,8 @@ nonheto_species_sample_size <- nonheto_data %>%
   select(plant_family, plant_scientific_name, plant_species, num_replicates, num_sightings) %>%
   filter(num_sightings > 0)
 
-#Export list for supp material
-write.csv(nonheto_species_sample_size, "../../data/export/supp_tables/Non-Heliconia_camera_species_list.csv")
+#Export list for Supp info
+write.csv(nonheto_species_sample_size, "../../data/export/supp_tables/List_of_non-Heliconia_camera_species.csv")
 ```
 
 **Prepare data for analysis**
@@ -591,7 +591,7 @@ assumption_checks <- models %>%
   mutate(plotname5 = paste("dharma_overdisp_diagnostics_", model_number, ".png", sep = ""))
 
 #Export diagnostic plots because they load very slowly in RStudio
-path_name <- c("../../results/statistical_analysis/assumption_checks/cameras")
+path_name <- c("../../results/analysis/assumption_checks/cameras")
 walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
 walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
 walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
@@ -624,7 +624,7 @@ results <- models %>%
 
 ## Step 7: Export results as rds file
 ```{r}
-saveRDS(results, "../../results/statistical_analysis/rds_files/Camera_results.rds")
+saveRDS(results, "../../results/analysis/rds_files/Camera_results.rds")
 ```
 
 *WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES LATER ON IN SINGLE SCRIPT*

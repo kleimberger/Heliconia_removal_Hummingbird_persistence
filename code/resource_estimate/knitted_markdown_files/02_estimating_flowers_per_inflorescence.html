@@ -896,12 +896,14 @@ total_trees &lt;- tree_plants %&gt;%
 </div>
 <div id="step-11-export-data" class="section level2">
 <h2>Step 11: Export data</h2>
-<pre class="r"><code>path_name &lt;- c(&quot;../../data/export/supp_tables&quot;)
+<pre class="r"><code>path_name &lt;- c(&quot;../../data/export/supp_tables/extra&quot;)
 
-#Key for converting HETO bracts to flowers + some additional info for supp table
+#extra tables - not including in final Supporting information
+
+#key for converting HETO bracts to flowers (plus some additional info for supp table)
 write.csv(heto_flowers_per_bract_for_supp, file.path(path_name, &quot;Heliconia_flowers_per_bracts_key.csv&quot;), row.names = FALSE)
 
-#Key for converting inflorescences/trees to flowers
+#key for converting inflorescences/trees to flowers
 write.csv(flowers_per_inflorescence, file.path(path_name, &quot;Non-Heliconia_flowers_per_inflorescence_key.csv&quot;), row.names = FALSE)</code></pre>
 </div>
 

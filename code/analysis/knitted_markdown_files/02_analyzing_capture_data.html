@@ -11,7 +11,7 @@
 
 
 
-<title>Calculating calories per plant (for resource estimation)</title>
+<title>Analyzing capture data</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -354,156 +354,338 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">Calculating calories per plant (for
-resource estimation)</h1>
+<h1 class="title toc-ignore">Analyzing capture data</h1>
 
 </div>
 
 
-<p><strong>Overall goal</strong></p>
-<p>Estimate resource availability per site and year, in terms of
-calories available to hummingbirds.</p>
-<p><strong>Goal of this code</strong></p>
-<p>Calculate the number of calories per plant (row in resource count
-dataset) using flowers-per-inflorescence keys and calorie info
-calculated in previous steps.</p>
-<p>Steps</p>
-<ol style="list-style-type: decimal">
-<li><p>Import plant counts (version with count units) from
-2016-2018</p></li>
-<li><p>Import key for HELICONIA FLOWERS PER BRACT</p></li>
-<li><p>Import key for FLOWERS per INFLORESCENCE (or TREE)</p></li>
-<li><p>Import nectar data (CALORIES per FLOWER)</p></li>
-<li><p>Convert to flowers, if data not already in flowers
-(‘num_flowers_estimate’)</p>
+<p><strong>Goals</strong></p>
+<p>Analyze how experimental <em>Heliconia</em> removal influences:</p>
 <ul>
-<li>If species is HETO, multiply by appropriate number of open flowers
-per open number of bracts</li>
-<li>If unit == inflor, multiply by ‘per_inflor’</li>
-<li>If unit == tree, multiply by ‘per_tree’</li>
-</ul></li>
-<li><p>Calculate CALORIES per PLANT</p>
-<ul>
-<li>Multiply ‘num_flowers_estimate’ by calories per flower</li>
-</ul></li>
-</ol>
-<p>Any unknown species that could be identified to genus have already
-been assigned a ‘plant_species_for_calories’, which is a related
-(congeneric) species for the purpose of estimating flowers &amp;
-calories. This is the column to join by.</p>
-<div id="step-1-import-data" class="section level2">
-<h2>Step 1: Import data</h2>
-<pre class="r"><code>path_name &lt;- c(&quot;../../data/export/intermediate&quot;)
+<li>Number of hummingbirds captured</li>
+<li>Hummingbird recapture rate (number of birds tagged ‘pre’ that were
+recaptured ‘post’)</li>
+</ul>
+<div id="step-1-import-data-and-functions" class="section level2">
+<h2>Step 1: Import data and functions</h2>
+<p><strong>Data for analysis</strong></p>
+<pre class="r"><code>#Capture data. Number of birds captured per capture session, with capture effort
+capture_data &lt;- read.csv(&quot;../../data/export/for_analysis/Capture_rates.csv&quot;) %&gt;%
+  mutate(subanalysis = &quot;captures&quot;) %&gt;%
+  select(-date)
 
-#Resource data
-resource_counts &lt;- read.csv(file.path(path_name, &quot;Resource_counts_2016-2018_with_count_units.csv&quot;)) %&gt;%
-  select(-row_id)
+head(capture_data)</code></pre>
+<pre><code>##   bird_group year patch control_treatment exp_phase net_hours num_birds
+## 1    all_spp 2016    10         treatment capture_1  75.10417        14
+## 2    all_spp 2016    10         treatment capture_2  78.81247        11
+## 3    all_spp 2016   130         treatment capture_1  80.00000         7
+## 4    all_spp 2016   130         treatment capture_2  66.00000         2
+## 5    all_spp 2016   137         treatment capture_1  80.75000         5
+## 6    all_spp 2016   137         treatment capture_2  77.20833         3
+##   capture_rate year_patch_bird_group subanalysis
+## 1       0.1864       2016_10_all_spp    captures
+## 2       0.1396       2016_10_all_spp    captures
+## 3       0.0875      2016_130_all_spp    captures
+## 4       0.0303      2016_130_all_spp    captures
+## 5       0.0619      2016_137_all_spp    captures
+## 6       0.0389      2016_137_all_spp    captures</code></pre>
+<pre class="r"><code>#Recapture data
+#1. Remove patches without data (no birds caught during pre)
+#2. Remove patch without constant capture effort pre &amp; post. So can avoid including covariates for effort
+recapture_data &lt;- read.csv(&quot;../../data/export/for_analysis/Recapture_rates.csv&quot;) %&gt;%
+  mutate(subanalysis = &quot;recaptures&quot;) %&gt;%
+  filter(!is.na(recap_rate)) %&gt;%  
+  filter(!(patch == &quot;203&quot; &amp; year == &quot;2017&quot;))
 
-path_name &lt;- c(&quot;../../data/export/supp_tables/extra&quot;)
+head(recapture_data)</code></pre>
+<pre><code>##   bird_group year patch control_treatment num_birds_pre num_birds_post
+## 1    all_spp 2016    10         treatment            14             11
+## 2    all_spp 2016   130         treatment             7              2
+## 3    all_spp 2016   137         treatment             5              3
+## 4    all_spp 2016   200           control             1              2
+## 5    all_spp 2016   201           control            10              9
+## 6    all_spp 2016   203           control             5              2
+##   num_recaps_post recap_rate subanalysis
+## 1               1 0.07142857  recaptures
+## 2               0 0.00000000  recaptures
+## 3               1 0.20000000  recaptures
+## 4               0 0.00000000  recaptures
+## 5               1 0.10000000  recaptures
+## 6               1 0.20000000  recaptures</code></pre>
+<pre class="r"><code>#Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
+heto_removed &lt;- read.csv(&quot;../../data/export/for_analysis/Site_and_replicate_characteristics.csv&quot;) %&gt;%
+  select(year, patch, control_treatment, calories_removed_per_ha)
 
-#Heliconia flowers/bract. I.e. for a given number of open bracts, how many flowers are probably open?
-flowers_per_bracts &lt;- read.csv(file.path(path_name, &quot;Heliconia_flowers_per_bracts_key.csv&quot;)) %&gt;%
-  mutate(plant_species_for_calories = &quot;HETO&quot;) %&gt;% 
-  select(plant_species_for_calories, num_bracts, flowers_per)
+##1. Combine data
+#2. Log-transform HETO calories removed
+#3. Remove plants without flower counts (GINGY and MARA-VER)
+capture_data_for_analysis &lt;- capture_data %&gt;%
+  bind_rows(recapture_data) %&gt;%
+  left_join(heto_removed) %&gt;%
+  mutate(exp_phase = factor(exp_phase, levels = c(&quot;capture_1&quot;, &quot;capture_2&quot;), labels = c(&quot;pre&quot;, &quot;post&quot;))) %&gt;%
+  mutate(control_treatment = factor(control_treatment, levels = c(&quot;control&quot;, &quot;treatment&quot;))) %&gt;%
+  mutate(year_patch = paste(year, patch, sep = &quot;_&quot;)) %&gt;%
+  mutate(log_calories_removed_per_ha = log(calories_removed_per_ha + 1)) %&gt;%
+  mutate(analysis = &quot;captures&quot;) %&gt;%
+  select(analysis, subanalysis, bird_group, year, patch, year_patch, control_treatment, exp_phase, net_hours, starts_with(&quot;num_birds&quot;), starts_with(&quot;num_recaps&quot;), everything())</code></pre>
+<p><strong>Import functions</strong></p>
+<pre class="r"><code>source(&quot;../../code/helper_functions/Modeling_helper_functions.R&quot;)
+source(&quot;../../code/helper_functions/Plotting_helper_functions.R&quot;)
+source(&quot;../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R&quot;)
+source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)</code></pre>
+<p><strong>Explore recap data: what is average recapture
+rate?</strong></p>
+<pre class="r"><code>#What is average recap rate per site/year?
+recap_sum01 &lt;- recapture_data %&gt;%
+  group_by(bird_group) %&gt;%
+  calculate_basic_summary_stats(variable = recap_rate)
 
-#Flowers-per-inflor (/tree) key for non-Heliconia species
-flowers_per_inflor &lt;- read.csv(file.path(path_name, &quot;Non-Heliconia_flowers_per_inflorescence_key.csv&quot;)) %&gt;% 
-  select(plant_species_for_calories = plant_species, count_unit, flowers_per)
+recap_sum01</code></pre>
+<pre><code>## # A tibble: 2 × 7
+##   bird_group   min   max  mean    sd median     n
+##   &lt;chr&gt;      &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1 all_spp        0   0.5 0.156 0.154  0.111    28
+## 2 greh_visa      0   1   0.208 0.271  0        25</code></pre>
+<pre class="r"><code>#Summary in a slightly different way: out of all birds captured, across sites/years, what percentage were recaptured?
+recap_sum02 &lt;- recapture_data %&gt;%
+  group_by(bird_group) %&gt;%
+  summarise(total_birds_pre = sum(num_birds_pre),
+            total_recaps_post = sum(num_recaps_post)) %&gt;%
+  ungroup() %&gt;%
+  mutate(overall_recap_rate = total_recaps_post/total_birds_pre)
 
-#Nectar data with info about calories per flower
-calories_per_flower &lt;- read.csv(file.path(path_name, &quot;Nectar_volume_concentration_and_calories_summary.csv&quot;)) %&gt;%
-    select(plant_species_for_calories = plant_species, calories)</code></pre>
+recap_sum02</code></pre>
+<pre><code>## # A tibble: 2 × 4
+##   bird_group total_birds_pre total_recaps_post overall_recap_rate
+##   &lt;chr&gt;                &lt;int&gt;             &lt;int&gt;              &lt;dbl&gt;
+## 1 all_spp                182                29              0.159
+## 2 greh_visa               92                18              0.196</code></pre>
 </div>
-<div id="step-2-convert-number-of-bractsinflorescencestrees-into-number-of-flowers" class="section level2">
-<h2>Step 2: Convert number of bracts/inflorescences/trees into number of
-flowers</h2>
-<pre class="r"><code>#1. Assign HETO as the &#39;plant_species_for_calories&#39; for ALL Heliconia species, not just tortuosa.
-#2. Add imported data
-resource_counts02 &lt;- resource_counts %&gt;%
-  mutate(plant_species_for_calories = ifelse(grepl(&quot;Heliconia&quot;, plant_scientific_name), &quot;HETO&quot;, as.character(plant_species_for_calories))) %&gt;%
-  left_join(flowers_per_bracts, by = c(&quot;plant_species_for_calories&quot;, &quot;num_bracts&quot;)) %&gt;%
-  left_join(flowers_per_inflor, by = c(&quot;plant_species_for_calories&quot;, &quot;count_unit&quot;)) %&gt;%
-  left_join(calories_per_flower, by = c(&quot;plant_species_for_calories&quot;)) %&gt;%
-  unite(flowers_per, flowers_per.x, flowers_per.y, sep = &quot;&quot;) %&gt;%
-  mutate(flowers_per = gsub(&quot;NA&quot;, &quot;&quot;, flowers_per, fixed = TRUE))
+<div id="step-2-create-datasets-for-each-analysis" class="section level2">
+<h2>Step 2: Create datasets for each analysis</h2>
+<p><strong>Get organized</strong></p>
+<pre class="r"><code>#Create tables that will be filled in with models and model results
+analysis = c(&quot;captures&quot;)
+subanalysis = c(&quot;captures&quot;, &quot;recaptures&quot;)
+bird_group = c(&quot;all_spp&quot;, &quot;greh_visa&quot;)
+model_type = c(&quot;categorical&quot;, &quot;quantitative&quot;)
+model_name = c(&quot;control/treatment * pre/post&quot;, &quot;calories removed/ha * pre/post&quot;)
+treatment_variable = c(&quot;control_treatment&quot;, &quot;log_calories_removed_per_ha&quot;)
+model_types_names = data.frame(model_type = model_type, model_name = model_name, treatment_variable = treatment_variable)
 
-#Check: what rows do not have any flowers-per (bract/infor/tree) data? Heliconia species with no bract data (either no data recorded, or only data about number of flowers recorded)
-check01 &lt;- resource_counts02 %&gt;%
-  filter(count_unit != &quot;flower&quot;) %&gt;%
-  filter(!grepl(&quot;UNKN&quot;, plant_species)) %&gt;%
-  filter(is.na(flowers_per) | flowers_per == &quot;&quot;)
+base_table &lt;- crossing(analysis, subanalysis, bird_group, model_type) %&gt;% 
+  left_join(model_types_names) %&gt;%
+  mutate(yvar = ifelse(subanalysis == &quot;captures&quot;, &quot;num_birds&quot;, &quot;recap_rate&quot;)) %&gt;%
+  arrange(analysis, subanalysis, model_type, bird_group) %&gt;%
+  mutate(model_number = 1:length(yvar)) %&gt;%
+  mutate(title = paste(analysis, subanalysis, bird_group, sep = &quot;_&quot;)) %&gt;%
+  mutate(subtitle = yvar) %&gt;%
+  select(model_number, analysis, yvar, subanalysis, everything())</code></pre>
+<p><strong>Filter master dataset to relevant sub-dataset &amp; scale
+continuous predictors</strong></p>
+<pre class="r"><code>subset_data &lt;- function(dataset, analysis, subanalysis, bird_group){
+  
+  dataset &lt;- dataset %&gt;%
+    filter(analysis == {{ analysis }}) %&gt;%
+    filter(subanalysis == {{ subanalysis}}) %&gt;%
+    filter(bird_group == {{ bird_group }}) %&gt;%
+    mutate(across(c(log_calories_removed_per_ha, net_hours), ~c(scale(.))))
+      
+  return(dataset)
+  
+}
 
-#Convert bracts/inflor/trees to number of flowers (&#39;num_flowers_estimate&#39;)
-#1. Keep flower data if it is available...
-#2. ...except for Heliconia species (then use bracts-to-flower key for consistency across years)
-#3. ...except if there is not bract info (then use # flowers)
-resource_counts03 &lt;- resource_counts02 %&gt;%
-  mutate(flowers_per = as.numeric(flowers_per)) %&gt;%
-  mutate(num_flowers_estimate = ifelse(!is.na(num_flowers), num_flowers, NA),  
-         num_flowers_estimate =ifelse(plant_species_for_calories == &quot;HETO&quot;, flowers_per, num_flowers_estimate), 
-         num_flowers_estimate = ifelse(plant_species_for_calories==&quot;HETO&quot; &amp; is.na(num_bracts), num_flowers, num_flowers_estimate), 
-         num_flowers_estimate = ifelse((is.na(num_flowers) &amp; count_unit==&quot;inflor&quot;), num_inflors*flowers_per, num_flowers_estimate),
-         num_flowers_estimate = ifelse((is.na(num_flowers) &amp; count_unit==&quot;tree&quot;), num_trees*flowers_per, num_flowers_estimate))
-
-#Check: is the math correct?
-check02 &lt;- resource_counts03 %&gt;%
-  select(count_estimate_high_low, plant_species, plant_species_for_calories, count_unit, num_bracts, num_flowers, num_inflors, num_trees, flowers_per, num_flowers_estimate, notes_data)
-
-#Check: how many rows do not have a num_flowers_estimate? Why? 
-check03 &lt;- resource_counts03 %&gt;%
-  filter(is.na(num_flowers_estimate))
-
-#Answer: When count is NA. This includes situations species is &#39;unknown&#39; and count_unit_estimate=&#39;high&#39;/count_unit=&#39;inflor&#39;. Latter happens because I do not have flowers-per-inflor data for unknown species. If want to compare high/low estimate summaries, should remove unknown species
-
-#Check: how many rows do not have num_flowers_estimate? Why? (Aside from being an unknown species)
-check04 &lt;- resource_counts03 %&gt;%
-  filter(is.na(num_flowers_estimate)) %&gt;%
-  filter(!grepl(&quot;UNKN&quot;, plant_species))
-
-#Answer: When count data are NA. For example, when rows were assumed to be duplicate counts (e.g., p137 MARIPA and p10 PORO), or when data are just missing.</code></pre>
-<p>Possible solutions for plants (rows) missing count data:</p>
-<ol style="list-style-type: upper-alpha">
-<li><p>Add a minimum number of flowers/inflorescences (i.e. 1)</p></li>
-<li><p>Add median, mean, or most common number of flowers for that plant
-species (if data available). And if those data are not available, add
-the minimum.</p></li>
-</ol>
-<p><em>AS OF 5/27/2020, DECIDED NOT TO WORRY ABOUT THIS. ONLY ~25 PLANTS
-ARE MISSING COUNT INFO</em></p>
+#Create datasets (will add models in later step)
+data &lt;- base_table %&gt;%
+    mutate(data = pmap(list(analysis, subanalysis, bird_group), ~subset_data(dataset = capture_data_for_analysis, analysis = ..1, subanalysis = ..2, bird_group = ..3)))</code></pre>
 </div>
-<div id="step-3-calculate-calories-per-plant-by-multiplying-number-of-flowers-by-calories-per-flower" class="section level2">
-<h2>Step 3: Calculate calories per plant by multiplying number of
-flowers by calories per flower</h2>
-<pre class="r"><code>#This is calories, not kilocalories
-calories_per_plant &lt;- resource_counts03 %&gt;%
-  mutate(calories_per_plant = as.numeric(num_flowers_estimate)*as.numeric(calories)) %&gt;%
-  select(count_estimate_high_low, everything()) %&gt;%
-  arrange(count_estimate_high_low)
-
-#Check: are there any species missing nectar data?
-nectar_species &lt;- calories_per_flower %&gt;% distinct(plant_species_for_calories)
-
-check05 &lt;- resource_counts03 %&gt;% 
-  filter(!(plant_species_for_calories %in% nectar_species$plant_species_for_calories))
-
-#Answer: only random unknown species (not known to genus)
-
-#Check: which rows have zero calories? And why?
-check06 &lt;- calories_per_plant %&gt;%
-  filter(calories_per_plant == 0)
-
-#Answer: species with 0 (calculated) flowers. This is mostly Heliconia with 0-2 open bracts.
-
-#Check: which rows have NA calories? And why? Did not have any &#39;num_flowers_estimate&#39;. Same as check04
-check08 &lt;- calories_per_plant %&gt;%
-  filter(is.na(calories_per_plant)) %&gt;%
-  filter(!grepl(&quot;UNKN&quot;, plant_species))</code></pre>
+<div id="step-3-initial-model-fitting" class="section level2">
+<h2>Step 3: Initial model fitting</h2>
+<p>For count data, there multiple possible distributions. I need to
+choose between Poisson and negative binomial (nbinom1 and nbinom2) and
+also see if there is support for zero-inflation or not. Will check
+assumptions for all models again later on.</p>
+<p><strong>Captures</strong></p>
+<p><strong>Recaptures</strong></p>
 </div>
-<div id="step-4-export-data-will-be-summarized-to-patch-level-in-later-step" class="section level2">
-<h2>Step 4: Export data (will be summarized to patch level in later
-step)</h2>
-<pre class="r"><code>path_name &lt;- c(&quot;../../data/export/intermediate&quot;)
-write.csv(calories_per_plant, file.path(path_name, &quot;Resource_counts_2016-2018_with_calories.csv&quot;), row.names = FALSE)</code></pre>
+<div id="step-4-fit-models" class="section level2">
+<h2>Step 4: Fit models</h2>
+<pre class="r"><code>#Function to make model for given analysis
+#Alternative optimizer (default is nlminb)
+#control = glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;))
+create_model &lt;- function(dataset, analysis, subanalysis, treatment_variable){
+
+  #Make models for each analysis
+  if(subanalysis == &quot;captures&quot;){
+    
+      model &lt;- glmmTMB(as.formula(paste0(&quot;num_birds ~ &quot;, treatment_variable, &quot; * exp_phase + net_hours + (1|patch/year_patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;poisson&quot;, ziformula = ~0)
+      
+    }
+  
+  if(subanalysis == &quot;recaptures&quot;){
+    
+    #Recap rate = # recaps post/# birds pre
+    model &lt;- glmmTMB(as.formula(paste0(&quot;recap_rate ~ &quot;, treatment_variable, &quot; + (1|patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;binomial&quot;, weights = num_birds_pre, ziformula = ~0)
+    
+  }
+   
+  return(model)
+  
+}
+
+#Create models
+models &lt;- data %&gt;%
+   mutate(model_quietly = pmap(list(data, analysis, subanalysis, treatment_variable), quietly(function(a, b, c, d){model &lt;- create_model(dataset = a, analysis = b, subanalysis = c, treatment_variable = d)})),
+          model = map(model_quietly, get_result),
+          warning = map(model_quietly, get_warning), 
+          convergence = map(model, check_convergence)) %&gt;%
+  mutate(xvar_table = map(model, ~data.frame(xvar = all.vars(terms(.))[-1])))
+
+#Make sure there weren&#39;t any problems + check to make sure table of predictor variables is correct
+models$warning</code></pre>
+<pre><code>## [[1]]
+## character(0)
+## 
+## [[2]]
+## character(0)
+## 
+## [[3]]
+## character(0)
+## 
+## [[4]]
+## character(0)
+## 
+## [[5]]
+## character(0)
+## 
+## [[6]]
+## character(0)
+## 
+## [[7]]
+## character(0)
+## 
+## [[8]]
+## character(0)</code></pre>
+<pre class="r"><code>models$convergence</code></pre>
+<pre><code>## [[1]]
+## [1] 0
+## 
+## [[2]]
+## [1] 0
+## 
+## [[3]]
+## [1] 0
+## 
+## [[4]]
+## [1] 0
+## 
+## [[5]]
+## [1] 0
+## 
+## [[6]]
+## [1] 0
+## 
+## [[7]]
+## [1] 0
+## 
+## [[8]]
+## [1] 0</code></pre>
+<pre class="r"><code>models$xvar_table</code></pre>
+<pre><code>## [[1]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3         net_hours
+## 
+## [[2]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3         net_hours
+## 
+## [[3]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                   net_hours
+## 
+## [[4]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                   net_hours
+## 
+## [[5]]
+##                xvar
+## 1 control_treatment
+## 
+## [[6]]
+##                xvar
+## 1 control_treatment
+## 
+## [[7]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 
+## [[8]]
+##                          xvar
+## 1 log_calories_removed_per_ha</code></pre>
+</div>
+<div id="step-5-check-assumptions" class="section level2">
+<h2>Step 5: Check assumptions</h2>
+<pre class="r"><code>assumption_checks &lt;- models %&gt;%
+  mutate(re_plot = pmap(list(model, title, subtitle), ~check_re(model = ..1, plot_title = ..2, plot_subtitle = ..3))) %&gt;%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %&gt;%
+  mutate(dharma_plot_safely = pmap(list(dharma_object, title, subtitle),
+                                   safely(function(a, b, c){make_dharma_plot(dharma_object = a, plot_title = b, plot_subtitle = c, plot_type = &quot;basic&quot;)})),
+         dharma_plot = map(dharma_plot_safely, get_result),
+         dharma_plot_error = map(dharma_plot_safely, get_error)) %&gt;%
+  mutate(dharma_xvar_plot_safely = pmap(list(xvar_table, data, dharma_object, title, subtitle),
+                                        safely(function(a, b, c, d, e){make_dharma_xvar_plot(predictor_table = a, dataset = b, dharma_object = c, plot_title = d, plot_subtitle = e)})),
+         dharma_xvar_plot = map(dharma_xvar_plot_safely, get_result),
+         dharma_xvar_plot_error = map(dharma_xvar_plot_safely, get_error)) %&gt;%
+  mutate(dharma_zeroinfl_plot = pmap(list(dharma_object, title, subtitle), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2, plot_subtitle = ..3, plot_type = &quot;zeroinflation&quot;)),
+         dharma_overdisp_plot = pmap(list(dharma_object, title, subtitle),  ~make_dharma_plot(dharma_object = ..1, plot_title = ..2, plot_subtitle = ..3, plot_type = &quot;overdispersion&quot;))) %&gt;%
+  mutate(plotname1 = paste(&quot;re_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
+  mutate(plotname2 = paste(&quot;dharma_overall_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
+  mutate(plotname3 = paste(&quot;dharma_xvar_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
+  mutate(plotname4 = paste(&quot;dharma_zeroinfl_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
+  mutate(plotname5 = paste(&quot;dharma_overdisp_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))
+
+
+#Export diagnostic plots because they load very slowly in RStudio
+path_name &lt;- c(&quot;../../results/analysis/assumption_checks/captures&quot;)
+walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;, bg = &quot;white&quot;))
+walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
+walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
+walk2(assumption_checks$plotname4, assumption_checks$dharma_zeroinfl_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
+walk2(assumption_checks$plotname5, assumption_checks$dharma_overdisp_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
+
+#Check for highly influential replicates
+#Make plots of DFBETAS and Cook&#39;s distance
+influence_checks &lt;- models %&gt;%
+  mutate(influence_plot = pmap(list(model, data, title, subtitle), ~make_influence_plot(model = ..1, dataset = ..2, plot_title = ..3, plot_subtitle = ..4, group_id = &quot;year_patch&quot;))) %&gt;%
+  mutate(plotname6 = paste(&quot;influence_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))
+
+#Export plots
+walk2(influence_checks$plotname6, influence_checks$influence_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;, bg = &quot;white&quot;))</code></pre>
+</div>
+<div id="step-6-create-results-for-export" class="section level2">
+<h2>Step 6: Create results for export</h2>
+<pre class="r"><code>#Will also add information about sample size: total # of observations (rows), number of levels per random effect, and the number of replicates (split into &#39;control&#39; vs. &#39;treatment&#39;)
+results &lt;- models %&gt;%
+  mutate(summary = map(model, summary),
+         summary_tidy = map(model, broom.mixed::tidy),
+         confint_wald = map(model, ~calculate_ci(., method_name = &quot;wald&quot;))) %&gt;%
+  mutate(num_obs = map(model, get_number_obs),
+         num_levels = map(model, get_number_re_levels),
+         num_reps = map(data, ~get_sample_size(data = ., vars = c(&quot;year&quot;, &quot;patch&quot;, &quot;control_treatment&quot;), grouping_var = &quot;control_treatment&quot;)))</code></pre>
+</div>
+<div id="step-7-export-results-as-rds-file" class="section level2">
+<h2>Step 7: Export results as rds file</h2>
+<pre class="r"><code>saveRDS(results, &quot;../../results/analysis/rds_files/Capture_results.rds&quot;)</code></pre>
+<p><em>WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM
+RDS FILES LATER ON IN SINGLE SCRIPT</em></p>
 </div>
 
 

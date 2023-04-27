@@ -11,7 +11,7 @@
 
 
 
-<title>Analyzing telemetry data</title>
+<title>Analyzing camera data</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -354,7 +354,7 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">Analyzing telemetry data</h1>
+<h1 class="title toc-ignore">Analyzing camera data</h1>
 
 </div>
 
@@ -362,138 +362,669 @@ display: none;
 <p><strong>Goals</strong></p>
 <p>Analyze how experimental <em>Heliconia</em> removal influences:</p>
 <ul>
-<li>The amount of time that radio-tagged hummingbirds spent in the focal
-area (“patch”, i.e., where they were captured and we removed
-<em>Heliconia</em>)</li>
+<li>Visitation rates to focal <em>Heliconia</em> plants (those that
+remained uncovered throughout the experiment)
+<ul>
+<li>Visitation from all hummingbirds</li>
+<li>Visitation from individual color-marked hummingbirds (2017-2018
+only)</li>
+</ul></li>
+<li>Visitation rates to non-<em>Heliconia</em> plants
+<ul>
+<li>Visitation from all hummingbirds</li>
+<li>Visitation from individual color-marked hummingbirds (2017-2018
+only)</li>
+</ul></li>
 </ul>
-<div id="step-1-import-data-and-functions" class="section level2">
-<h2>Step 1: Import data and functions</h2>
-<p><strong>Data for analysis</strong></p>
-<pre class="r"><code>#Telemetry data, all hummingbird species
-telem_data &lt;- read.csv(&quot;../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv&quot;) %&gt;%
-  mutate(bird_group = &quot;all_spp&quot;)
+<p>For each analysis, I will examine (A) all hummingbird species, and
+(B) species that are <em>Heliconia</em> specialists (green hermits and
+violet sabrewings).</p>
+<div id="step-1-import-data-and-functions-prepare-for-analysis" class="section level2">
+<h2>Step 1: Import data and functions, prepare for analysis</h2>
+<p><strong>Get data</strong></p>
+<pre class="r"><code>#Camera data, visits summarized across birds
+visit_data &lt;- read.csv(&quot;../../data/export/for_analysis/Camera_visitation_rates.csv&quot;) %&gt;%
+  mutate(subanalysis = &quot;all_birds&quot;)
 
-head(telem_data)</code></pre>
-<pre><code>##   year patch control_treatment frequency bird_species bird_sex exp_phase
-## 1 2016    10         treatment       120         GREH        F      post
-## 2 2016    10         treatment       120         GREH        F       pre
-## 3 2016    10         treatment       148         GREH        M      post
-## 4 2016    10         treatment       148         GREH        M       pre
-## 5 2016    10         treatment       322         VISA        F      post
-## 6 2016    10         treatment       322         VISA        F       pre
-##   obs_effort_minutes time_in_patch_minutes prop_time_in_patch bird_group
-## 1                534                    32        0.059925094    all_spp
-## 2                729                   208        0.285322359    all_spp
-## 3                534                     0        0.000000000    all_spp
-## 4                729                     2        0.002743484    all_spp
-## 5                534                     0        0.000000000    all_spp
-## 6                729                   234        0.320987654    all_spp</code></pre>
-<pre class="r"><code>#Create subset for GREH/VISA
-telem_data_greh_visa &lt;- telem_data %&gt;%
-  filter(bird_species == &quot;GREH&quot; | bird_species == &quot;VISA&quot;) %&gt;%
-  mutate(bird_group = &quot;greh_visa&quot;)
+#Camera data, visits by individual birds
+#Decided not to exclude birds that have no visits during the pre period (determined for HETO and non-HETO separately)
+visit_data_marked &lt;- read.csv(&quot;../../data/export/for_analysis/Camera_visitation_rates_marked_birds.csv&quot;) %&gt;%
+  mutate(subanalysis = &quot;marked_birds&quot;) %&gt;%
+  select(-present_during_pre)
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
-heto_removed &lt;- read.csv(&quot;../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv&quot;)
+heto_removed &lt;- read.csv(&quot;../../data/export/for_analysis/Site_and_replicate_characteristics.csv&quot;) %&gt;%
+  select(year, patch, control_treatment, calories_removed_per_ha)
 
-##1. Combine data
-#2. Log-transform HETO calories removed
-telem_data_for_analysis &lt;- telem_data %&gt;%
-  bind_rows(telem_data_greh_visa) %&gt;%
-  left_join(heto_removed) %&gt;%
-  rename(focal_area_hectares = area) %&gt;%
+#Plant names
+plant_species_names &lt;- read.csv(&quot;../../data/import/data/Plant_codes_species_list.csv&quot;) %&gt;%
+  select(plant_family, plant_scientific_name, plant_species)</code></pre>
+<p><strong>How many non-Heliconia species were had camera data pre and
+post? Did all species have sightings?</strong></p>
+<pre class="r"><code>#Calculate total number of species in data (and total # with sightings)
+nonheto_data &lt;- visit_data %&gt;%
+  filter(analysis == &quot;camera_non-HETO&quot; &amp; subanalysis == &quot;all_birds&quot; &amp; bird_group == &quot;all_spp&quot;)
+
+nonheto_species &lt;- nonheto_data %&gt;%
+  group_by(plant_species) %&gt;%
+  summarise(num_sightings = sum(sightings)) %&gt;%
+  arrange(num_sightings) %&gt;%
+  ungroup()
+
+nonheto_species_with_sightings &lt;- nonheto_species %&gt;%
+  filter(num_sightings &gt; 0)
+
+#Which plant species have the most data? In terms of replicates (actual number of rows will be double this, because have data pre and post)
+nonheto_species_sample_size &lt;- nonheto_data %&gt;%
+  distinct(year, patch, plant_species) %&gt;%
+  group_by(plant_species) %&gt;%
+  summarise(num_replicates = n()) %&gt;%
+  arrange(desc(num_replicates)) %&gt;%
+  left_join(plant_species_names) %&gt;%
+  left_join(nonheto_species) %&gt;%
+  select(plant_family, plant_scientific_name, plant_species, num_replicates, num_sightings) %&gt;%
+  filter(num_sightings &gt; 0)
+
+#Export list for Supp info
+write.csv(nonheto_species_sample_size, &quot;../../data/export/supp_tables/List_of_non-Heliconia_camera_species.csv&quot;)</code></pre>
+<p><strong>Prepare data for analysis</strong></p>
+<pre class="r"><code>#1. Combine data
+#2. Remove plant species that had no sightings from any hummingbird species, pre or post
+#3. Log-transform HETO calories removed
+#4. Remove plants without flower counts (GINGY and MARA-VER)
+visit_data_for_analysis &lt;- visit_data_marked %&gt;%
+  bind_rows(visit_data) %&gt;%
+  left_join(heto_removed) %&gt;% 
+  filter(plant_species == &quot;HETO&quot; | plant_species %in% nonheto_species_with_sightings$plant_species) %&gt;%
   mutate(exp_phase = factor(exp_phase, levels = c(&quot;pre&quot;, &quot;post&quot;))) %&gt;%
   mutate(control_treatment = factor(control_treatment, levels = c(&quot;control&quot;, &quot;treatment&quot;))) %&gt;%
   mutate(year_patch = paste(year, patch, sep = &quot;_&quot;)) %&gt;%
-  mutate(bird_id = paste(year, patch, frequency, sep = &quot;_&quot;)) %&gt;%
-  mutate(log_calories_removed_per_ha = log(calories_removed_per_ha + 1),
-         log_focal_area_hectares = log(focal_area_hectares)) %&gt;%
-  mutate(analysis = &quot;telemetry&quot;) %&gt;%
-  mutate(subanalysis = &quot;telemetry&quot;) %&gt;%
-  select(analysis, subanalysis, bird_group, year, patch, year_patch, control_treatment, exp_phase, bird_id, frequency, bird_species, bird_sex, obs_effort_minutes, everything())</code></pre>
-<pre><code>## Joining, by = c(&quot;year&quot;, &quot;patch&quot;)</code></pre>
+  mutate(log_calories_removed_per_ha = log(calories_removed_per_ha + 1)) %&gt;%
+  filter(!is.na(flowers) &amp; flowers != &quot;NA&quot;) %&gt;%
+  select(analysis, subanalysis, bird_group, everything())
+
+#Check: how many plant species, including HETO? All birds dataset
+visit_data_for_analysis %&gt;% filter(subanalysis == &quot;all_birds&quot;) %&gt;% pull(plant_species) %&gt;% unique() %&gt;% length()</code></pre>
+<pre><code>## [1] 31</code></pre>
+<pre class="r"><code>#Check: how many plant species, including HETO? Marked birds dataset
+visit_data_for_analysis %&gt;% filter(subanalysis == &quot;marked_birds&quot;) %&gt;% pull(plant_species) %&gt;% unique() %&gt;% length()</code></pre>
+<pre><code>## [1] 18</code></pre>
 <p><strong>Import functions</strong></p>
 <pre class="r"><code>source(&quot;../../code/helper_functions/Modeling_helper_functions.R&quot;)
 source(&quot;../../code/helper_functions/Plotting_helper_functions.R&quot;)
-source(&quot;../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R&quot;)
-source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)</code></pre>
+source(&quot;../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R&quot;)</code></pre>
 </div>
-<div id="step-2-create-datasets-for-each-analysis" class="section level1">
-<h1>Step 2: Create datasets for each analysis</h1>
+<div id="step-2-create-datasets-for-each-analysis" class="section level2">
+<h2>Step 2: Create datasets for each analysis</h2>
 <p><strong>Get organized</strong></p>
 <pre class="r"><code>#Create tables that will be filled in with models and model results
-analysis = c(&quot;telemetry&quot;)
-subanalysis = c(&quot;all_replicates&quot;, &quot;without_outlier&quot;) #Replicate 2016_10 exerts a LOT of influence, according to influence plots. Run with and without.
+analysis = c(&quot;camera_HETO&quot;, &quot;camera_non-HETO&quot;)
+subanalysis = c(&quot;all_birds&quot;, &quot;marked_birds&quot;)
 bird_group = c(&quot;all_spp&quot;, &quot;greh_visa&quot;)
+plant_species = nonheto_species_sample_size %&gt;% filter(num_replicates &gt; 10) %&gt;% pull(plant_species)
 model_type = c(&quot;categorical&quot;, &quot;quantitative&quot;)
 model_name = c(&quot;control/treatment * pre/post&quot;, &quot;calories removed/ha * pre/post&quot;)
 treatment_variable = c(&quot;control_treatment&quot;, &quot;log_calories_removed_per_ha&quot;)
 model_types_names = data.frame(model_type = model_type, model_name = model_name, treatment_variable = treatment_variable)
 
-base_table &lt;- crossing(analysis, subanalysis, bird_group, model_type) %&gt;% 
+#Models for HETO visitation and non-HETO visitation (combined across all species)
+heto_nonheto_combined_base_table &lt;- crossing(analysis, subanalysis, bird_group, model_type)
+
+#Models for non-HETO visitation (plant species analyzed separately)
+#If want to look at GREH/VISA as well, can cross with &#39;bird_group&quot;. But doing this causes convergence problems for plant species with little to no visitation from these hummingbirds (RABO, MARA)
+nonheto_separate_base_table &lt;- data.frame(analysis = &quot;camera_non-HETO_separate&quot;, subanalysis = &quot;all_birds&quot;, plant_species = plant_species, model_type = &quot;categorical&quot;, bird_group = &quot;all_spp&quot;)
+
+#Combine
+base_table &lt;- heto_nonheto_combined_base_table %&gt;%
+  bind_rows(nonheto_separate_base_table) %&gt;%
   left_join(model_types_names) %&gt;%
-  mutate(yvar = &quot;prop_time_in_patch&quot;) %&gt;%
-  arrange(analysis, subanalysis, model_type, bird_group) %&gt;%
+  mutate(yvar = &quot;sightings&quot;) %&gt;%
+  arrange(analysis, subanalysis, model_type, plant_species, bird_group) %&gt;%
   mutate(model_number = 1:length(yvar)) %&gt;%
   mutate(title = paste(analysis, subanalysis, bird_group, sep = &quot;_&quot;)) %&gt;%
+  mutate(title = ifelse(analysis == &quot;camera_non-HETO_separate&quot;, paste(analysis, subanalysis, plant_species), title)) %&gt;%
   mutate(subtitle = yvar) %&gt;%
   select(model_number, analysis, yvar, subanalysis, everything())</code></pre>
-<pre><code>## Joining, by = &quot;model_type&quot;</code></pre>
 <p><strong>Filter master dataset to relevant sub-dataset &amp; scale
 continuous predictors</strong></p>
-<pre class="r"><code>subset_data &lt;- function(dataset, analysis, subanalysis, bird_group){
+<pre class="r"><code>subset_data &lt;- function(dataset, analysis, subanalysis, bird_group, plant_species){
   
-  dataset &lt;- dataset %&gt;%
-    filter(analysis == {{ analysis }}) %&gt;%
-    filter(bird_group == {{ bird_group }}) %&gt;%
-    mutate(across(c(log_calories_removed_per_ha, log_focal_area_hectares), ~c(scale(.))))
-  
-  if(subanalysis == &quot;without_outlier&quot;){
+  if(analysis != &quot;camera_non-HETO_separate&quot;){
     
     dataset &lt;- dataset %&gt;%
-      filter(year_patch != &quot;2016_10&quot;)
+      filter(analysis == {{ analysis }}) %&gt;%
+      filter(subanalysis == {{ subanalysis}}) %&gt;%
+      filter(bird_group == {{ bird_group }})
     
   }
-      
+  
+  if(analysis == &quot;camera_non-HETO_separate&quot;){
+    
+    dataset &lt;- dataset %&gt;%
+      filter(analysis == &quot;camera_non-HETO&quot;) %&gt;%
+      filter(subanalysis == {{ subanalysis}}) %&gt;%
+      filter(bird_group == {{ bird_group }}) %&gt;%
+      filter(plant_species == {{ plant_species }})
+  }
+  
+  #Scale continuous predictors
+  dataset &lt;- dataset %&gt;%
+    mutate(across(c(log_calories_removed_per_ha, flowers), ~c(scale(.))))
+
   return(dataset)
   
 }
 
 #Create datasets (will add models in later step)
 data &lt;- base_table %&gt;%
-    mutate(data = pmap(list(analysis, subanalysis, bird_group), ~subset_data(dataset = telem_data_for_analysis, analysis = ..1, subanalysis = ..2, bird_group = ..3)))</code></pre>
+    mutate(data = pmap(list(analysis, subanalysis, bird_group, plant_species), ~subset_data(dataset = visit_data_for_analysis, analysis = ..1, subanalysis = ..2, bird_group = ..3, plant_species = ..4)))</code></pre>
+</div>
 <div id="step-3-initial-model-fitting" class="section level2">
 <h2>Step 3: Initial model fitting</h2>
-<p>I have a counted proportion that I will analyze with a k/n binomial.
-I will choose between binomial and betabinomial, which allows for
-overdispersion, and also see if there is support for zero-inflation or
-not. Will check assumptions for all models again later on.</p>
+<p>For count data, there multiple possible distributions. I need to
+choose between Poisson and negative binomial (nbinom1 and nbinom2) and
+also see if there is support for zero-inflation or not. Will check
+assumptions for all models again later on.</p>
+<p><strong>Heliconia visitation rate: all birds, including unmarked
+birds</strong></p>
+<p><strong>Non-Heliconia visitation rate (all plant species together):
+all birds, including unmarked birds</strong></p>
+<p><strong>Non-Heliconia visitation rate (plant species separate): all
+birds, including unmarked birds</strong></p>
+<p><strong>Heliconia visitation rate: marked birds only</strong></p>
+<p><strong>Non-Heliconia visitation rate: marked birds only</strong></p>
 </div>
-<div id="step-4-fit-models" class="section level2">
-<h2>Step 4: Fit models</h2>
+<div id="step-4-create-models" class="section level2">
+<h2>Step 4: Create models</h2>
 <pre class="r"><code>#Function to make model for given analysis
 #Alternative optimizer (default is nlminb)
 #control = glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;))
-create_model &lt;- function(dataset, analysis, subanalysis, treatment_variable){
+create_model &lt;- function(dataset, analysis, subanalysis, treatment_variable, plant_species){
 
-  model &lt;- glmmTMB(as.formula(paste0(&quot;prop_time_in_patch ~ &quot;, treatment_variable, &quot; * exp_phase + (1|patch/year_patch/bird_id)&quot;)), data = dataset, na.action = na.omit, family = &quot;betabinomial&quot;, ziformula = ~0, weights = obs_effort_minutes, control = glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
+  #All models will have this part, but will adjust random effects for each model
+  base_formula &lt;- paste0(&quot;sightings ~ &quot;, treatment_variable, &quot; * exp_phase + flowers + offset(log(hours))&quot;)
+  
+  #Make models for each analysis
+  if(analysis == &quot;camera_HETO&quot;){
+    
+    if(subanalysis == &quot;all_birds&quot;){
       
+      model &lt;- glmmTMB(as.formula(paste0(base_formula, &quot; + (1|patch/year_patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;nbinom1&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
+      
+    }
+    
+    if(subanalysis == &quot;marked_birds&quot;){
+      
+       model &lt;- glmmTMB(as.formula(paste0(base_formula, &quot; + (1|patch/year_patch/color_id)&quot;)), data = dataset, na.action = na.omit, family = &quot;poisson&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
+       
+    }
+    
+  }
+  
+  if(analysis == &quot;camera_non-HETO&quot;){
+    
+    if(subanalysis == &quot;all_birds&quot;){
+      
+      model &lt;- glmmTMB(as.formula(paste0(base_formula, &quot; + (1|patch/year_patch/plant_species)&quot;)), data = dataset, na.action = na.omit, family = &quot;nbinom1&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
+                       
+      
+    }
+    
+    if(subanalysis == &quot;marked_birds&quot;){
+      
+       model &lt;- glmmTMB(as.formula(paste0(base_formula, &quot; + (1|patch/year_patch/plant_species) + (1|color_id)&quot;)), data = dataset, na.action = na.omit, family = &quot;nbinom2&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
+                        
+    }
+    
+  }
+  
+  #DECISION: Model 1 (Poisson) for BOCA-ROJA, COSTBAR. Model 5 (nbinom2) for CEPO, HAPA. Model 3 (nbinom1) for MARA and the rest.
+  if(analysis == &quot;camera_non-HETO_separate&quot;){
+    
+    if(plant_species == &quot;BOCA-ROJA&quot;){
+      
+      model &lt;- glmmTMB(as.formula(paste0(base_formula, &quot; + (1|patch/year_patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;poisson&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
+      
+    }
+    
+    nbinom1_species &lt;- c(&quot;MARA&quot;, &quot;PALU&quot;, &quot;PAV-ROJ-AMA&quot;, &quot;TUBO-AMA&quot;, &quot;COSTBAR&quot;)
+    if(plant_species %in% nbinom1_species){
+      
+      model &lt;- glmmTMB(as.formula(paste0(base_formula, &quot; + (1|patch/year_patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;nbinom1&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
+
+    }
+    
+    if(plant_species == &quot;CEPO&quot; | plant_species == &quot;HAPA&quot;){
+      
+      model &lt;- glmmTMB(as.formula(paste0(base_formula, &quot; + (1|patch/year_patch)&quot;)), data = dataset, na.action = na.omit, family = &quot;nbinom2&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
+
+    }
+    
+    #Model for RABO is tricky...only meets assumptions with the following modifications (squared term for flowers and no offset for hours)
+    if(plant_species == &quot;RABO&quot;){
+      
+      dataset &lt;- dataset %&gt;%
+        mutate(across(c(hours), ~c(scale(.)))) #Need to standardize hours here because wasn&#39;t scaled in function earlier
+      
+      model &lt;- glmmTMB(as.formula(&quot;sightings ~ control_treatment * exp_phase + I(flowers^2) + hours + (1|patch/year_patch)&quot;), data = dataset, na.action = na.omit, family = &quot;nbinom1&quot;, ziformula = ~0, control=glmmTMBControl(optimizer=optim, optArgs=list(method=&quot;BFGS&quot;)))
+
+    }
+    
+  }
+  
   return(model)
   
 }
 
-#Create models
+#Testing function
+test01 &lt;- create_model(dataset = data[[12]][[1]], analysis = &quot;camera_HETO&quot;, subanalysis = &quot;all_birds&quot;, treatment_variable = &quot;control_treatment&quot;, plant_species = NA)
+test02 &lt;- create_model(dataset = data[[12]][[20]], analysis = &quot;camera_non-HETO_separate&quot;, subanalysis = &quot;all_birds&quot;, treatment_variable = &quot;control_treatment&quot;, plant_species = &quot;RABO&quot;)
+summary(test01)</code></pre>
+<pre><code>##  Family: nbinom1  ( log )
+## Formula:          
+## sightings ~ control_treatment * exp_phase + flowers + offset(log(hours)) +  
+##     (1 | patch/year_patch)
+## Data: dataset
+## 
+##      AIC      BIC   logLik deviance df.resid 
+##    468.3    485.3   -226.1    452.3       54 
+## 
+## Random effects:
+## 
+## Conditional model:
+##  Groups           Name        Variance Std.Dev.
+##  year_patch:patch (Intercept) 0.05028  0.2242  
+##  patch            (Intercept) 0.18974  0.4356  
+## Number of obs: 62, groups:  year_patch:patch, 31; patch, 14
+## 
+## Dispersion parameter for nbinom1 family (): 2.32 
+## 
+## Conditional model:
+##                                          Estimate Std. Error z value Pr(&gt;|z|)
+## (Intercept)                              -0.60613    0.17207  -3.522 0.000428
+## control_treatmenttreatment                0.06920    0.17478   0.396 0.692143
+## exp_phasepost                            -0.16620    0.15303  -1.086 0.277471
+## flowers                                   0.13626    0.07945   1.715 0.086336
+## control_treatmenttreatment:exp_phasepost  0.21947    0.20627   1.064 0.287333
+##                                             
+## (Intercept)                              ***
+## control_treatmenttreatment                  
+## exp_phasepost                               
+## flowers                                  .  
+## control_treatmenttreatment:exp_phasepost    
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<pre class="r"><code>summary(test02)</code></pre>
+<pre><code>##  Family: nbinom1  ( log )
+## Formula:          
+## sightings ~ control_treatment * exp_phase + I(flowers^2) + hours +  
+##     (1 | patch/year_patch)
+## Data: dataset
+## 
+##      AIC      BIC   logLik deviance df.resid 
+##    225.6    239.4   -103.8    207.6       25 
+## 
+## Random effects:
+## 
+## Conditional model:
+##  Groups           Name        Variance  Std.Dev.
+##  year_patch:patch (Intercept) 1.062e-05 0.003259
+##  patch            (Intercept) 3.176e-06 0.001782
+## Number of obs: 34, groups:  year_patch:patch, 17; patch, 12
+## 
+## Dispersion parameter for nbinom1 family (): 2.66 
+## 
+## Conditional model:
+##                                          Estimate Std. Error z value Pr(&gt;|z|)
+## (Intercept)                               2.36161    0.24622   9.591  &lt; 2e-16
+## control_treatmenttreatment               -0.14036    0.30622  -0.458   0.6467
+## exp_phasepost                             0.10077    0.29994   0.336   0.7369
+## I(flowers^2)                             -0.15091    0.07581  -1.991   0.0465
+## hours                                     0.54094    0.09947   5.438 5.38e-08
+## control_treatmenttreatment:exp_phasepost  0.30547    0.40298   0.758   0.4484
+##                                             
+## (Intercept)                              ***
+## control_treatmenttreatment                  
+## exp_phasepost                               
+## I(flowers^2)                             *  
+## hours                                    ***
+## control_treatmenttreatment:exp_phasepost    
+## ---
+## Signif. codes:  0 &#39;***&#39; 0.001 &#39;**&#39; 0.01 &#39;*&#39; 0.05 &#39;.&#39; 0.1 &#39; &#39; 1</code></pre>
+<pre class="r"><code>#Create models
 models &lt;- data %&gt;%
-   mutate(model_quietly = pmap(list(data, analysis, subanalysis, treatment_variable), quietly(function(a, b, c, d){model &lt;- create_model(dataset = a, analysis = b, subanalysis = c, treatment_variable = d)})),
+   mutate(model_quietly = pmap(list(data, analysis, subanalysis, treatment_variable, plant_species), quietly(function(a, b, c, d, e){model &lt;- create_model(dataset = a, analysis = b, subanalysis = c, treatment_variable = d, plant_species = e)})),
           model = map(model_quietly, get_result),
           warning = map(model_quietly, get_warning), 
           convergence = map(model, check_convergence)) %&gt;%
-  mutate(xvar_table = map(model, ~data.frame(xvar = all.vars(terms(.))[-1])))
+  mutate(xvar_table = map(model, ~data.frame(xvar = all.vars(terms(.))[-1]))) #hours is technically an offset, not a covariate, in most models; could remove entirely by adding [-4] after [-1]
 
 #Make sure there weren&#39;t any problems + check to make sure table of predictor variables is correct
-# models$warning
-# models$convergence
-# models$xvar_table</code></pre>
+models$warning</code></pre>
+<pre><code>## [[1]]
+## character(0)
+## 
+## [[2]]
+## character(0)
+## 
+## [[3]]
+## character(0)
+## 
+## [[4]]
+## character(0)
+## 
+## [[5]]
+## character(0)
+## 
+## [[6]]
+## character(0)
+## 
+## [[7]]
+## character(0)
+## 
+## [[8]]
+## character(0)
+## 
+## [[9]]
+## character(0)
+## 
+## [[10]]
+## character(0)
+## 
+## [[11]]
+## character(0)
+## 
+## [[12]]
+## character(0)
+## 
+## [[13]]
+## character(0)
+## 
+## [[14]]
+## character(0)
+## 
+## [[15]]
+## character(0)
+## 
+## [[16]]
+## character(0)
+## 
+## [[17]]
+## character(0)
+## 
+## [[18]]
+## character(0)
+## 
+## [[19]]
+## character(0)
+## 
+## [[20]]
+## character(0)
+## 
+## [[21]]
+## character(0)
+## 
+## [[22]]
+## character(0)
+## 
+## [[23]]
+## character(0)
+## 
+## [[24]]
+## character(0)
+## 
+## [[25]]
+## character(0)</code></pre>
+<pre class="r"><code>models$convergence</code></pre>
+<pre><code>## [[1]]
+## [1] 0
+## 
+## [[2]]
+## [1] 0
+## 
+## [[3]]
+## [1] 0
+## 
+## [[4]]
+## [1] 0
+## 
+## [[5]]
+## [1] 0
+## 
+## [[6]]
+## [1] 0
+## 
+## [[7]]
+## [1] 0
+## 
+## [[8]]
+## [1] 0
+## 
+## [[9]]
+## [1] 0
+## 
+## [[10]]
+## [1] 0
+## 
+## [[11]]
+## [1] 0
+## 
+## [[12]]
+## [1] 0
+## 
+## [[13]]
+## [1] 0
+## 
+## [[14]]
+## [1] 0
+## 
+## [[15]]
+## [1] 0
+## 
+## [[16]]
+## [1] 0
+## 
+## [[17]]
+## [1] 0
+## 
+## [[18]]
+## [1] 0
+## 
+## [[19]]
+## [1] 0
+## 
+## [[20]]
+## [1] 0
+## 
+## [[21]]
+## [1] 0
+## 
+## [[22]]
+## [1] 0
+## 
+## [[23]]
+## [1] 0
+## 
+## [[24]]
+## [1] 0
+## 
+## [[25]]
+## [1] 0</code></pre>
+<pre class="r"><code>models$xvar_table #hours is technically an offset, not a covariate, in most models (can ignore)</code></pre>
+<pre><code>## [[1]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[2]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[3]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                     flowers
+## 4                       hours
+## 
+## [[4]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                     flowers
+## 4                       hours
+## 
+## [[5]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[6]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[7]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                     flowers
+## 4                       hours
+## 
+## [[8]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                     flowers
+## 4                       hours
+## 
+## [[9]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[10]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[11]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                     flowers
+## 4                       hours
+## 
+## [[12]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                     flowers
+## 4                       hours
+## 
+## [[13]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[14]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[15]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                     flowers
+## 4                       hours
+## 
+## [[16]]
+##                          xvar
+## 1 log_calories_removed_per_ha
+## 2                   exp_phase
+## 3                     flowers
+## 4                       hours
+## 
+## [[17]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[18]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[19]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[20]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[21]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[22]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[23]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[24]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours
+## 
+## [[25]]
+##                xvar
+## 1 control_treatment
+## 2         exp_phase
+## 3           flowers
+## 4             hours</code></pre>
 </div>
 <div id="step-5-check-assumptions" class="section level2">
 <h2>Step 5: Check assumptions</h2>
@@ -514,13 +1045,13 @@ models &lt;- data %&gt;%
   mutate(plotname2 = paste(&quot;dharma_overall_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
   mutate(plotname3 = paste(&quot;dharma_xvar_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
   mutate(plotname4 = paste(&quot;dharma_zeroinfl_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
-  mutate(plotname5 = paste(&quot;dharma_overdisp_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))</code></pre>
-<pre><code>## qu = 0.25, log(sigma) = -2.892929 : outer Newton did not converge fully.</code></pre>
-<pre class="r"><code>#Export diagnostic plots because they load very slowly in RStudio
-path_name &lt;- c(&quot;../../results/statistical_analysis/assumption_checks/telemetry&quot;)
+  mutate(plotname5 = paste(&quot;dharma_overdisp_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))
+
+#Export diagnostic plots because they load very slowly in RStudio
+path_name &lt;- c(&quot;../../results/analysis/assumption_checks/cameras&quot;)
 walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;, bg = &quot;white&quot;))
 walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
-walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
+walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;, bg = &quot;white&quot;))
 walk2(assumption_checks$plotname4, assumption_checks$dharma_zeroinfl_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
 walk2(assumption_checks$plotname5, assumption_checks$dharma_overdisp_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
 
@@ -528,17 +1059,12 @@ walk2(assumption_checks$plotname5, assumption_checks$dharma_overdisp_plot, ~ggsa
 #Make plots of DFBETAS and Cook&#39;s distance
 influence_checks &lt;- models %&gt;%
   mutate(influence_plot = pmap(list(model, data, title, subtitle), ~make_influence_plot(model = ..1, dataset = ..2, plot_title = ..3, plot_subtitle = ..4, group_id = &quot;year_patch&quot;))) %&gt;%
-  mutate(plotname6 = paste(&quot;influence_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))</code></pre>
-<pre><code>## using a cluster of 2 cores</code></pre>
-<pre><code>## using a cluster of 2 cores</code></pre>
-<pre><code>## using a cluster of 2 cores</code></pre>
-<pre><code>## using a cluster of 2 cores</code></pre>
-<pre><code>## using a cluster of 2 cores</code></pre>
-<pre><code>## using a cluster of 2 cores</code></pre>
-<pre><code>## using a cluster of 2 cores</code></pre>
-<pre><code>## using a cluster of 2 cores</code></pre>
-<pre class="r"><code>#Export plots
-walk2(influence_checks$plotname6, influence_checks$influence_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;, bg = &quot;white&quot;))</code></pre>
+  mutate(plotname6 = paste(&quot;influence_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))
+
+#Export plots
+walk2(influence_checks$plotname6, influence_checks$influence_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;, bg = &quot;white&quot;))
+
+#Replicate 2016_58 seems to be pretty influential in non-HETO models for GREH/VISA, perhaps because of GIN-ROS-AMA (highest # sightings in entire dataset). But it&#39;s influential in the direction of rewiring, and we&#39;re still not finding a statistically significant treatment effect (interaction term).</code></pre>
 </div>
 <div id="step-6-create-results-for-export" class="section level2">
 <h2>Step 6: Create results for export</h2>
@@ -553,10 +1079,9 @@ results &lt;- models %&gt;%
 </div>
 <div id="step-7-export-results-as-rds-file" class="section level2">
 <h2>Step 7: Export results as rds file</h2>
-<pre class="r"><code>saveRDS(results, &quot;../../results/statistical_analysis/rds_files/Telemetry_results.rds&quot;)</code></pre>
+<pre class="r"><code>saveRDS(results, &quot;../../results/analysis/rds_files/Camera_results.rds&quot;)</code></pre>
 <p><em>WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM
 RDS FILES LATER ON IN SINGLE SCRIPT</em></p>
-</div>
 </div>
 
 

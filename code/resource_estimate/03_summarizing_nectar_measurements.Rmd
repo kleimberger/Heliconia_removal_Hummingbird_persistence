@@ -188,5 +188,6 @@ flowers_above_limit <- nectar_bagged %>%
 
 ## Step 4: Export data
 ```{r step4}
-write.csv(nectar_sum, "../../data/export/supp_tables/Nectar_volume_and_concentration_summary.csv", row.names = FALSE)
+#extra tables - not including in final Supporting information
+write.csv(nectar_sum, "../../data/export/supp_tables/extra/Nectar_volume_and_concentration_summary.csv", row.names = FALSE)
 ```

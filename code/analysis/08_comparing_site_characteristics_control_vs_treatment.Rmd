@@ -15,7 +15,7 @@ Check to see if there are any differences in site characteristics between contro
 **Site characteristics considered**
 
 - Elevation
-- Focal area size
+- Focal area size (ha)
 - *Heliconia* density (calories/ha)
 
 ```{r setup, include=FALSE}
@@ -29,19 +29,11 @@ library(ggplot2)
 
 ## Step 1: Get data
 
+These data have been combined in a previous script.
 ```{r}
-#Elevation
-elevation <- readxl::read_excel("../../data/import/data/Site_elevations.xlsx")
-
-#Focal area size + Heliconia density
-heto_densities <- read.csv("../../data/export/supp_tables/Heliconia_densities.csv") %>%
-  select(year, patch, focal_area_size = area, heto_calories_per_ha = calories_per_ha) %>%
-  mutate(log_focal_area_size = log(focal_area_size)) %>%
-  mutate(log_heto_calories_per_ha = log(heto_calories_per_ha))
-
-#Combine into one table
-site_characteristics <- elevation %>%
-  left_join(heto_densities) %>%
+site_characteristics <- read.csv("../../data/export/for_analysis/Site_and_replicate_characteristics.csv") %>%
+  mutate(focal_area_size = ifelse(year == "2016" & control_treatment == "control", NA, focal_area_size)) %>% #these are just filled in from later years because resource surveys not conducted in 2016
+  mutate(log_heto_calories_per_ha = log(heto_calories_per_ha)) %>%
   mutate(control_treatment = factor(control_treatment, levels = c("control", "treatment"), labels = c("Control", "Treatment"))) %>%
   unite(col = "year_patch", year, patch, sep = "_", remove = FALSE)
 ```
@@ -62,7 +54,7 @@ title_size = size * 1.15
 shape_size = 1
 line_width = 0.25
 
-path_name <- c("../../results/statistical_analysis/figures")
+path_name <- c("../../results/analysis/figures")
 colors <- c("#0E0D37", "#BA0022")
 ```
 
@@ -70,7 +62,8 @@ colors <- c("#0E0D37", "#BA0022")
 make_plot = function(dataset, yvar, ylabel, text_size, point_size, line_size){
   
   plot <- 
-  ggplot(data = dataset, aes_string(x = "control_treatment", y = yvar)) +
+    
+    ggplot(data = dataset, aes_string(x = "control_treatment", y = yvar)) +
   
     #Boxplots in different position than points
     geom_boxplot(aes(fill = control_treatment), colour = "black", width = 0.15, position = position_nudge(x = c(-0.15, 0.15)), alpha = 0.5, outlier.shape = NA, linewidth = line_size) +

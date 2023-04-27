@@ -381,7 +381,7 @@ recapture_rates <- capture_rates %>%
 write.csv(capture_rates_birds_in_pre_only, "../../data/export/for_analysis/Capture_rates.csv", row.names = FALSE)
 
 #For Supp table
-write.csv(capture_summary_table, "../../data/export/supp_tables/Captured_species_per_site_summary_table.csv", row.names = FALSE)
+write.csv(capture_summary_table, "../../data/export/supp_tables/extra/Captured_species_per_site_summary_table.csv", row.names = FALSE)
 
 #RECAPTURES
 #For main analysis

@@ -35,7 +35,7 @@ library(tidyr)
 #Summary of nectar volume/concentration measurements collected in field
 #Need to rename GIN-ROS-AMA because there is another unknown Renealmia species
 #Decided to use mean nectar volume and nectar concentration (instead of median) since that is value most commonly found in literature
-nectar_field <- read.csv("../../data/export/supp_tables/Nectar_volume_and_concentration_summary.csv") %>%
+nectar_field <- read.csv("../../data/export/supp_tables/extra/Nectar_volume_and_concentration_summary.csv") %>%
   mutate(plant_scientific_name = ifelse(plant_species == "GIN-ROS-AMA", "Renealmia sp. 2", as.character(plant_scientific_name))) %>%
   select(plant_species, plant_scientific_name, plant_family, nectar_vol = mean_vol, nectar_conc = mean_conc, everything()) %>%
   mutate(data_source = "field_data")
@@ -103,7 +103,9 @@ nectar_data_with_calories <- nectar_data %>%
 
 ## Step 4: Export data
 ```{r step4, message = FALSE}
-path_name <- c("../../data/export/supp_tables")
+path_name <- c("../../data/export/supp_tables/extra")
+
+#extra tables - not including in final Supporting information
 write.csv(nectar_data_with_calories, file.path(path_name, "Nectar_volume_concentration_and_calories_summary.csv"), row.names = FALSE)
 ```
 

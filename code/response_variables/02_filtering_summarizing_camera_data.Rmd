@@ -331,7 +331,8 @@ heto_sightings_by_sex <- calculate_sighting_rates(data = data_for_heto_sightings
 #Combine for Supp material
 heto_sightings <- heto_sightings_by_species %>%
   bind_rows(heto_sightings_by_sex) %>%
-  arrange(bird_species, desc(sightings))
+  arrange(bird_species, desc(sightings)) %>%
+  select(-sightings_time)
 
 #How many video hours for this dataset?
 hours_normal_visitation_heto <- data_for_normal_visitation %>%
@@ -379,5 +380,5 @@ write.csv(sighting_rates, "../../data/export/for_analysis/Camera_visitation_rate
 write.csv(marked_sighting_rates, "../../data/export/for_analysis/Camera_visitation_rates_marked_birds.csv", row.names = FALSE)
 
 ##  Summarized data of Heliconia visitation
-write.csv(heto_sightings, "../../data/export/supp_tables/Heliconia_visitor_summary.csv")
+write.csv(heto_sightings, "../../data/export/supp_tables/Camera_visitation_summary_for_Heliconia.csv")
 ```

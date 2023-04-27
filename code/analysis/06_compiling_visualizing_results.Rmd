@@ -44,19 +44,19 @@ source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 ## Step 1: Get results (rds files)
 
 ```{r}
-captures <- readRDS("../../results/statistical_analysis/rds_files/Capture_results.rds")
+captures <- readRDS("../../results/analysis/rds_files/Capture_results.rds")
 
-telemetry <- readRDS("../../results/statistical_analysis/rds_files/Telemetry_results.rds")
+telemetry <- readRDS("../../results/analysis/rds_files/Telemetry_results.rds")
 
-cameras <- readRDS("../../results/statistical_analysis/rds_files/Camera_results.rds") %>%
+cameras <- readRDS("../../results/analysis/rds_files/Camera_results.rds") %>%
   mutate(plant_species = factor(plant_species, levels = c("MARA", "PAV-ROJ-AMA", "CEPO", "TUBO-AMA", "HAPA", "PALU", "RABO", "BOCA-ROJA", "COSTBAR"), ordered = TRUE)) %>%
   arrange(plant_species)
   
-pollen_tubes <- readRDS("../../results/statistical_analysis/rds_files/Pollen_tube_results.rds") %>%
+pollen_tubes <- readRDS("../../results/analysis/rds_files/Pollen_tube_results.rds") %>%
   mutate(subanalysis = factor(subanalysis, levels = c("HETO", "HAPA"), ordered = TRUE)) %>%
   arrange(subanalysis)
 
-body_mass <- readRDS("../../results/statistical_analysis/rds_files/Body_mass_results.rds")
+body_mass <- readRDS("../../results/analysis/rds_files/Body_mass_results.rds")
 
 results <- captures %>%
   bind_rows(telemetry) %>%
@@ -71,7 +71,7 @@ results <- captures %>%
 length(results$model_number)
 
 #What non-Heliconia species were analyzed? Plant species scientific names for plots
-nonheto_species <- read.csv("../../data/export/supp_tables/Non-Heliconia_camera_species_list.csv") %>%
+nonheto_species <- read.csv("../../data/export/supp_tables/List_of_non-Heliconia_camera_species.csv") %>%
   filter(plant_species %in% results$plant_species) %>%
   select(plant_species, plant_scientific_name, num_replicates)
 ```
@@ -327,7 +327,7 @@ title_size = size * 1.15
 shape_size = 1
 line_width = 0.25
 
-path_name <- c("../../results/statistical_analysis/figures")
+path_name <- c("../../results/analysis/figures")
 ```
 
 **Make interaction plots**
@@ -626,7 +626,7 @@ ggsave(file.path(path_name, "FigS3_Additional_response_variables_interactions.pn
 ## Step 6: Export results 
 ```{r}
 #SUMMARY TABLES
-path_name <- c("../../results/statistical_analysis/tables")
+path_name <- c("../../results/analysis/tables")
 
 #All results tables
 write.csv(results_tidy_confint, file.path(path_name, "Hummingbird_persistence_results_model_summaries.csv"))

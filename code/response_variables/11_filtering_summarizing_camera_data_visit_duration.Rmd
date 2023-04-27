@@ -1,0 +1,120 @@
+---
+title: "Filtering and summarizing camera data for analysis of visit duration"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+This is an extra analysis added during peer review.
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(purrr)
+library(ggplot2)
+
+#Set seed
+set.seed(1)
+```
+
+## Step 1: Get data
+
+Have already filtered data for analysis in previous script, '02_filtering_summarizing_camera_data'.
+
+Will do some additional filtering here to remove instances of a bird perching on the plant, which would generate extra long sighting ("visit") durations.
+
+Also, some camera sets had >1 plant species in the frame, but the sighting length is for ALL plant species combined. Will not analyze these sightings, because interpretation is a bit awkward; can not interpret results as time spent at each inflorescence of a given plant species. Also, if I keep these sightings, there would be a mismatch between sighting length (for >1 plant species) and the flowers covariate (counted for each plant species).
+```{r}
+#Get data
+data_for_experiment <- read.csv("../../data/export/intermediate/Camera_data_filtered_for_experiment.csv")
+
+#Source helper functions
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
+source("../../code/helper_functions/Summarize_camera_data.R")
+source("../../code/helper_functions/Modeling_helper_functions.R")
+source("../../code/helper_functions/Plotting_helper_functions.R")
+
+#Filter out camera sets with >1 plant species
+#Filter out instances of bird perching in frame, based on notes column
+#Filter out videos without flower counts; I need to include flowers as a covariate, because expect longer sightings when there are more flowers to visit
+single_species_camera_sets <- data_for_experiment %>%
+  distinct(year, patch, camera_num, plant_species) %>%
+  group_by(year, patch, camera_num) %>%
+  summarise(num_species = n()) %>%
+  filter(num_species == 1)
+
+data_for_sighting_duration <- data_for_experiment %>%
+  left_join(single_species_camera_sets) %>%
+  filter(num_species == 1) %>%
+  select(-num_species, -X) %>%
+  filter(!grepl("perch", sighting_notes, ignore.case = TRUE)) %>%
+  filter(sightings_yes_or_no == "Y") %>%
+  filter(visit_type != "none") %>%
+  filter(!is.na(flowers_camera_video))
+```
+
+## Step 2: Explore data
+
+What is average sighting length?
+```{r}
+#Time per sighting (in seconds) - across all bird and plant species
+data_for_sighting_duration %>%
+  calculate_basic_summary_stats(variable = sighting_length)
+
+#PLOT: Time per sighting (in seconds) - across all bird and plant species
+data_for_sighting_duration %>%
+  ggplot(aes(x = sighting_length), data = .) +
+    geom_histogram(binwidth = 1, center = 0) +
+    theme_bw(base_size = 18) +
+    labs(x = "Time per sighting (seconds)", y = "Count")
+```
+
+## Step 3: Summarize data
+
+These are the same summaries for visitation rate analyses, *except* that I am using a dataset that has sightings with perching filtered out.
+```{r}
+sighting_durations_all_spp = calculate_sighting_rates(data = data_for_sighting_duration, level_org = "plant_species", level_time = "exp_phase", level_bird = "camera_spp_combined", sightings = "with_visit", include_unknown_spp = FALSE) %>%
+  mutate(bird_group = "all_spp") #Replace "camera_spp_combined" with "all_spp"
+
+sighting_durations_greh_visa = calculate_sighting_rates(data = data_for_sighting_duration, level_org = "plant_species", level_time = "exp_phase", level_bird = list(greh_visa = c("GREH", "VISA")), sightings = "with_visit", include_unknown_spp = FALSE)
+ 
+#Combine various summaries
+sighting_durations <- sighting_durations_all_spp %>%
+  bind_rows(sighting_durations_greh_visa) %>%
+  select(bird_group, everything()) %>%
+  mutate(time_per_sighting = sightings_time/sightings) #Time is in seconds
+```
+
+Not all plants have sightings pre and post; can only analyze changes in sighting duration if both experimental periods have sightings, so need to remove plant species that do not have sightings pre and post
+```{r}
+#Identify plant species that have sightings during both experimental periods
+species_pre_and_post <- sighting_durations %>%
+  filter(!is.na(sightings_time)) %>%
+  distinct(bird_group, year, patch, control_treatment, plant_species, exp_phase) %>%
+  group_by(bird_group, year, patch, control_treatment, plant_species) %>%
+  summarise(num_periods = n()) %>%
+  ungroup() %>%
+  filter(num_periods == 2)
+
+#Filter out species that did not have sightings during both experimental periods
+sighting_durations_for_analysis <- sighting_durations %>%
+  left_join(species_pre_and_post) %>%
+  filter(num_periods == 2) %>%
+  select(-num_periods)
+
+#Check: are there any NAs in the sighting_duration column?
+check01 <- sighting_durations_for_analysis %>%
+  filter(is.na(sightings_time))
+```
+
+## Step 4: Export data
+
+```{r}
+write.csv(sighting_durations_for_analysis, "../../data/export/for_analysis/Camera_visit_durations.csv", row.names = FALSE)
+```

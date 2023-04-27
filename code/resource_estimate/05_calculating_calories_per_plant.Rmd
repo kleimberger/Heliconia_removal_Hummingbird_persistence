@@ -47,7 +47,7 @@ path_name <- c("../../data/export/intermediate")
 resource_counts <- read.csv(file.path(path_name, "Resource_counts_2016-2018_with_count_units.csv")) %>%
   select(-row_id)
 
-path_name <- c("../../data/export/supp_tables")
+path_name <- c("../../data/export/supp_tables/extra")
 
 #Heliconia flowers/bract. I.e. for a given number of open bracts, how many flowers are probably open?
 flowers_per_bracts <- read.csv(file.path(path_name, "Heliconia_flowers_per_bracts_key.csv")) %>%

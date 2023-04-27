@@ -52,12 +52,14 @@ library(ggpubr)
 #Resource survey data. Use this unfiltered dataset for any calculations of species richness. Note that there are 'low' and 'high' estimates based on counting units.
 resource_data <- read.csv("../../data/export/intermediate/Resource_counts_2016-2018_with_calories.csv") %>% 
   select(-calories, -flowers_per) %>%
-  mutate(year_patch = paste(year, patch, sep = "_")) %>%
-  select(year, patch, year_patch, everything())
+  select(year, patch, everything())
 
-#Info about focal area size
+#Focal area sizes
 focal_area_sizes <- read.csv("../../data/export/intermediate/Focal_area_sizes_and_centroids.csv") %>%
   select(year, patch, control_treatment, area)
+
+#Elevation
+elevation <- readxl::read_excel("../../data/import/data/Site_elevations.xlsx")
 
 #Plant scientific names
 plant_names <- read.csv("../../data/import/data/Plant_codes_species_list.csv") %>%
@@ -66,12 +68,12 @@ plant_names <- read.csv("../../data/import/data/Plant_codes_species_list.csv") %
 
 #Camera data reflected natural visitation, but removing night-blooming species. These will not be in the calorie estimate, so I don't need to include them
 camera_data <- read.csv("../../data/export/intermediate/Camera_data_filtered_for_normal_visitation.csv") %>%
-  filter(plant_species != "OJO" & plant_species != "CEPU") 
+  filter(plant_species != "OJO" & plant_species != "CEPU")
 
 #Functions
 source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 source("../../code/helper_functions/Summarize_camera_data.R")
-source("../../code/helper_functions/Make_barplot_for_weights.R")
+source("../../code/helper_functions/Make_barplot.R")
 ```
 
 ## Step 2: Make list of all plant species detected, for Supp methods, then filter data for resource estimate
@@ -173,14 +175,14 @@ focal_area_sizes_to_join <- focal_area_sizes %>%
 ```{r step4}
 #At level of CALORIES
 resource_data_sum_calories <- resource_data_to_summarize %>%
-  group_by(count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %>%
+  group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_calories = sum(calories_per_plant, na.rm = TRUE)) %>%
   ungroup()
 
 #At level of PLANTS, for Heliconia
 heto_inflor_removed_remaining <- resource_data_to_summarize %>%
   filter(plant_species == "HETO" & count_estimate_high_low == "high") %>%
-  group_by(count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %>%
+  group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_plants = n(),
             num_flowers = sum(num_flowers_estimate, na.rm = TRUE),
             num_calories = sum(calories_per_plant, na.rm = TRUE)) %>%
@@ -236,22 +238,25 @@ heto_removed <- heto_inflor_removed %>%
   select(-heto_nonheto, -count_estimate_high_low, -removed_remaining, -remaining) %>%
   arrange(num_calories_per_ha) %>%
   select(year, patch, contains("plants"), contains("flowers"), contains("calories"), area, everything()) %>%
-  mutate(across(where(is.numeric) & !c(area), round)) %>%
+  mutate(across(where(is.numeric) & !c(area), round))
+
+#With focal area values rounded
+heto_removed_supp <- heto_removed %>%
   mutate(across(c(area), ~round(., digits = 2)))
 
 #Summary of Heliconia removed (and focal area sizes)
-heto_removed_sum <- heto_removed %>%
+heto_removed_sum <- heto_removed_supp %>%
   pivot_longer(cols = c(num_plants:num_calories_per_ha, area), names_to = "unit", values_to = "value") %>%
   group_by(unit) %>%
   calculate_basic_summary_stats(variable = value)
 
 heto_removed_sum
 
-#Add zeroes for control sites (zero Heliconia removed)
+#Add zeroes for control replicates (control replicate = zero Heliconia removed)
 heto_removed_as_treatment <- focal_area_sizes %>%
   filter(control_treatment == "control") %>%
   bind_rows(heto_removed) %>%
-  select(year, patch, area, calories_removed_per_ha = num_calories_per_ha) %>%
+  select(year, patch, control_treatment, area, calories_removed_per_ha = num_calories_per_ha) %>%
   mutate(across(where(anyNA), ~ replace_na(., 0)))
 ```
 
@@ -275,7 +280,7 @@ percentage_heto_removed_sum
 ```{r step7}
 #Summarize across removed and remaining, since I am interested all Heliconia plants (including those that were removed as part of treatment)
 heto_densities <- heto_inflor_removed_remaining %>%
-  group_by(count_estimate_high_low, year, patch, year_patch, control_treatment, heto_nonheto) %>%
+  group_by(count_estimate_high_low, year, patch, control_treatment, heto_nonheto) %>%
   summarise(num_plants = sum(num_plants),
             num_flowers = sum(num_flowers),
             num_calories = sum(num_calories)) %>%
@@ -283,16 +288,16 @@ heto_densities <- heto_inflor_removed_remaining %>%
   filter(heto_nonheto == "heto_only") %>%
   filter(count_estimate_high_low == "high") %>%
   left_join(focal_area_sizes_to_join) %>%
-  mutate(inflors_per_ha = num_plants/area,
-         flowers_per_ha = num_flowers/area,
-         calories_per_ha = num_calories/area) %>%
-  select(-heto_nonheto, -count_estimate_high_low) %>%
+  mutate(heto_inflors_per_ha = num_plants/area,
+         heto_flowers_per_ha = num_flowers/area,
+         heto_calories_per_ha = num_calories/area) %>%
   mutate(across(c(contains("per_ha"), "num_calories"), ~round(., digits = 0))) %>%
-  arrange(patch, year_patch)
+  select(year, patch, control_treatment, contains("per_ha")) %>%
+  arrange(patch, year)
 
 heto_densities_sum <- heto_densities %>%
   select(-contains("num")) %>%
-  pivot_longer(cols = c(inflors_per_ha, flowers_per_ha, calories_per_ha), values_to = "value", names_to = "unit") %>%
+  pivot_longer(cols = c(heto_inflors_per_ha, heto_flowers_per_ha, heto_calories_per_ha), values_to = "value", names_to = "unit") %>%
   group_by(unit) %>%
   calculate_basic_summary_stats(variable = c(value)) %>%
   mutate(across(where(is.numeric), ~round(., digits = 0)))
@@ -387,8 +392,8 @@ weights <- weights_all_species %>%
   left_join(plant_names) %>%
   select(bird_group, rank, weight, plant_family, plant_scientific_name, plant_species, everything())
 
-#Make weights table for Supplement
-weights_for_supp_data <- weights %>%
+#Format for Supp table
+weights_supp <- weights %>%
   select(-c(max_rate, rank, flowers, hours, sightings_time)) %>%
   pivot_wider(names_from = bird_group, values_from = c(sightings, sightings_per_hour, weight), names_glue = "{bird_group}_{.value}") %>%
   arrange(desc(all_spp_weight)) %>%
@@ -422,14 +427,14 @@ resource_data_to_summarize_with_weights <- resource_data_to_summarize %>%
 #Summarize for SUBSET
 resource_data_sum_calories_subset <- resource_data_to_summarize_with_weights %>%
   filter(weight > 0) %>% #Subset (filter) to plant species that had sightings on camera. THIS IS THE SUBSETTING STEP
-  group_by(bird_group, count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %>%
+  group_by(bird_group, count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_calories = sum(calories_per_plant, na.rm = TRUE)) %>%
   ungroup() %>%
   mutate(estimate_name = "low_estimate")
 
 #Summarize for WEIGHTED
 resource_data_sum_calories_weighted <- resource_data_to_summarize_with_weights %>%
-  group_by(bird_group, count_estimate_high_low, year, patch, year_patch, control_treatment, removed_remaining, heto_nonheto) %>%
+  group_by(bird_group, count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %>%
   summarise(num_calories = sum(weighted_calories_per_plant, na.rm = TRUE)) %>%
   ungroup() %>%
   mutate(estimate_name = "high_estimate")
@@ -450,130 +455,34 @@ percentage_calories_removed_tailored <- resource_data_sum_calories %>%
   pivot_wider(names_from = removed_remaining, values_from = num_calories) %>%
   filter(control_treatment == "treatment") %>%
   mutate(percentage_removed = (removed/(removed + remaining)) * 100) %>%
-  mutate(across(c(percentage_removed), ~round(., digits = 1)))
-
-#Get into format of Supp table
-percentage_calories_removed_tailored_supp <- percentage_calories_removed_tailored %>%
-  select(estimate_name, count_estimate_high_low, bird_group, year, patch, control_treatment, percentage_removed) %>% 
-  filter(count_estimate_high_low == "high") %>% #i.e., assuming unknown count unit of inflorescences vs. flower
-  pivot_wider(names_from = c(estimate_name, bird_group), values_from = percentage_removed) %>%
-  arrange("base_estimate_all_spp")
+  mutate(across(c(percentage_removed), ~round(., digits = 1))) %>%
+  filter(count_estimate_high_low == "high") %>% #i.e., assuming unknown count unit of inflorescence vs. flower
+  select(-count_estimate_high_low)
 
 #Summary stats
 percentage_calories_removed_tailored_sum <- percentage_calories_removed_tailored %>%
-  filter(count_estimate_high_low == "high") %>%
   group_by(estimate_name, bird_group) %>%
   calculate_basic_summary_stats(variable = percentage_removed) %>%
   mutate(across(where(is.numeric), ~round(., digits = 1)))
 
 percentage_calories_removed_tailored_sum
+
+#Format for Supp table
+percentage_calories_removed_tailored_supp <- percentage_calories_removed_tailored %>%
+  select(estimate_name, bird_group, year, patch, control_treatment, percentage_removed) %>% 
+  pivot_wider(names_from = c(estimate_name, bird_group), values_from = percentage_removed) %>%
+  arrange("base_estimate_all_spp")
 ```
 
-## Step 12: Visualize weights and % calories removed
+## Step 12: Explore data
 
-```{r step12a}
-#Recommended figure widths from journal (pixels @ 300 dpi)
-column1x <- 945 #single-column
-column1.5x <- 1476 #1.5 columns
-column2x <- 1961 #double column
-
+What plant species provided the most calories in each replicate?
+```{r step12, fig.width=6, fig.height=4}
 #Sizes for plot elements
-size = 6.5
+size = 12
 label_size = size
 title_size = size * 1.15
-shape_size = 1
-line_width = 0.25
 
-path_name <- c("../../results/resource_estimate/figures")
-```
-
-Make barplots of relative sighting rates (weights)
-```{r step12b}
-data_for_barplots <- weights %>%
-  mutate(plant_scientific_name = ifelse(plant_scientific_name == "Drymonia sp.", "Drymonia", plant_scientific_name)) %>% 
-  mutate(plant_scientific_name = ifelse(plant_scientific_name == "Renealmia sp.", "Renealmia", plant_scientific_name)) %>% 
-  mutate(heto_color = ifelse(plant_species == "HETO", "yes", "no"))
-
-#All species 
-weights_barplot_all_spp <- data_for_barplots %>%
-  filter(bird_group == "all_spp") %>% 
-  make_barplot(xvar = "plant_scientific_name", yvar = "weight", xlabel = "Plant species", ylabel = "Relative visitation rate (weight)", highlight_column = "heto_color", titlelabel = "All hummingbird species", flip_axes = TRUE, text_size = size)
-
-weights_barplot_all_spp
-
-#GREH/VISA
-weights_barplot_gv <- data_for_barplots %>%
-  filter(bird_group == "greh_visa") %>% 
-  make_barplot(xvar = "plant_scientific_name", yvar = "weight", xlabel = "Plant species", ylabel = "Relative visitation rate (weight)", highlight_column = "heto_color", titlelabel = "", flip_axes = TRUE, text_size = size) +
-  labs(title = expression(italic(Heliconia)~"specialists"))
-
-weights_barplot_gv
-```
-
-Make boxplots of %  calories removed
-```{r step12c}
-plot_theme = 
-  theme_bw(base_size = size) +
-  theme(panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        axis.line.x = element_line(colour = "black", size = line_width, linetype = "solid"),
-        axis.line.y = element_line(colour = "black", size = line_width, linetype = "solid"),
-        legend.position = "none",
-        strip.background = element_blank(),
-        strip.text.x = element_text(size = size))
-
-data_for_boxplots <- percentage_calories_removed_tailored %>%
-  filter(count_estimate_high_low == "high") %>%
-  filter(estimate_name == "low_estimate" | estimate_name == "high_estimate") %>%
-  mutate(bird_group = factor(bird_group, levels = c("all_spp", "greh_visa"))) %>%
-  mutate(estimate_name = factor(estimate_name, levels = c("low_estimate", "high_estimate"), labels = c("Low estimate", "High estimate")))
-
-percentage_calories_removed_boxplots <-  data_for_boxplots %>%
-  ggplot(data = ., aes(x = bird_group, y = percentage_removed)) +
-    facet_grid(. ~ estimate_name, scales = "free_x") +
-    geom_boxplot(position = position_nudge(x = 0, y = 0), width = 0.15, outlier.shape = NA, alpha = 1, fill = "grey80", linewidth = line_width) +
-    geom_point(position = position_nudge(x = 0.15, y = 0), size = shape_size/2, colour = "black", alpha = 0.6, stroke = line_width) +
-    labs(x = "Hummingbird group", y = "Calories removed (%)") +
-    stat_summary(fun = mean, geom = "point", shape = 23, size = shape_size, color = "black", fill = "black") +
-    scale_y_continuous(breaks = c(0, 20, 40, 60, 80, 100)) +
-    plot_theme +
-    scale_x_discrete(labels = c("All species", expression(italic(Heliconia)~"specialists")))
-
-percentage_calories_removed_boxplots
-```
-
-Combine weights and % calories removed boxplots into one multi-panel figure.
-```{r step12d}
-#Vertical
-weights_and_percent_multiplot <- ggarrange(weights_barplot_all_spp, weights_barplot_gv, percentage_calories_removed_boxplots, ncol = 1, nrow = 3, heights = c(1, 1, 0.75), labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "plain"))
-
-ggview::ggview(weights_and_percent_multiplot, width = column1.5x*0.66, height = column1.5x*1.33, units = "px")
-
-ggsave(file.path(path_name, "Fig3_Weights_Percentage_calories.png"), weights_and_percent_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*1.33, units = "px", bg = "white", device = "png")
-```
-
-## Step 13: What plant species were present in each replicate/site?
-
-Need to communicate that *Heliconia tortuosa* really was the most common understory plant visited by hummingbirds! Even though other plant species were visited more on an hourly basis when they were present, only HETO and MARA were present in every replicate.
-```{r step13}
-#Occurrence per replicate (replicate = site-year combination)
-plant_occurrence_per_replicate <- resource_data_to_summarize %>%
-  distinct(year, patch, year_patch, plant_family, plant_scientific_name, plant_species) %>%
-  group_by(plant_family, plant_scientific_name, plant_species) %>%
-  summarise(num_replicates = n()) %>%
-  arrange(desc(num_replicates))
-
-#Occurence per site
-plant_occurrence_per_site <- resource_data_to_summarize %>%
-  distinct(patch, plant_family, plant_scientific_name, plant_species) %>%
-  group_by(plant_family, plant_scientific_name, plant_species) %>%
-  summarise(num_sites = n()) %>%
-  arrange(desc(num_sites))
-```
-
-## Step 14: What plant species provided the most calories in each replicate?
-
-```{r step14}
 #Assign abundance rank at the level of plant species, based on calories
 calorie_abundance_ranks <- resource_data_to_summarize %>% 
   filter(count_estimate_high_low == "high") %>%
@@ -606,7 +515,8 @@ heto_rank_barplot <- calorie_abundance_ranks %>%
     theme(panel.grid.major = element_blank(),
           panel.grid.minor = element_blank())
 
-ggview::ggview(heto_rank_barplot, width = column1.5x, height = column1.5x/2, units = "px")
+heto_rank_barplot
+# ggview::ggview(heto_rank_barplot, width = 6, height = 4)
 
 #PLOT: what species are usually the most abundant source of calories? I.e., for all the species that are ranked #1, how does HETO compare?
 top_ranked_species_barplot <- calorie_abundance_ranks %>%
@@ -617,22 +527,55 @@ top_ranked_species_barplot <- calorie_abundance_ranks %>%
   mutate(heto_color = ifelse(plant_species == "HETO", "yes", "no")) %>%
   make_barplot(xvar = "plant_scientific_name", yvar = "count", xlabel = "Plant species", ylabel = "Number of replicates where species was dominant calorie source", titlelabel = "Top-ranked plant species", highlight_column = "heto_color", text_size = size, flip_axes = TRUE)
 
-ggview::ggview(top_ranked_species_barplot, width = column1.5x, height = column1.5x/2, units = "px")
+top_ranked_species_barplot
+# ggview::ggview(top_ranked_species_barplot, width = 6, height = 4)
 ```
 
-## Step 15: Export data
-```{r step15}
-#Data to be used in analysis
-write.csv(heto_removed_as_treatment, "../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv", row.names = FALSE)
+What plant species were present in each replicate/site?
 
-#Supp tables
-write.csv(heto_removed, "../../data/export/supp_tables/Heliconia_resources_removed.csv", row.names = FALSE)
+Need to communicate that *Heliconia tortuosa* really was the most common understory plant visited by hummingbirds! Even though other plant species were visited more on an hourly basis when they were present, only HETO and MARA were present in every replicate.
+```{r}
+#Occurrence per replicate (replicate = site-year combination)
+plant_occurrence_per_replicate <- resource_data_to_summarize %>%
+  distinct(year, patch, plant_family, plant_scientific_name, plant_species) %>%
+  group_by(plant_family, plant_scientific_name, plant_species) %>%
+  summarise(num_replicates = n()) %>%
+  arrange(desc(num_replicates))
+
+head(plant_occurrence_per_replicate)
+
+#Occurrence per site
+plant_occurrence_per_site <- resource_data_to_summarize %>%
+  distinct(patch, plant_family, plant_scientific_name, plant_species) %>%
+  group_by(plant_family, plant_scientific_name, plant_species) %>%
+  summarise(num_sites = n()) %>%
+  arrange(desc(num_sites))
+
+head(plant_occurrence_per_site)
+```
+
+## Step 13: Export data
+```{r step13}
+#Data used in further analysis (i.e., data that will go onto Dryad)
+
+#Combine data so that file can also be used in control vs. treatment comparison
+site_and_replicate_characteristics <- heto_removed_as_treatment %>%
+  left_join(heto_densities) %>% #for control vs. treatment comparison
+  left_join(elevation) %>% #for control vs. treatment comparison
+  select(year, patch, control_treatment, elevation, focal_area_size = area, everything())
+  
+write.csv(site_and_replicate_characteristics, "../../data/export/for_analysis/Site_and_replicate_characteristics.csv", row.names = FALSE)
+write.csv(weights, "../../data/export/for_analysis/Weights.csv", row.names = FALSE)
+write.csv(percentage_calories_removed_tailored, "../../data/export/for_analysis/Percentage_calories_removed.csv", row.names = FALSE)
+
+#Data for Supporting information
+write.csv(heto_removed_supp, "../../data/export/supp_tables/Heliconia_resources_removed.csv", row.names = FALSE)
 write.csv(heto_removed_sum, "../../data/export/supp_tables/Heliconia_resources_removed_sum.csv", row.names = FALSE)
-write.csv(weights_for_supp_data, "../../data/export/supp_tables/Weights_for_resource_estimate.csv", row.names = FALSE)
-write.csv(percentage_calories_removed_tailored_supp, "../../data/export/supp_tables/Percentage_calories_removed.csv", row.names = FALSE)
-write.csv(percentage_calories_removed_tailored_sum, "../../data/export/supp_tables/Percentage_calories_removed_sum.csv", row.names = FALSE)
-write.csv(heto_densities, "../../data/export/supp_tables/Heliconia_densities.csv", row.names = FALSE)
-write.csv(heto_densities_sum, "../../data/export/supp_tables/Heliconia_densities_sum.csv", row.names = FALSE)
-write.csv(species_per_site_sum, "../../data/export/supp_tables/Plant_species_per_site_sum.csv", row.names = FALSE)
-```
 
+#extra tables - not including in final Supporting information
+write.csv(weights_supp, "../../data/export/supp_tables/extra/Weights_supp.csv", row.names = FALSE)
+write.csv(percentage_calories_removed_tailored_supp, "../../data/export/supp_tables/extra/Percentage_calories_removed_supp.csv", row.names = FALSE)
+write.csv(percentage_calories_removed_tailored_sum, "../../data/export/supp_tables/extra/Percentage_calories_removed_sum.csv", row.names = FALSE)
+write.csv(heto_densities_sum, "../../data/export/supp_tables/extra/Heliconia_densities_sum.csv", row.names = FALSE)
+write.csv(species_per_site_sum, "../../data/export/supp_tables/extra/Plant_species_per_site_sum.csv", row.names = FALSE)
+```

@@ -382,8 +382,8 @@ tube_data &lt;- read.csv(&quot;../../data/export/for_analysis/Pollen_tube_pollin
   filter(plant_species == &quot;HETO&quot; | plant_species == &quot;HAPA&quot;)
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
-heto_removed &lt;- read.csv(&quot;../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv&quot;) %&gt;%
-  select(-area)
+heto_removed &lt;- read.csv(&quot;../../data/export/for_analysis/Site_and_replicate_characteristics.csv&quot;) %&gt;%
+  select(year, patch, control_treatment, calories_removed_per_ha)
 
 ##1. Combine data
 #2. Log-transform HETO calories removed
@@ -396,7 +396,7 @@ tube_data_for_analysis &lt;- tube_data %&gt;%
   mutate(analysis = &quot;pollen_tubes&quot;) %&gt;%
   mutate(subanalysis = ifelse(plant_species == &quot;HETO&quot;, &quot;HETO&quot;, &quot;HAPA&quot;)) %&gt;%
   select(analysis, subanalysis, year, patch, year_patch, control_treatment, exp_phase, everything())</code></pre>
-<pre><code>## Joining, by = c(&quot;year&quot;, &quot;patch&quot;)</code></pre>
+<pre><code>## Joining, by = c(&quot;year&quot;, &quot;patch&quot;, &quot;control_treatment&quot;)</code></pre>
 <p><strong>Import functions</strong></p>
 <pre class="r"><code>source(&quot;../../code/helper_functions/Modeling_helper_functions.R&quot;)
 source(&quot;../../code/helper_functions/Plotting_helper_functions.R&quot;)
@@ -495,9 +495,10 @@ models &lt;- data %&gt;%
   mutate(plotname2 = paste(&quot;dharma_overall_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
   mutate(plotname3 = paste(&quot;dharma_xvar_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
   mutate(plotname4 = paste(&quot;dharma_zeroinfl_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;)) %&gt;%
-  mutate(plotname5 = paste(&quot;dharma_overdisp_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))</code></pre>
-<pre class="r"><code>#Export diagnostic plots because they load very slowly in RStudio
-path_name &lt;- c(&quot;../../results/statistical_analysis/assumption_checks/pollen_tubes&quot;)
+  mutate(plotname5 = paste(&quot;dharma_overdisp_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))
+
+#Export diagnostic plots because they load very slowly in RStudio
+path_name &lt;- c(&quot;../../results/analysis/assumption_checks/pollen_tubes&quot;)
 walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;, bg = &quot;white&quot;))
 walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
 walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = &quot;in&quot;))
@@ -510,13 +511,9 @@ influence_checks &lt;- models %&gt;%
     mutate(influence_plot_quietly = pmap(list(model, data, title, subtitle), safely(function(a, b, c, d){influence &lt;- make_influence_plot(model = a, dataset = b, plot_title = c, plot_subtitle = d, group_id = &quot;year_patch&quot;)})),
           influence_plot = map(influence_plot_quietly, get_result),
           error = map(influence_plot_quietly, get_error)) %&gt;%
-    mutate(plotname6 = paste(&quot;influence_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))</code></pre>
-<pre><code>## using a cluster of 2 cores</code></pre>
-<pre><code>## Warning in sqrt(diag(x)): NaNs produced</code></pre>
-<pre><code>## using a cluster of 2 cores</code></pre>
-<pre><code>## using a cluster of 2 cores
-## using a cluster of 2 cores</code></pre>
-<pre class="r"><code>#There is an error for the third influence plot - NaNs produced/infinite or missing values in &#39;x&#39; - but dataset used in model does not have any missing data...I suspect it&#39;s an issue of complete separation when one replicate is removed to calculate the influence measure
+    mutate(plotname6 = paste(&quot;influence_diagnostics_&quot;, model_number, &quot;.png&quot;, sep = &quot;&quot;))
+  
+#There is an error for the third influence plot - NaNs produced/infinite or missing values in &#39;x&#39; - but dataset used in model does not have any missing data...I suspect it&#39;s an issue of complete separation when one replicate is removed to calculate the influence measure
 # influence_checks$error
 
 #Export plots
@@ -535,7 +532,7 @@ results &lt;- models %&gt;%
 </div>
 <div id="step-7-export-results-as-rds-file" class="section level2">
 <h2>Step 7: Export results as rds file</h2>
-<pre class="r"><code>saveRDS(results, &quot;../../results/statistical_analysis/rds_files/Pollen_tube_results.rds&quot;)</code></pre>
+<pre class="r"><code>saveRDS(results, &quot;../../results/analysis/rds_files/Pollen_tube_results.rds&quot;)</code></pre>
 <p><em>WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM
 RDS FILES LATER ON IN SINGLE SCRIPT</em></p>
 </div>

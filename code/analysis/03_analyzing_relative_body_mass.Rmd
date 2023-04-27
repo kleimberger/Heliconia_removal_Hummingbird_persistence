@@ -70,8 +70,8 @@ captures_all_years <- read.csv("../../data/import/data/captures/Hummingbird_capt
   select(bird_id, everything())
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
-heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv") %>%
-  select(-area) %>%
+heto_removed <- read.csv("../../data/export/for_analysis/Site_and_replicate_characteristics.csv") %>%
+  select(year, patch, control_treatment, calories_removed_per_ha) %>%
   mutate(patch = as.character(patch))
 
 #Hummingbirds captured pre AND post during Heliconia removal experiment (2016-2018)
@@ -453,11 +453,11 @@ results <- models %>%
 write.csv(data_for_analysis, "../../data/export/for_analysis/Relative_body_mass.csv", row.names = FALSE)
 
 #Multiplot of log(mass) ~ log(wing length) regressions
-path_name <- c("../../results/statistical_analysis/figures")
+path_name <- c("../../results/analysis/figures")
 ggsave(filename = file.path(path_name, "FigS2_Allometric_regression_plots.png"), plot = mass_wing_regressions_multiplot, height = 11.5, width = 15)
 
 #Responses to Heliconia removal
-saveRDS(results, "../../results/statistical_analysis/rds_files/Body_mass_results.rds")
+saveRDS(results, "../../results/analysis/rds_files/Body_mass_results.rds")
 ```
 
 

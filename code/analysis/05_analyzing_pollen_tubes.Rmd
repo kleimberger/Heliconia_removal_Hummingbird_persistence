@@ -1,5 +1,5 @@
 ---
-title: "Analyzing telemetry data"
+title: "Analyzing pollen tube data (pollination success)"
 output: html_document
 knit: (function(inputFile, encoding) {
       out_dir <- "knitted_markdown_files";
@@ -12,7 +12,13 @@ knit: (function(inputFile, encoding) {
 
 Analyze how experimental *Heliconia* removal influences:
 
-- The amount of time that radio-tagged hummingbirds spent in the focal area ("patch", i.e., where they were captured and we removed *Heliconia*)
+- Pollination success of two plant species:
+
+  * *Heliconia tortuosa* (that is, the focal plants that remained uncovered)
+
+  * *Hamelia patens* (a species of potted plant in floral arrays)
+
+The original plan was to have more species, but pollen tubes were very rare, or else difficult to visualize using epiflourescence microscopy.
 
 ```{r setup, include=FALSE}
 #Packages for statistical modeling
@@ -45,35 +51,25 @@ set.seed(1)
 
 **Data for analysis**
 ```{r}
-#Telemetry data, all hummingbird species
-telem_data <- read.csv("../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv") %>%
-  mutate(bird_group = "all_spp")
-
-head(telem_data)
-
-#Create subset for GREH/VISA
-telem_data_greh_visa <- telem_data %>%
-  filter(bird_species == "GREH" | bird_species == "VISA") %>%
-  mutate(bird_group = "greh_visa")
+#Pollen tube data
+tube_data <- read.csv("../../data/export/for_analysis/Pollen_tube_pollination_success.csv") %>%
+  filter(plant_species == "HETO" | plant_species == "HAPA")
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
-heto_removed <- read.csv("../../data/export/for_analysis/Heliconia_resources_removed_as_treatment.csv")
+heto_removed <- read.csv("../../data/export/for_analysis/Site_and_replicate_characteristics.csv") %>%
+  select(year, patch, control_treatment, calories_removed_per_ha)
 
 ##1. Combine data
 #2. Log-transform HETO calories removed
-telem_data_for_analysis <- telem_data %>%
-  bind_rows(telem_data_greh_visa) %>%
+tube_data_for_analysis <- tube_data %>%
   left_join(heto_removed) %>%
-  rename(focal_area_hectares = area) %>%
   mutate(exp_phase = factor(exp_phase, levels = c("pre", "post"))) %>%
   mutate(control_treatment = factor(control_treatment, levels = c("control", "treatment"))) %>%
   mutate(year_patch = paste(year, patch, sep = "_")) %>%
-  mutate(bird_id = paste(year, patch, frequency, sep = "_")) %>%
-  mutate(log_calories_removed_per_ha = log(calories_removed_per_ha + 1),
-         log_focal_area_hectares = log(focal_area_hectares)) %>%
-  mutate(analysis = "telemetry") %>%
-  mutate(subanalysis = "telemetry") %>%
-  select(analysis, subanalysis, bird_group, year, patch, year_patch, control_treatment, exp_phase, bird_id, frequency, bird_species, bird_sex, obs_effort_minutes, everything())
+  mutate(log_calories_removed_per_ha = log(calories_removed_per_ha + 1)) %>%
+  mutate(analysis = "pollen_tubes") %>%
+  mutate(subanalysis = ifelse(plant_species == "HETO", "HETO", "HAPA")) %>%
+  select(analysis, subanalysis, year, patch, year_patch, control_treatment, exp_phase, everything())
 ```
 
 **Import functions**
@@ -89,64 +85,59 @@ source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 **Get organized**
 ```{r create_table_to_hold_results}
 #Create tables that will be filled in with models and model results
-analysis = c("telemetry")
-subanalysis = c("all_replicates", "without_outlier") #Replicate 2016_10 exerts a LOT of influence, according to influence plots. Run with and without.
-bird_group = c("all_spp", "greh_visa")
+analysis = c("pollen_tubes")
+subanalysis = c("HETO", "HAPA")
 model_type = c("categorical", "quantitative")
 model_name = c("control/treatment * pre/post", "calories removed/ha * pre/post")
 treatment_variable = c("control_treatment", "log_calories_removed_per_ha")
 model_types_names = data.frame(model_type = model_type, model_name = model_name, treatment_variable = treatment_variable)
 
-base_table <- crossing(analysis, subanalysis, bird_group, model_type) %>% 
+base_table <- crossing(analysis, subanalysis, model_type) %>% 
   left_join(model_types_names) %>%
-  mutate(yvar = "prop_time_in_patch") %>%
-  arrange(analysis, subanalysis, model_type, bird_group) %>%
+  mutate(yvar = "prop_with_tubes") %>%
+  arrange(analysis, subanalysis, model_type) %>%
   mutate(model_number = 1:length(yvar)) %>%
-  mutate(title = paste(analysis, subanalysis, bird_group, sep = "_")) %>%
+  mutate(title = paste(analysis, subanalysis, sep = "_")) %>%
   mutate(subtitle = yvar) %>%
   select(model_number, analysis, yvar, subanalysis, everything())
 ```
 
 **Filter master dataset to relevant sub-dataset & scale continuous predictors**
 ```{r}
-subset_data <- function(dataset, analysis, subanalysis, bird_group){
+subset_data <- function(dataset, analysis, subanalysis){
   
   dataset <- dataset %>%
     filter(analysis == {{ analysis }}) %>%
-    filter(bird_group == {{ bird_group }}) %>%
-    mutate(across(c(log_calories_removed_per_ha, log_focal_area_hectares), ~c(scale(.))))
+    filter(plant_species == {{ subanalysis }}) %>%
+    mutate(across(c(log_calories_removed_per_ha), ~c(scale(.))))
   
-  if(subanalysis == "without_outlier"){
-    
-    dataset <- dataset %>%
-      filter(year_patch != "2016_10")
-    
-  }
-      
   return(dataset)
   
 }
 
 #Create datasets (will add models in later step)
 data <- base_table %>%
-    mutate(data = pmap(list(analysis, subanalysis, bird_group), ~subset_data(dataset = telem_data_for_analysis, analysis = ..1, subanalysis = ..2, bird_group = ..3)))
+    mutate(data = pmap(list(analysis, subanalysis), ~subset_data(dataset = tube_data_for_analysis, analysis = ..1, subanalysis = ..2)))
 ```
 
 ## Step 3: Initial model fitting
 
 I have a counted proportion that I will analyze with a k/n binomial. I will choose between binomial and betabinomial, which allows for overdispersion, and also see if there is support for zero-inflation or not. Will check assumptions for all models again later on.
 
+**Models for Heliconia**
 ```{r, include = FALSE, eval = FALSE}
-fit_data01 <- telem_data_for_analysis %>%
-  filter(analysis == "telemetry" & subanalysis == "telemetry" & bird_group == "all_spp")
+fit_data01 <- data %>%
+  filter(analysis == "pollen_tubes" & subanalysis == "HETO" & model_type == "categorical") %>%
+  pull(data) %>%
+  as.data.frame()
 
-m1 <- glmmTMB::glmmTMB(prop_time_in_patch ~ control_treatment * exp_phase + (1|patch/year_patch/bird_id), data = fit_data01, na.action = na.omit, family = "binomial", weights = obs_effort_minutes, ziformula = ~0)
+m1 <- glmmTMB::glmmTMB(prop_with_tubes ~ control_treatment * exp_phase + (1|patch/year_patch), data = fit_data01, na.action = na.omit, family = "binomial", weights = styles, ziformula = ~0)
 
-m2 <- glmmTMB::glmmTMB(prop_time_in_patch ~ control_treatment * exp_phase + (1|patch/year_patch/bird_id), data = fit_data01, na.action = na.omit, family = "binomial", weights = obs_effort_minutes, ziformula = ~1)
+m2 <- glmmTMB::glmmTMB(prop_with_tubes ~ control_treatment * exp_phase + (1|patch/year_patch), data = fit_data01, na.action = na.omit, family = "binomial", weights = styles, ziformula = ~1)
 
-m3 <- glmmTMB::glmmTMB(prop_time_in_patch ~ control_treatment * exp_phase + (1|patch/year_patch/bird_id), data = fit_data01, na.action = na.omit, family = "betabinomial", weights = obs_effort_minutes, ziformula = ~0, control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+m3 <- glmmTMB::glmmTMB(prop_with_tubes ~ control_treatment * exp_phase + (1|patch/year_patch), data = fit_data01, na.action = na.omit, family = "betabinomial", weights = styles, ziformula = ~0, control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
 
-m4 <- glmmTMB::glmmTMB(prop_time_in_patch ~ control_treatment * exp_phase + (1|patch/year_patch/bird_id), data = fit_data01, na.action = na.omit, family = "betabinomial", weights = obs_effort_minutes, ziformula = ~1, control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+m4 <- glmmTMB::glmmTMB(prop_with_tubes ~ control_treatment * exp_phase + (1|patch/year_patch), data = fit_data01, na.action = na.omit, family = "betabinomial", weights = styles, ziformula = ~1, control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
 
 #Combine models
 model_fitting01 <- tibble(model_name = c("m1", "m2", "m3", "m4"), model = list(m1, m2, m3, m4)) %>%
@@ -163,9 +154,44 @@ model_fitting01 %>%
   arrange(AICc)
 
 #Check to make sure assumptions look OK
-model_fitting01$dharma_plot[[3]]
-model_fitting01$dharma_overdisp_plot[[3]]
-model_fitting01$dharma_zeroinfl_plot[[3]]
+model_fitting01$dharma_plot[[2]]
+model_fitting01$dharma_overdisp_plot[[2]]
+model_fitting01$dharma_zeroinfl_plot[[2]]
+```
+
+**Models for Hamelia**
+```{r, include = FALSE, eval = FALSE}
+fit_data02 <- data %>%
+  filter(analysis == "pollen_tubes" & subanalysis == "HAPA" & model_type == "categorical") %>%
+  pull(data) %>%
+  as.data.frame()
+
+m1 <- glmmTMB::glmmTMB(prop_with_tubes ~ control_treatment * exp_phase + (1|patch/year_patch), data = fit_data02, na.action = na.omit, family = "binomial", weights = styles, ziformula = ~0)
+
+m2 <- glmmTMB::glmmTMB(prop_with_tubes ~ control_treatment * exp_phase + (1|patch/year_patch), data = fit_data02, na.action = na.omit, family = "binomial", weights = styles, ziformula = ~1)
+
+m3 <- glmmTMB::glmmTMB(prop_with_tubes ~ control_treatment * exp_phase + (1|patch/year_patch), data = fit_data02, na.action = na.omit, family = "betabinomial", weights = styles, ziformula = ~0, control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+
+m4 <- glmmTMB::glmmTMB(prop_with_tubes ~ control_treatment * exp_phase + (1|patch/year_patch), data = fit_data02, na.action = na.omit, family = "betabinomial", weights = styles, ziformula = ~1, control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+
+#Combine models
+model_fitting02 <- tibble(model_name = c("m1", "m2", "m3", "m4"), model = list(m1, m2, m3, m4)) %>%
+  mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
+  mutate(dharma_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "basic")),
+         dharma_zeroinfl_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "zeroinflation")),
+         dharma_overdisp_plot = pmap(list(dharma_object, model_name), ~make_dharma_plot(dharma_object = ..1, plot_title = ..2,  plot_type = "overdispersion"))) %>%
+  mutate(AICc = map(model, MuMIn::AICc))
+
+#Which model is best according to AIC?
+model_fitting02 %>%
+  select(model_name, AICc) %>%
+  unnest(AICc) %>%
+  arrange(AICc)
+
+#Check to make sure assumptions look OK
+model_fitting02$dharma_plot[[2]]
+model_fitting02$dharma_overdisp_plot[[2]]
+model_fitting02$dharma_zeroinfl_plot[[2]]
 ```
 
 ## Step 4: Fit models
@@ -175,7 +201,7 @@ model_fitting01$dharma_zeroinfl_plot[[3]]
 #control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS"))
 create_model <- function(dataset, analysis, subanalysis, treatment_variable){
 
-  model <- glmmTMB(as.formula(paste0("prop_time_in_patch ~ ", treatment_variable, " * exp_phase + (1|patch/year_patch/bird_id)")), data = dataset, na.action = na.omit, family = "betabinomial", ziformula = ~0, weights = obs_effort_minutes, control = glmmTMBControl(optimizer=optim, optArgs=list(method="BFGS")))
+  model <- glmmTMB(as.formula(paste0("prop_with_tubes ~ ", treatment_variable, " * exp_phase + (1|patch/year_patch)")), data = dataset, na.action = na.omit, family = "binomial", weights = styles, ziformula = ~1)
       
   return(model)
   
@@ -183,20 +209,22 @@ create_model <- function(dataset, analysis, subanalysis, treatment_variable){
 
 #Create models
 models <- data %>%
-   mutate(model_quietly = pmap(list(data, analysis, subanalysis, treatment_variable), quietly(function(a, b, c, d){model <- create_model(dataset = a, analysis = b, subanalysis = c, treatment_variable = d)})),
+   mutate(model_quietly = pmap(list(data, analysis, subanalysis, treatment_variable), safely(function(a, b, c, d){model <- create_model(dataset = a, analysis = b, subanalysis = c, treatment_variable = d)})),
           model = map(model_quietly, get_result),
-          warning = map(model_quietly, get_warning), 
+          error = map(model_quietly, get_error), 
+          warning = map(model_quietly, get_warning),
           convergence = map(model, check_convergence)) %>%
   mutate(xvar_table = map(model, ~data.frame(xvar = all.vars(terms(.))[-1])))
 
 #Make sure there weren't any problems + check to make sure table of predictor variables is correct
+# models$error
 # models$warning
 # models$convergence
 # models$xvar_table
 ```
 
 ## Step 5: Check assumptions
-```{r, fig.show = 'hide', results = 'hide'}
+```{r, fig.show = 'hide', results = 'hide', eval = FALSE}
 assumption_checks <- models %>%
   mutate(re_plot = pmap(list(model, title, subtitle), ~check_re(model = ..1, plot_title = ..2, plot_subtitle = ..3))) %>%
   mutate(dharma_object = map(model, ~simulateResiduals(fittedModel = ., n = 1000, plot = FALSE, re.form = ~0))) %>%
@@ -216,9 +244,8 @@ assumption_checks <- models %>%
   mutate(plotname4 = paste("dharma_zeroinfl_diagnostics_", model_number, ".png", sep = "")) %>%
   mutate(plotname5 = paste("dharma_overdisp_diagnostics_", model_number, ".png", sep = ""))
 
-
 #Export diagnostic plots because they load very slowly in RStudio
-path_name <- c("../../results/statistical_analysis/assumption_checks/telemetry")
+path_name <- c("../../results/analysis/assumption_checks/pollen_tubes")
 walk2(assumption_checks$plotname1, assumption_checks$re_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
 walk2(assumption_checks$plotname2, assumption_checks$dharma_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
 walk2(assumption_checks$plotname3, assumption_checks$dharma_xvar_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in"))
@@ -228,8 +255,13 @@ walk2(assumption_checks$plotname5, assumption_checks$dharma_overdisp_plot, ~ggsa
 #Check for highly influential replicates
 #Make plots of DFBETAS and Cook's distance
 influence_checks <- models %>%
-  mutate(influence_plot = pmap(list(model, data, title, subtitle), ~make_influence_plot(model = ..1, dataset = ..2, plot_title = ..3, plot_subtitle = ..4, group_id = "year_patch"))) %>%
-  mutate(plotname6 = paste("influence_diagnostics_", model_number, ".png", sep = ""))
+    mutate(influence_plot_quietly = pmap(list(model, data, title, subtitle), safely(function(a, b, c, d){influence <- make_influence_plot(model = a, dataset = b, plot_title = c, plot_subtitle = d, group_id = "year_patch")})),
+          influence_plot = map(influence_plot_quietly, get_result),
+          error = map(influence_plot_quietly, get_error)) %>%
+    mutate(plotname6 = paste("influence_diagnostics_", model_number, ".png", sep = ""))
+  
+#There is an error for the third influence plot - NaNs produced/infinite or missing values in 'x' - but dataset used in model does not have any missing data...I suspect it's an issue of complete separation when one replicate is removed to calculate the influence measure
+# influence_checks$error
 
 #Export plots
 walk2(influence_checks$plotname6, influence_checks$influence_plot, ~ggsave(filename = .x, plot = .y, path = path_name, height = 11.5, width = 15, units = "in", bg = "white"))
@@ -249,7 +281,7 @@ results <- models %>%
 
 ## Step 7: Export results as rds file
 ```{r}
-saveRDS(results, "../../results/statistical_analysis/rds_files/Telemetry_results.rds")
+saveRDS(results, "../../results/analysis/rds_files/Pollen_tube_results.rds")
 ```
 
 *WILL EXTRACT RESULTS, CALCULATE CONTRASTS, MAKE PLOTS, ETC. FROM RDS FILES LATER ON IN SINGLE SCRIPT*
