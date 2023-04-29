@@ -32,11 +32,11 @@ However, I will also summarize the data in terms of plants and flowers, since th
 
 Also, I will tailor the resource estimates to different hummingbird species (or group of species), because hummingbirds do not visit each plant species equally. I will use the camera data to determine which plant species are visited by different hummingbird species, and how frequently they are visited. This tailoring will lead to several levels of calorie estimates, in order of increasing complexity (and presumably biological relevance):
 
-- No tailoring: includes all plant species
+- No tailoring ("base estimate" of % calories removed): includes all plant species 
 
-- Subset: only includes plant species with confirmed visitation by hummingbirds (or groups of hummingbirds species)
+- Subset ("low estimate" of % calories removed): only includes plant species with confirmed visitation by hummingbirds (or groups of hummingbirds species) 
 
-- Weighted: only includes plant species with confirmed visitation by hummingbirds (or groups of hummingbirds species), but also weights the value of each plant species by the relative hummingbird visitation rate to that species. If the plant species is not visited at all, it receives a weight of zero; this is the same as the subsetting step above. Plants with non-zero sighting rates receive a weight between 0 and 1 (weight of 1 = most frequently visited species).
+- Weighted ("high estimate" of % calories removed): only includes plant species with confirmed visitation by hummingbirds (or groups of hummingbirds species), but also weights the value of each plant species by the relative hummingbird visitation rate to that species. If the plant species is not visited at all, it receives a weight of zero; this is the same as the subsetting step above. Plants with non-zero sighting rates receive a weight between 0 and 1 (weight of 1 = most frequently visited species).
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning = FALSE, message = FALSE)
@@ -390,11 +390,11 @@ weights_greh_visa <- calculate_sighting_rates(data = camera_data, level_org = "p
 weights <- weights_all_species %>%
   bind_rows(weights_greh_visa) %>%
   left_join(plant_names) %>%
-  select(bird_group, rank, weight, plant_family, plant_scientific_name, plant_species, everything())
+  select(bird_group, plant_species, hours, sightings, sightings_per_hour, max_rate, weight, rank, plant_scientific_name, plant_family)
 
 #Format for Supp table
 weights_supp <- weights %>%
-  select(-c(max_rate, rank, flowers, hours, sightings_time)) %>%
+  select(-c(max_rate, rank, hours)) %>%
   pivot_wider(names_from = bird_group, values_from = c(sightings, sightings_per_hour, weight), names_glue = "{bird_group}_{.value}") %>%
   arrange(desc(all_spp_weight)) %>%
   left_join(effort_for_weights) %>%
@@ -457,7 +457,7 @@ percentage_calories_removed_tailored <- resource_data_sum_calories %>%
   mutate(percentage_removed = (removed/(removed + remaining)) * 100) %>%
   mutate(across(c(percentage_removed), ~round(., digits = 1))) %>%
   filter(count_estimate_high_low == "high") %>% #i.e., assuming unknown count unit of inflorescence vs. flower
-  select(-count_estimate_high_low)
+  select(-count_estimate_high_low, -removed, -remaining)
 
 #Summary stats
 percentage_calories_removed_tailored_sum <- percentage_calories_removed_tailored %>%
