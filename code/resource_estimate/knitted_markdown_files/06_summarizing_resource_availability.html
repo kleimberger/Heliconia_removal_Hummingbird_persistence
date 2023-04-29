@@ -402,16 +402,19 @@ frequently they are visited. This tailoring will lead to several levels
 of calorie estimates, in order of increasing complexity (and presumably
 biological relevance):</p>
 <ul>
-<li><p>No tailoring: includes all plant species</p></li>
-<li><p>Subset: only includes plant species with confirmed visitation by
-hummingbirds (or groups of hummingbirds species)</p></li>
-<li><p>Weighted: only includes plant species with confirmed visitation
-by hummingbirds (or groups of hummingbirds species), but also weights
-the value of each plant species by the relative hummingbird visitation
-rate to that species. If the plant species is not visited at all, it
-receives a weight of zero; this is the same as the subsetting step
-above. Plants with non-zero sighting rates receive a weight between 0
-and 1 (weight of 1 = most frequently visited species).</p></li>
+<li><p>No tailoring (“base estimate” of % calories removed): includes
+all plant species</p></li>
+<li><p>Subset (“low estimate” of % calories removed): only includes
+plant species with confirmed visitation by hummingbirds (or groups of
+hummingbirds species)</p></li>
+<li><p>Weighted (“high estimate” of % calories removed): only includes
+plant species with confirmed visitation by hummingbirds (or groups of
+hummingbirds species), but also weights the value of each plant species
+by the relative hummingbird visitation rate to that species. If the
+plant species is not visited at all, it receives a weight of zero; this
+is the same as the subsetting step above. Plants with non-zero sighting
+rates receive a weight between 0 and 1 (weight of 1 = most frequently
+visited species).</p></li>
 </ul>
 <div id="step-1-import-data-and-helper-functions" class="section level2">
 <h2>Step 1: Import data and helper functions</h2>
@@ -793,11 +796,11 @@ weights_greh_visa &lt;- calculate_sighting_rates(data = camera_data, level_org =
 weights &lt;- weights_all_species %&gt;%
   bind_rows(weights_greh_visa) %&gt;%
   left_join(plant_names) %&gt;%
-  select(bird_group, rank, weight, plant_family, plant_scientific_name, plant_species, everything())
+  select(bird_group, plant_species, hours, sightings, sightings_per_hour, max_rate, weight, rank, plant_scientific_name, plant_family)
 
 #Format for Supp table
 weights_supp &lt;- weights %&gt;%
-  select(-c(max_rate, rank, flowers, hours, sightings_time)) %&gt;%
+  select(-c(max_rate, rank, hours)) %&gt;%
   pivot_wider(names_from = bird_group, values_from = c(sightings, sightings_per_hour, weight), names_glue = &quot;{bird_group}_{.value}&quot;) %&gt;%
   arrange(desc(all_spp_weight)) %&gt;%
   left_join(effort_for_weights) %&gt;%
@@ -861,7 +864,7 @@ calculate percentage calories removed using the tailored estimates</h2>
   mutate(percentage_removed = (removed/(removed + remaining)) * 100) %&gt;%
   mutate(across(c(percentage_removed), ~round(., digits = 1))) %&gt;%
   filter(count_estimate_high_low == &quot;high&quot;) %&gt;% #i.e., assuming unknown count unit of inflorescence vs. flower
-  select(-count_estimate_high_low)
+  select(-count_estimate_high_low, -removed, -remaining)
 
 #Summary stats
 percentage_calories_removed_tailored_sum &lt;- percentage_calories_removed_tailored %&gt;%

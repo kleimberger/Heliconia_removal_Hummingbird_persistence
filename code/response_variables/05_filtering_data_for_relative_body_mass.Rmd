@@ -1,0 +1,134 @@
+---
+title: "Filtering data for relative body mass analysis"
+output: html_document
+knit: (function(inputFile, encoding) {
+      out_dir <- "knitted_markdown_files";
+      rmarkdown::render(inputFile,
+                        encoding=encoding,
+                        output_dir=file.path(dirname(inputFile), out_dir))})
+---
+
+**Goal**
+
+Prepare capture data for analysis of relative body mass. Analytical plan is outlined below but conducted in a separate scripts.
+
+**Approach**
+
+Analyze hummingbird body mass relative to mass predicted for a given wing length (within a species).
+
+1. Using data from all years of hummingbird captures (2018-2018), create allometric equations for each species: log(mass) ~ log(wing length)
+
+2. For each recaptured hummingbird from the experiment (2016-2018), use the allometric equation to calculate predicted body mass for a given wing length. For each bird, I therefore need data about wing length and body mass.
+
+3. Calculate relative mass as measured body mass divided by predicted body mass. Birds with values <1 are lighter than expected for their structural size; similarly, birds with values >1 are heavier than expected for their structural.
+
+4. Analyze how Heliconia removal influences change in relative body mass.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(ggplot2)
+library(purrr)
+library(glmmTMB)
+library(emmeans)
+```
+
+## Step 1: Get data
+```{r}
+#Hummingbirds species names
+bird_names <- read.csv("../../data/import/data/Hummingbird_codes_species_list.csv") %>%
+  select(bird_species, bird_scientific_name, bird_common_name)
+
+#Capture data (2010-2018)
+#Add color_id column because sometimes birds were not banded. Using colors instead in those cases. This ID will allow me to identify recaps between pre/post a given patch/year
+#Remove measurements before bird was fed sugar water, since that could lead to short-term increase the body mass
+#Remove day recaptures (hummingbirds captured twice during same capture session)
+captures_all_years <- read.csv("../../data/import/data/captures/Hummingbird_captures_2010-2018.csv") %>%
+  left_join(bird_names) %>%
+  rename(patch = site) %>%
+  mutate(patch = ifelse(patch == "33-Jardin", 33, patch)) %>%
+  mutate(bird_id = ifelse(is.na(band_number), paste(year, patch, bird_species, colors, sep = "_"), paste(year, patch, bird_species, band_number, sep = "_"))) %>% 
+  select(bird_id, everything()) %>%
+  filter(!grepl("comio antes de pesar|fed before weight|fed b/f", notes, ignore.case = TRUE)) %>%
+  filter(status != "DR") %>%
+  select(year, patch, control_treatment, exp_phase, bird_species, bird_sex = sex, mass, wing_length, bird_id, bird_scientific_name, bird_common_name)
+
+#Hummingbirds captured pre AND post during Heliconia removal experiment (2016-2018)
+recap_list <- read.csv("../../data/export/intermediate/Birds_recaptured_post.csv")
+```
+
+## Step 2: Prepare recapture data (experiment only) for further analysis
+
+Subset capture data to hummingbirds recaptured during Heliconia removal experiment (2016-2018)
+```{r}
+recaptures_experiment <- captures_all_years %>%
+  filter(bird_id %in% recap_list$bird_id)
+```
+
+To calculate a relative body mass, I need wing length (the measure of structural size) and the measured body mass. Make sure recaptured birds have morphometric measurements.
+```{r}
+#However, sometimes a recaptured bird had multiple wing measurements. Will average across these measurements.
+average_wing_lengths <- recaptures_experiment %>%
+  group_by(bird_id) %>%
+  summarise(wing_length = mean(wing_length, na.rm = TRUE)) %>%
+  ungroup()
+
+#Remove original wing lengths, replace with average lengths
+#Remove any birds without any wing measurements; e.g., some birds didn't have wing length measurements pre or post (p29, bc we got very busy at banding table)
+recaptures_experiment_measurements <- recaptures_experiment %>%
+  select(-wing_length) %>%
+  left_join(average_wing_lengths) %>%
+  arrange(bird_id) %>%
+  filter(!is.na(wing_length)) %>%
+  filter(!is.na(mass))
+```
+
+Remove birds without body mass measurements per and post. I'm interested in the pre-to-post change, so need measurements in both periods.
+```{r}
+birds_missing_periods <- recaptures_experiment_measurements %>%
+  group_by(bird_id) %>%
+  summarise(num_periods = n()) %>%
+  ungroup() %>%
+  filter(num_periods < 2)
+
+#Remove birds without pre and post measurements
+recaptures_experiment_for_analysis <- recaptures_experiment_measurements %>%
+  filter(!(bird_id %in% birds_missing_periods$bird_id)) 
+
+#How many individuals is this final dataset?
+#All species
+unique(recaptures_experiment_for_analysis$bird_id) %>% length()
+
+#GREH/VISA
+recaptures_experiment_for_analysis %>%
+  filter(bird_species == "GREH" | bird_species == "VISA") %>%
+  distinct(bird_id) %>%
+  pull(bird_id) %>%
+  length()
+```
+
+## Step 3: Prepare capture data (all years) for further analysis (i.e., allometric equations)
+```{r}
+#Remove original data for recaptures and replace with average wing lengths
+#Remove data for bird species that are not in recapture dataset. I only need allometric equations for recaptured species
+#Add column indicating whether bird is a recapture bird from experiment
+recaptures_bird_species <- recaptures_experiment_for_analysis %>%
+  distinct(bird_species)
+
+mass_wing_data_for_analysis <- captures_all_years %>%
+  filter(!(bird_id %in% recaptures_experiment_measurements$bird_id)) %>% #Remove original data associated with recaptures (i.e., bird caught in pre and post)
+  bind_rows(recaptures_experiment_measurements) %>% #Add in averaged measurements
+  filter(!is.na(wing_length)) %>%
+  filter(!is.na(mass)) %>%
+  filter(bird_species %in% recaptures_bird_species$bird_species) %>%
+  mutate(experiment_bird = ifelse(bird_id %in% recaptures_experiment_for_analysis$bird_id, "yes", "no"))
+```
+
+## Step 4: Export data
+```{r}
+#This dataset has all the data I need for analysis; recaptured individuals can be identified by the 'experiment_bird" column
+write.csv(mass_wing_data_for_analysis, "../../data/export/for_analysis/Capture_morphological_measurements.csv", row.names = FALSE)
+```

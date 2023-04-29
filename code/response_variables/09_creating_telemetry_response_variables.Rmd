@@ -47,6 +47,10 @@ birds_tagged <- read.csv("../../data/import/data/telemetry/Telemetry_birds.csv")
 #Camera data, for checking telemetry data
 camera_data <- read.csv("../../data/import/data/cameras/Camera_data_with_flower_counts_2016-2018.csv")
 
+#Bird scientific names (not just abbreviations). Will add after summarizing
+bird_names <- read.csv("../../data/import/data/Hummingbird_codes_species_list.csv") %>%
+  select(bird_species, bird_scientific_name)
+
 #Functions
 source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 ```
@@ -266,7 +270,8 @@ prop_time_for_analysis <- time_in_patch_for_analysis %>%
   summarise(obs_effort_minutes = sum(obs_effort_minutes),
             time_in_patch_minutes = sum(time_in_patch)) %>%
   ungroup() %>%
-  mutate(prop_time_in_patch = time_in_patch_minutes/obs_effort_minutes)
+  mutate(prop_time_in_patch = time_in_patch_minutes/obs_effort_minutes) %>%
+  left_join(bird_names)
 
 #THIS IS THE FILE TO EXPORT FOR ANALYSIS OF PROPORTION TIME IN PATCH (PRE/POST CHANGE)
 ```

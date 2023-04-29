@@ -381,13 +381,20 @@ head(telem_data)</code></pre>
 ## 4 2016    10         treatment       148         GREH        M       pre
 ## 5 2016    10         treatment       322         VISA        F      post
 ## 6 2016    10         treatment       322         VISA        F       pre
-##   obs_effort_minutes time_in_patch_minutes prop_time_in_patch bird_group
-## 1                534                    32        0.059925094    all_spp
-## 2                729                   208        0.285322359    all_spp
-## 3                534                     0        0.000000000    all_spp
-## 4                729                     2        0.002743484    all_spp
-## 5                534                     0        0.000000000    all_spp
-## 6                729                   234        0.320987654    all_spp</code></pre>
+##   obs_effort_minutes time_in_patch_minutes prop_time_in_patch
+## 1                534                    32        0.059925094
+## 2                729                   208        0.285322359
+## 3                534                     0        0.000000000
+## 4                729                     2        0.002743484
+## 5                534                     0        0.000000000
+## 6                729                   234        0.320987654
+##         bird_scientific_name bird_group
+## 1            Phaethornis guy    all_spp
+## 2            Phaethornis guy    all_spp
+## 3            Phaethornis guy    all_spp
+## 4            Phaethornis guy    all_spp
+## 5 Campylopterus hemileucurus    all_spp
+## 6 Campylopterus hemileucurus    all_spp</code></pre>
 <pre class="r"><code>#Create subset for GREH/VISA
 telem_data_greh_visa &lt;- telem_data %&gt;%
   filter(bird_species == &quot;GREH&quot; | bird_species == &quot;VISA&quot;) %&gt;%

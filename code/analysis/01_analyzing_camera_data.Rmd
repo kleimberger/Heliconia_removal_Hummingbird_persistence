@@ -57,13 +57,14 @@ set.seed(1)
 ```{r}
 #Camera data, visits summarized across birds
 visit_data <- read.csv("../../data/export/for_analysis/Camera_visitation_rates.csv") %>%
+  mutate(analysis = ifelse(plant_species == "HETO", "camera_HETO", "camera_non-HETO")) %>%
   mutate(subanalysis = "all_birds")
 
 #Camera data, visits by individual birds
 #Decided not to exclude birds that have no visits during the pre period (determined for HETO and non-HETO separately)
 visit_data_marked <- read.csv("../../data/export/for_analysis/Camera_visitation_rates_marked_birds.csv") %>%
-  mutate(subanalysis = "marked_birds") %>%
-  select(-present_during_pre)
+  mutate(analysis = ifelse(plant_species == "HETO", "camera_HETO", "camera_non-HETO")) %>%
+  mutate(subanalysis = "marked_birds")
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
 heto_removed <- read.csv("../../data/export/for_analysis/Site_and_replicate_characteristics.csv") %>%
@@ -74,7 +75,7 @@ plant_species_names <- read.csv("../../data/import/data/Plant_codes_species_list
   select(plant_family, plant_scientific_name, plant_species)
 ```
 
-**How many non-Heliconia species were had camera data pre and post? Did all species have sightings?**
+**How many non-Heliconia species had camera data pre and post? Did all species have sightings?**
 ```{r}
 #Calculate total number of species in data (and total # with sightings)
 nonheto_data <- visit_data %>%

@@ -378,6 +378,11 @@ covariate (counted for each plant species).</p>
 <pre class="r"><code>#Get data
 data_for_experiment &lt;- read.csv(&quot;../../data/export/intermediate/Camera_data_filtered_for_experiment.csv&quot;)
 
+# Get plant names
+plant_names &lt;- read.csv(&quot;../../data/import/data/Plant_codes_species_list.csv&quot;) %&gt;%
+  select(plant_species, plant_scientific_name) %&gt;%
+  filter(!is.na(plant_species) &amp; plant_species != &quot;&quot;) #Get rid of blank rows
+
 #Source helper functions
 source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)
 source(&quot;../../code/helper_functions/Summarize_camera_data.R&quot;)
@@ -446,10 +451,12 @@ species_pre_and_post &lt;- sighting_durations %&gt;%
   filter(num_periods == 2)
 
 #Filter out species that did not have sightings during both experimental periods
+#Add plant species scientific names
 sighting_durations_for_analysis &lt;- sighting_durations %&gt;%
   left_join(species_pre_and_post) %&gt;%
   filter(num_periods == 2) %&gt;%
-  select(-num_periods)
+  select(-num_periods, -hours, -sightings_per_hour) %&gt;%
+  left_join(plant_names)
 
 #Check: are there any NAs in the sighting_duration column?
 check01 &lt;- sighting_durations_for_analysis %&gt;%

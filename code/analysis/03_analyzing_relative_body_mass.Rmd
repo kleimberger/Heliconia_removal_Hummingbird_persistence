@@ -32,7 +32,7 @@ Potential options considered and ultimately not chosen:
 
 Analyze hummingbird body mass *relative to* mass predicted for a given wing length (within a species).
 
-1. Using data from all years of hummingbird captures (2018-2018), create allometric equations for each species: log(mass) ~ log(wing length)
+1. Using data from all years of hummingbird captures (2018-2018), create allometric equations for each hummingbird species: log(mass) ~ log(wing length)
 
 2. For each recaptured hummingbird from the experiment (2016-2018), use the allometric equation to calculate predicted body mass for a given wing length. For each bird, I therefore need data about wing length and body mass.
 
@@ -56,86 +56,25 @@ library(emmeans)
 
 **Import data**
 ```{r}
-#Hummingbirds codes --> hummingbird species names
-bird_species_names <- read.csv("../../data/import/data/Hummingbird_codes_species_list.csv")
-
-#Get all capture data (2010-2018)
-#Add color_id column because sometimes birds were not banded. Using colors instead in those cases. This ID will allow me to identify recaps between pre/post a given patch/year
-captures_all_years <- read.csv("../../data/import/data/captures/Hummingbird_captures_2010-2018.csv") %>%
-  left_join(bird_species_names) %>%
-  rename(patch = site) %>%
-  filter(status != "DR") %>% #Remove day recaptures
-  mutate(bird_id = ifelse(is.na(band_number), paste(year, patch, bird_species, colors, sep = "_"), paste(year, patch, bird_species, band_number, sep = "_"))) %>% 
+#Morphological measurements (mass and wing length) from capture data
+data_mass_wing_regressions <- read.csv("../../data/export/for_analysis/Capture_morphological_measurements.csv") %>%
   mutate(year_patch = paste(year, patch, sep = "_")) %>%
-  select(bird_id, everything())
+  mutate(exp_phase = factor(exp_phase, levels = c("capture_1", "capture_2"), labels = c("pre", "post"))) %>%
+  mutate(control_treatment = factor(control_treatment, levels = c("control", "treatment"))) %>%
+  mutate(log_mass = log(mass)) %>%
+  mutate(log_wing_length = log(wing_length))
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
 heto_removed <- read.csv("../../data/export/for_analysis/Site_and_replicate_characteristics.csv") %>%
-  select(year, patch, control_treatment, calories_removed_per_ha) %>%
+  select(year, patch, calories_removed_per_ha) %>%
   mutate(patch = as.character(patch))
-
-#Hummingbirds captured pre AND post during Heliconia removal experiment (2016-2018)
-recap_list <- read.csv("../../data/export/intermediate/Birds_recaptured_post.csv")
-
-#Subset capture data to hummingbirds recaptured during Heliconia removal experiment (2016-2018)
-#Add info about quantitative treatment (calories removed/ha)
-recaptures_experiment <- captures_all_years %>%
-  filter(bird_id %in% recap_list$bird_id) %>%
-  mutate(exp_phase = factor(exp_phase, levels = c("capture_1", "capture_2"), labels = c("pre", "post"))) %>%
-  mutate(control_treatment = factor(control_treatment, levels = c("control", "treatment")))
 ```
 
-```{r, eval = FALSE, include = FALSE}
-#Calculate how long after sunrise (5:30) bird was captured...predict that birds captured later in day have had more time to fill up on nectar
-#ULTIMATELY DECIDED THAT THIS WAS GOING TO INTRODUCE UNNEEDED COMPLEXITY INTO MODEL
-recaptures_experiment_sunrise <- recaptures_experiment %>%
-  mutate(time = lubridate::hm(time)) %>%
-  mutate(sunrise = lubridate::hm("5:30")) %>%
-  mutate(hours_since_sunrise = as.numeric(time - sunrise)/60/60)
-```
-
-**Import functions**
+Create recapture dataset for analysis
 ```{r}
-source("../../code/helper_functions/Modeling_helper_functions.R")
-source("../../code/helper_functions/Plotting_helper_functions.R")
-source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
-source("../../code/helper_functions/Calculate_basic_summary_stats.R")
-```
-
-## Step 2: Make sure recaptured birds have morphometric measuremets
-
-To calculate a relative body mass, I need wing length - the measure of structural size - and the measured body mass.
-
-```{r}
-#Identify recaptures that have wing measurements, average across captures if a recaptured bird has multiple wing measurements.
-#If a recaptured bird is missing wing length measurement during one period, just use the other capture. This will let me include more data in subsequent analyses.
-average_wing_lengths <- recaptures_experiment %>%
-  select(bird_id, exp_phase, wing_length) %>%
-  group_by(bird_id) %>%
-  summarise(wing_length = mean(wing_length, na.rm = TRUE)) %>%
-  ungroup()
-
-#Remove wing lengths, replace with average lengths
-#Remove any birds without any wing measurements; e.g., some birds didn't have wing length measurements pre or post (p29, bc we got very busy at banding table)
-#Remove any mass measurements where bird fed sugar water before mass was measured
-recaptures_experiment_measurements <- recaptures_experiment %>%
-  select(-wing_length) %>%
-  left_join(average_wing_lengths) %>%
-  select(year, patch, year_patch, control_treatment, exp_phase, bird_id, bird_species, mass, wing_length, notes) %>%
-  filter(!is.na(wing_length)) %>%
-  filter(!is.na(mass)) %>%
-  filter(!grepl("comio antes de pesar|fed before weight|fed b/f", notes, ignore.case = TRUE)) 
-
-#Check: after all this filtering, do I measurements pre and post? Interested in pre-to-post change, so need measurements in both periods
-birds_missing_periods <- recaptures_experiment_measurements %>%
-  group_by(bird_id) %>%
-  summarise(num_periods = n()) %>%
-  ungroup() %>%
-  filter(num_periods < 2)
-
-#Remove birds without pre and post measurements
-recaptures_experiment_all_spp <- recaptures_experiment_measurements %>%
-  filter(!(bird_id %in% birds_missing_periods$bird_id)) %>%
+#Recaptures that I will analyze body mass for
+recaptures_experiment_all_spp <- data_mass_wing_regressions %>%
+  filter(experiment_bird == "yes") %>%
   mutate(bird_group = "all_spp")
 
 #Create subset for GREH/VISA
@@ -150,35 +89,18 @@ recaptures_experiment_for_analysis <- recaptures_experiment_all_spp %>%
   mutate(log_calories_removed_per_ha = log(calories_removed_per_ha + 1)) %>%
   mutate(analysis = "body_mass",
          subanalysis = "body_mass") %>%
-  select(analysis, subanalysis, bird_group, everything()) 
-
-#How many individuals is this final dataset?
-#All species
-unique(recaptures_experiment_all_spp$bird_id) %>% length
-
-#GREH/VISA
-unique(recaptures_experiment_greh_visa$bird_id) %>% length
+  select(analysis, subanalysis, bird_group, everything())
 ```
 
-## Step 3: Using all capture data, plot log(mass) ~ log(wing length) for each species
-
-Get capture data ready for allometric equation
+**Import functions**
 ```{r}
-#Remove wing lengths for recaptures (id'ed in previous step), replace with average lengths for consistency
-#Remove any birds without any wing measurements
-#Remove any mass measurements where bird fed sugar water before mass was measured
-#Add column indicating whether bird is included in recap dataset for Heliconia removal experiment (for plotting)
-data_mass_wing_regressions <- captures_all_years %>%
-  filter(!(bird_id %in% recaptures_experiment_measurements$bird_id)) %>% #Remove original data associated with recaptures (i.e., bird caught in pre and post)
-  bind_rows(recaptures_experiment_measurements) %>%
-  filter(!is.na(wing_length)) %>%
-  filter(!is.na(mass)) %>%
-  filter(!grepl("comio antes de pesar|fed before weight|fed b/f", notes, ignore.case = TRUE)) %>%
-  mutate(experiment_bird = ifelse(bird_id %in% recaptures_experiment_for_analysis$bird_id, "yes", "no")) %>%
-  mutate(log_mass = log(mass)) %>%
-  mutate(log_wing_length = log(wing_length)) %>%
-  select(year, patch, exp_phase, bird_species, bird_id, log_mass, log_wing_length, experiment_bird)
+source("../../code/helper_functions/Modeling_helper_functions.R")
+source("../../code/helper_functions/Plotting_helper_functions.R")
+source("../../code/helper_functions/Extract_data_from_safely_and_quietly_lists.R")
+source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 ```
+
+## Step 2: Using all capture data, plot log(mass) ~ log(wing length) for each species
 
 Write functions
 ```{r}
@@ -254,7 +176,7 @@ make_plot <- function(dataset, bird_species, intercept, slope, group_id){
     geom_point(aes(colour = factor(get(group_id))), size = 2) +
     geom_line(aes(y = .fitted, x = log_wing_length), data = dataset) + #This is exactly the same as using geom_smooth() with method LM
     geom_text(aes(x = Inf, y = Inf, label = label), data = label_df, parse = TRUE, hjust = 1.25, vjust = 1.5, size = 6, colour = "black") + #Upper right
-    labs(title = bird_species, x = "Log(wing length)", y = "Log(mass)") +
+    labs(title = bird_species, x = "Ln(wing length)", y = "Ln(mass)") +
     scale_color_manual(values = c("gray80", "#BA0022")) +
     theme_bw(base_size = 18) +
     theme(legend.position = "none")
@@ -266,14 +188,12 @@ make_plot <- function(dataset, bird_species, intercept, slope, group_id){
 
 Apply functions
 ```{r}
-#1. Identify hummingbird species that I will need regressions for (the species I have recaptures for)
-#2. Subset larger capture dataset to species of interest
-#3. Only run regressions for species that have >30 observations
-#4. Run regression
-#5. Add residuals and predicted values from model, using broom::augment
-mass_wing_regressions <- recaptures_experiment_for_analysis %>%
-  distinct(bird_species) %>%
-  left_join(bird_species_names) %>%
+#1. Subset larger capture dataset to species of interest
+#2. Only run regressions for species that have >30 observations
+#3. Run regression
+#4. Add residuals and predicted values from model, using broom::augment
+mass_wing_regressions <- data_mass_wing_regressions %>%
+  distinct(bird_species, bird_common_name) %>%
   mutate(data = map(bird_species, ~subset_data(dataset = data_mass_wing_regressions, bird_species = .))) %>% 
   mutate(num_rows = map(data, function(.){unlist(dim(.)[[1]])})) %>%
   filter(num_rows > 30) %>% #Remove species that don't have > 30 observations for regression
@@ -306,9 +226,8 @@ data_mass_wing_regressions_without_outliers <- data_mass_wing_regressions %>%
 
 Re-run regressions using data without outliers
 ```{r, fig.height = 11.5, fig.width = 15}
-mass_wing_regressions_without_outliers <- recaptures_experiment_for_analysis %>%
-  distinct(bird_species) %>%
-  left_join(bird_species_names) %>%
+mass_wing_regressions_without_outliers <- data_mass_wing_regressions %>%
+  distinct(bird_species, bird_common_name) %>%
   mutate(data = map(bird_species, ~subset_data(dataset = data_mass_wing_regressions_without_outliers, bird_species = .))) %>% 
   mutate(num_rows = map(data, function(.){unlist(dim(.)[[1]])})) %>%
   filter(num_rows > 30) %>% #Remove species that don't have > 30 observations for regression
@@ -326,6 +245,8 @@ mass_wing_regressions_without_outliers$num_rows[[1]]
 #Combine plots of mass-wing regressions, for Supp Material
 mass_wing_regressions_multiplot <- ggpubr::ggarrange(plotlist = mass_wing_regressions_without_outliers$plot_recaps)
 mass_wing_regressions_multiplot
+
+ggview::ggview(mass_wing_regressions_multiplot, height = 11.5, width = 15)
 ```
 
 ## Step 4: Calculate relative body mass
@@ -449,12 +370,9 @@ results <- models %>%
 
 ## Step 6: Export results
 ```{r}
-#Data that I analyzed here
-write.csv(data_for_analysis, "../../data/export/for_analysis/Relative_body_mass.csv", row.names = FALSE)
-
 #Multiplot of log(mass) ~ log(wing length) regressions
 path_name <- c("../../results/analysis/figures")
-ggsave(filename = file.path(path_name, "FigS2_Allometric_regression_plots.png"), plot = mass_wing_regressions_multiplot, height = 11.5, width = 15)
+ggsave(filename = file.path(path_name, "FigS2_Allometric_regression_plots.png"), plot = mass_wing_regressions_multiplot, height = 11.5, width = 15, bg = "white")
 
 #Responses to Heliconia removal
 saveRDS(results, "../../results/analysis/rds_files/Body_mass_results.rds")

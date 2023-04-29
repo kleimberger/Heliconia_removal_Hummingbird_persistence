@@ -34,6 +34,11 @@ Also, some camera sets had >1 plant species in the frame, but the sighting lengt
 #Get data
 data_for_experiment <- read.csv("../../data/export/intermediate/Camera_data_filtered_for_experiment.csv")
 
+# Get plant names
+plant_names <- read.csv("../../data/import/data/Plant_codes_species_list.csv") %>%
+  select(plant_species, plant_scientific_name) %>%
+  filter(!is.na(plant_species) & plant_species != "") #Get rid of blank rows
+
 #Source helper functions
 source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 source("../../code/helper_functions/Summarize_camera_data.R")
@@ -103,10 +108,12 @@ species_pre_and_post <- sighting_durations %>%
   filter(num_periods == 2)
 
 #Filter out species that did not have sightings during both experimental periods
+#Add plant species scientific names
 sighting_durations_for_analysis <- sighting_durations %>%
   left_join(species_pre_and_post) %>%
   filter(num_periods == 2) %>%
-  select(-num_periods)
+  select(-num_periods, -hours, -sightings_per_hour) %>%
+  left_join(plant_names)
 
 #Check: are there any NAs in the sighting_duration column?
 check01 <- sighting_durations_for_analysis %>%

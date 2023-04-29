@@ -11,7 +11,7 @@
 
 
 
-<title>Summarizing camera methods</title>
+<title>Creating telemetry response variables</title>
 
 <script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
 // be compatible with the behavior of Pandoc < 2.8).
@@ -354,386 +354,437 @@ display: none;
 
 
 
-<h1 class="title toc-ignore">Summarizing camera methods</h1>
+<h1 class="title toc-ignore">Creating telemetry response variables</h1>
 
 </div>
 
 
-<p><strong>Overall goals:</strong></p>
-<ol style="list-style-type: decimal">
-<li>Summarize video effort in various dimensions:</li>
-</ol>
-<ul>
-<li>Number of cameras per replicate</li>
-<li>Number of plant species per replicate</li>
-</ul>
-<p>[Note: video hours have already been summarizing in script
-summarizing camera data]</p>
-<ol start="2" style="list-style-type: decimal">
-<li>Calculate additional summary stats and information for
-methods/supplemental methods:</li>
-</ol>
-<ul>
-<li>Percentage of cameras at stations (‘station’ = cluster of plants +
-cameras, 2 stations per site)</li>
-<li>Distance between stations</li>
-<li>What plant species were in pots (we brought these species in to
-create a ‘floral array’ at each station)</li>
-</ul>
-<div id="step-1-get-data" class="section level2">
-<h2>Step 1: Get data</h2>
-<pre class="r"><code>#Video data to analyze
-data_experiment &lt;- read.csv(&quot;../../data/export/intermediate/Camera_data_filtered_for_experiment.csv&quot;)
+<p><strong>Goals</strong></p>
+<p>Calculate the proportion of observation time that hummingbirds spent
+in the focal area</p>
+<p>Also calculate time at each location –&gt; to try and see if
+<em>Heliconia</em> removal led to birds were moving less/resting more
+(potential future analysis)</p>
+<p>Make a table of radio-tracking outcomes. We tagged 72 birds, but only
+36 ended up in the main analysis. What happened to all the birds?</p>
+<div id="step-1-get-data-and-functions" class="section level2">
+<h2>Step 1: Get data and functions</h2>
+<pre class="r"><code>#Telemetry data
+telem_data &lt;- read.csv(&quot;../../data/export/intermediate/Telemetry_data_2016-2018_time_at_location.csv&quot;) %&gt;%
+  mutate(date = lubridate::ymd(date))
 
-#Experimental timeline data (what happened on each day)
-exp_info &lt;- read.csv(&quot;../../data/import/data/Experiment_dates_2016-2018.csv&quot;)
+#Get observation effort
+effort_date &lt;- read.csv(&quot;../../data/export/intermediate/Telemetry_effort_by_date.csv&quot;) %&gt;%
+  mutate(date = lubridate::ymd(date)) %&gt;%
+  mutate(telem_start = lubridate::ymd_hms(start)) %&gt;%
+  mutate(telem_end = lubridate::ymd_hms(end)) %&gt;%
+  select(-start, -end)
 
-#Camera location data
-camera_locations &lt;- read.csv(&quot;../../data/import/data/cameras/Camera_locations_2016-2018.csv&quot;)
+#Bird info
+birds_tagged &lt;- read.csv(&quot;../../data/import/data/telemetry/Telemetry_birds.csv&quot;) %&gt;%
+  select(year, patch = site, bird_species, bird_sex = sex, frequency = frequency_adjusted, bird_notes = notes) %&gt;%
+  mutate(outcome = &quot;tagged&quot;)
 
-#Plant scientific name, etc. for supplement
-plant_info &lt;- read.csv(&quot;../../data/import/data/Plant_codes_species_list.csv&quot;)
+#Camera data, for checking telemetry data
+camera_data &lt;- read.csv(&quot;../../data/import/data/cameras/Camera_data_with_flower_counts_2016-2018.csv&quot;)
 
-#Function to calculate basic summary stats (mean, median, etc.)
+#Bird scientific names (not just abbreviations). Will add after summarizing
+bird_names &lt;- read.csv(&quot;../../data/import/data/Hummingbird_codes_species_list.csv&quot;) %&gt;%
+  select(bird_species, bird_scientific_name)
+
+#Functions
 source(&quot;../../code/helper_functions/Calculate_basic_summary_stats.R&quot;)</code></pre>
 </div>
-<div id="step-2-calculate-number-of-plant-species-number-of-cameras-per-replicate" class="section level2">
-<h2>Step 2: Calculate number of plant species + number of cameras per
-replicate</h2>
-<p>I can either calculate these numbers from:</p>
-<ol style="list-style-type: decimal">
-<li>The dataset of hummingbird sightings that will be used in analysis
-(i.e., the one I’ve been working with so far)</li>
-</ol>
-<p>OR</p>
-<ol start="2" style="list-style-type: decimal">
-<li>The dataset of camera locations (data recorded during camera
-installation)</li>
-</ol>
-<p>The first option is more conservative, because not all cameras that
-were set up yielded usable data. For example, perhaps the focal plant
-had no flowers or data were unavailable for both experimental periods,
-etc. However, in the methods section, it might be a bit more natural to
-say “We installed X cameras per replicate” rather than “We obtained
-usable data from X cameras per replicate”.</p>
-<p><strong>Effort summary from sighting dataset (final, usable
-data)</strong></p>
-<pre class="r"><code>#Number of cameras per replicate (there can be multiple plant species per camera)
-cameras_per_replicate = data_experiment %&gt;%
-  distinct(year, patch, control_treatment, camera_num) %&gt;%
-  group_by(year, patch, control_treatment) %&gt;%
-  summarise(num_cameras = n()) %&gt;%
-  ungroup() %&gt;%
-  filter(!is.na(patch))
+<div id="step-2-remove-points-greater-than-a-certain-distance-from-observer" class="section level2">
+<h2>Step 2: Remove points greater than a certain distance from
+observer</h2>
+<pre class="r"><code>#Since my focus is whether bird is in focal area, not so much the exact location, I am using a greater distance that previous studies from our lab.
+dist_threshold = 100 
 
-cameras_per_replicate_sum = cameras_per_replicate %&gt;%
-    calculate_basic_summary_stats(data = ., variable = num_cameras)
-
-#How much does the number of cameras/site vary between control and treatment replicates?
-cameras_per_replicate %&gt;%
-  mutate(control_treatment = factor(control_treatment, levels = c(&quot;control&quot;, &quot;treatment&quot;), labels = c(&quot;Control&quot;, &quot;Treatment&quot;))) %&gt;%
-  ggplot(data = ., aes(x = control_treatment, y = num_cameras, colour = control_treatment)) +
-    geom_violin(position = position_dodge(width = 1), trim = FALSE) +
-    geom_boxplot(position = position_dodge(width = 1), width = 0.25) +
-    geom_point(position = position_jitterdodge(dodge.width = 1, jitter.width = 0.2, jitter.height = 0.2), alpha = 0.5) +
-    labs(y = &quot;Number of cameras&quot;, x = &quot;&quot;, colour = &quot;&quot;) +
-    scale_colour_manual(values = c(&quot;#0E0D37&quot;, &quot;#BA0022&quot;), guide = &quot;none&quot;) +
-    theme_bw(base_size = 18)</code></pre>
-<p><img src="data:image/png;base64,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" width="672" /></p>
-<pre class="r"><code>#Number of plant species per replicate
-species_per_replicate_sum = data_experiment %&gt;%
-  distinct(year, patch, control_treatment, plant_species) %&gt;%
-  group_by(year, patch, control_treatment) %&gt;%
-  summarise(num_species = n()) %&gt;%
-  ungroup() %&gt;%
-  filter(!is.na(patch)) %&gt;%
-  calculate_basic_summary_stats(data = ., variable = num_species)
-  
-#Finally, just out of curiosity...which plant species are present most reliably across the different replicates?
-replicates_per_species &lt;- data_experiment %&gt;%
-  distinct(year, patch, control_treatment, plant_species) %&gt;%
-  group_by(plant_species) %&gt;%
-  summarise(num_replicates = n()) %&gt;%
-  ungroup() %&gt;%
-  arrange(desc(num_replicates))
-
-head(replicates_per_species)</code></pre>
-<pre><code>## # A tibble: 6 × 2
-##   plant_species num_replicates
-##   &lt;chr&gt;                  &lt;int&gt;
-## 1 HETO                      31
-## 2 MARA                      24
-## 3 PAV-ROJ-AMA               22
-## 4 CEPO                      21
-## 5 TUBO-AMA                  18
-## 6 HAPA                      17</code></pre>
-<p><strong>Effort summary from camera setup dataset (record of cameras
-installed)</strong></p>
-<pre class="r"><code>#Number of cameras per replicate (there can be multiple plant species per camera)
-cameras_per_replicate_setup = camera_locations %&gt;%
-  distinct(year, patch, control_treatment, camera_number_video_data) %&gt;%
-  group_by(year, patch, control_treatment) %&gt;%
-  summarise(num_cameras = n()) %&gt;%
-  ungroup() %&gt;%
-  filter(!is.na(patch))
-
-cameras_per_replicate_setup_sum &lt;- cameras_per_replicate_setup %&gt;%
-  calculate_basic_summary_stats(data = ., variable = num_cameras)
-
-#Number of plant species per replicate
-species_per_replicate_setup_sum = camera_locations %&gt;%
-  distinct(year, patch, control_treatment, plant_species) %&gt;%
-  group_by(year, patch, control_treatment) %&gt;%
-  summarise(num_species = n()) %&gt;%
-  ungroup() %&gt;%
-  filter(!is.na(patch)) %&gt;%
-  calculate_basic_summary_stats(data = ., variable = num_species)
-  
-#Number of plant species that were in pots (i.e., brought in to be part of focal array). This data was only recorded in 2017-2018
-potted_plants_per_replicate_setup_sum &lt;- camera_locations %&gt;%
-  filter(potted_y_n == &quot;Y&quot;) %&gt;%
-  distinct(year, patch, control_treatment, camera_number_video_data) %&gt;%
-  group_by(year, patch, control_treatment) %&gt;%
-  summarise(num_plants = n()) %&gt;%
-  ungroup() %&gt;%
-  calculate_basic_summary_stats(data = ., variable = num_plants)
-
-potted_plants_per_replicate_setup_sum</code></pre>
-<pre><code>## # A tibble: 1 × 6
-##     min   max  mean    sd median     n
-##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1     7    11   9.1  1.12      9    20</code></pre>
-<p><strong>Compare methods</strong></p>
-<pre class="r"><code>cameras_per_replicate_sum</code></pre>
-<pre><code>## # A tibble: 1 × 6
-##     min   max  mean    sd median     n
-##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1     2    17  10.3  3.44   10.5    32</code></pre>
-<pre class="r"><code>cameras_per_replicate_setup_sum</code></pre>
-<pre><code>## # A tibble: 1 × 6
-##     min   max  mean    sd median     n
-##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1     6    17  12.4  3.37     13    32</code></pre>
-<pre class="r"><code>species_per_replicate_sum</code></pre>
-<pre><code>## # A tibble: 1 × 6
-##     min   max  mean    sd median     n
-##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1     2    11  7.75  2.02      8    32</code></pre>
-<pre class="r"><code>species_per_replicate_setup_sum</code></pre>
-<pre><code>## # A tibble: 1 × 6
-##     min   max  mean    sd median     n
-##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1     6    14  9.25  2.03      9    32</code></pre>
-<p><em>As expected, more cameras were set up than yielded usable data.
-Results are similar for number of plant species as well.</em></p>
+telem_data02 &lt;- telem_data %&gt;%
+  filter(distance &lt;= dist_threshold)</code></pre>
 </div>
-<div id="step-3-calculate-details-of-camera-spatial-arrangement" class="section level2">
-<h2>Step 3: Calculate details of camera spatial arrangement</h2>
-<ul>
-<li>Percent of cameras at stations</li>
-<li>Distance between stations</li>
-</ul>
-<p><strong>Calculate percentage of cameras at stations</strong></p>
-<pre class="r"><code>#Note: these data might be a bit noisy, as I&#39;m not sure how consistent field techs were in determining whether plant was &#39;at station&#39; or not (i.e., estimating how far from focal Heliconia plant it was and recorded it as being &#39;at station&#39; or not)
-cameras_per_replicate_station_setup = camera_locations %&gt;%
-  filter(station == &quot;1&quot; | station == &quot;2&quot;) %&gt;%
-  distinct(year, patch, control_treatment, camera_number_video_data) %&gt;%
-  group_by(year, patch, control_treatment) %&gt;%
-  summarise(num_cameras_station = n()) %&gt;%
+<div id="step-3-calculate-time-in-patch-per-bird-and-date" class="section level2">
+<h2>Step 3: Calculate time in patch per bird and date</h2>
+<p>Will refine this summary throughout the rest of this script, then
+eventually calculate time in patch at level of experimental period.</p>
+<pre class="r"><code>time_in_patch_by_date &lt;- telem_data02 %&gt;%
+  filter(point_in_patch == 1) %&gt;% #Only sum the time at locations for points that were IN PATCH. If GPS coords incomplete, will be discarded in this step.
+  group_by(year, patch, control_treatment, frequency, exp_phase, date) %&gt;%
+  summarise(time_in_patch = sum(time_at_location, na.rm = TRUE)) %&gt;%
   ungroup()
 
-percent_cameras_at_station_setup_sum = cameras_per_replicate_setup %&gt;%
-  left_join(cameras_per_replicate_station_setup) %&gt;%
-  mutate(percent_at_station = num_cameras_station/num_cameras * 100) %&gt;%
-  calculate_basic_summary_stats(data = ., variable = percent_at_station)
-  
-percent_cameras_at_station_setup_sum</code></pre>
-<pre><code>## # A tibble: 1 × 6
-##     min   max  mean    sd median     n
-##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1  33.3   100  84.4  16.9   88.6    32</code></pre>
-<p><em>On average, &gt;80% of cameras at a station</em></p>
-<p><strong>Calculate distance between stations</strong></p>
-<p>Stations comprised a variety of different flowering plant species –
-some naturally occurring, some brought it in in pots – and was centered
-around a ‘focal’ Heliconia plant. There were two stations per site. How
-far apart were these stations?</p>
-<p>Get data and write helper function for distance calculation</p>
-<pre class="r"><code>#Projection to use
-projstring &lt;- &quot;+proj=utm +zone=17 +ellps=WGS84 +units=m +no_defs&quot; 
-
-#Function to calculate distance between locations of interest
-calculate_distance &lt;- function(data, group_id){
-  
-  #Select data from same group
-  data_same_group &lt;- data %&gt;%
-    filter(replicate_id == group_id)
-  
-  #If there is &gt;1 element, calculate distance between them
-  if(length(data_same_group$replicate_id) &gt; 1){
-    
-    distance &lt;- st_distance(data_same_group$geometry, by_element = FALSE)
-
-    #First element in vector is zero; second element is actual distance
-    return(distance[[2]]) 
-  
-  }
-  
-  return(NULL)
-
-}
-
-#Make a empty table to be filled in using purrr::map(). Replicate ID (patch + year combination) will be the group of interest (i.e., how far apart stations are within each replicate)
-base_table &lt;- camera_locations %&gt;%
-  distinct(year, patch) %&gt;%
-  mutate(replicate_id = paste(patch, year, sep = &quot;_&quot;))</code></pre>
-<p><strong>Calculate distance using average station
-coordinates</strong></p>
-<pre class="r"><code>#First, average coordinates assigned to each station (sometimes there are different coordinates, but presumably close to each other)
-camera_stations &lt;- camera_locations %&gt;%
-  distinct(year, patch, control_treatment, camera_number_video_data, plant_species, station, x, y) %&gt;%
-  filter(station == 1 | station == 2) %&gt;%
-  filter(!(is.na(x) | is.na(y))) %&gt;%
-  group_by(year, patch, station) %&gt;%
-  summarise(x = mean(x),
-            y = mean(y)) %&gt;%
-  mutate(replicate_id = paste(patch, year, sep = &quot;_&quot;))
-
-camera_stations_spatial &lt;- st_as_sf(camera_stations, coords = c(&quot;x&quot;, &quot;y&quot;))
-camera_stations_spatial &lt;- st_set_crs(camera_stations_spatial, value = projstring)
-
-station_distance = base_table %&gt;%
-  mutate(distance = map(replicate_id, ~calculate_distance(data = camera_stations_spatial, group_id = .))) %&gt;%
-  unnest(distance) %&gt;%
-  arrange(replicate_id)
-
-#1. Remove &#39;unit&#39; attributes (meters) 2. Summarize
-station_distance_sum &lt;- station_distance %&gt;%
-  mutate(distance = units::drop_units(distance)) %&gt;%
-  calculate_basic_summary_stats(data = ., variable = distance)</code></pre>
-<p><strong>Calculate distance using distance of focal Heliconia
-locations</strong></p>
-<p>Stations should be centered around focal Heliconia, so results should
-be similar as station results</p>
-<pre class="r"><code>focal_heto_locations &lt;- camera_locations %&gt;%
-  distinct(year, patch, control_treatment, camera_number_video_data, plant_species, station, x, y) %&gt;%
-  filter((station == 1 | station == 2)) %&gt;% #Note: by only looking at station numbers, this omits 2017 p10 focal HETO that was not at station
-  filter(plant_species == &quot;HETO&quot;) %&gt;%
-  filter(!(is.na(x) | is.na(y))) %&gt;%
-  group_by(year, patch, station) %&gt;%
-  summarise(x = mean(x),
-            y = mean(y)) %&gt;%
-  mutate(replicate_id = paste(patch, year, sep = &quot;_&quot;))
-
-focal_heto_locations_spatial &lt;- st_as_sf(focal_heto_locations, coords = c(&quot;x&quot;, &quot;y&quot;))
-focal_heto_locations_spatial &lt;- st_set_crs(focal_heto_locations_spatial, value = projstring)
-
-station_distance_focal_heto = base_table %&gt;%
-  mutate(distance = map(replicate_id, ~calculate_distance(data = focal_heto_locations_spatial, group_id = .))) %&gt;%
-  unnest(distance) %&gt;%
-  arrange(replicate_id)
-
-#1. Remove &#39;unit&#39; attributes (meters) 2. Summarize
-station_distance_focal_heto_sum &lt;- station_distance_focal_heto %&gt;%
-  mutate(distance = units::drop_units(distance)) %&gt;%
-  calculate_basic_summary_stats(data = ., variable = distance)</code></pre>
-<p><strong>Compare methods</strong></p>
-<pre class="r"><code>station_distance_sum</code></pre>
-<pre><code>## # A tibble: 1 × 6
-##     min   max  mean    sd median     n
-##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1  21.2  229.  59.4  44.4   48.0    32</code></pre>
-<pre class="r"><code>station_distance_focal_heto_sum</code></pre>
-<pre><code>## # A tibble: 1 × 6
-##     min   max  mean    sd median     n
-##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1  24.0  236.  61.6  43.7   55.6    29</code></pre>
-<p><em>Results are indeed similar if use station locations vs. focal
-Heliconia. Median of ~50m, mean of ~60 m +/- 44 m SD</em></p>
+#Add time-in-patch data to list of all telemetry birds, so it&#39;s clear which birds are missing data
+#If time_in_patch is NA, assume it wasn&#39;t there
+birds_tagged_time_in_patch &lt;- birds_tagged %&gt;%
+  full_join(effort_date) %&gt;%
+  left_join(time_in_patch_by_date) %&gt;%
+  mutate(time_in_patch = ifelse(is.na(time_in_patch), 0, time_in_patch))</code></pre>
 </div>
-<div id="step-4-summarize-which-plant-species-were-present-in-focal-arrays-at-stations-for-table-in-supplemental-methods" class="section level2">
-<h2>Step 4: Summarize which plant species were present in focal arrays
-at stations (for table in Supplemental Methods)</h2>
-<pre class="r"><code>#Note: potted status was only recorded in 2017-2018, but plants used in these years encompass all of 2016 species except IMPO (which did not yield any usable camera data anyway)
-floral_array_species &lt;- camera_locations %&gt;%
-  filter(potted_y_n == &quot;Y&quot;) %&gt;%
-  distinct(plant_species)
+<div id="step-4-create-summary-of-radio-tracking-outcomes" class="section level2">
+<h2>Step 4: Create summary of radio tracking outcomes</h2>
+<p>Eventually want information about each of the following:</p>
+<ul>
+<li><strong>Birds tagged:</strong> How many birds were tagged of each
+species?</li>
+</ul>
+<p>Individuals lost from analysis for various reasons:</p>
+<ul>
+<li><strong>Lost transmitter:</strong> How many lost transmitters, to
+our knowledge? This is only if we recovered the transmitter.</li>
+<li><strong>Never found:</strong> How many were never detected again?
+Either during telemetry OR on camera</li>
+<li><strong>Data reliability:</strong> How many birds were unreliably
+detected? I.e., not detected during telemetry but seen on camera during
+period of radio telemetry</li>
+<li><strong>Never found in focal area:</strong> How many were never
+detected in focal area again? Either during telemetry OR on camera</li>
+<li><strong>Never found in focal area during ‘pre’ period:</strong> How
+many were detected in focal area again, but never in during pre period?
+Either during telemetry OR on camera</li>
+</ul>
+<p><strong>Identify birds that lost transmitters</strong></p>
+<pre class="r"><code>#These birds lost their transmitters
+birds_with_lost_tags &lt;- birds_tagged %&gt;%
+  filter(grepl(&quot;Lost transmitter&quot;, bird_notes)) %&gt;%
+   mutate(outcome = &quot;lost_transmitter&quot;)</code></pre>
+<p>Camera data from 2017-2018 allowed identification of transmitter
+birds based on color marks. Next, I can use these data to:</p>
+<ul>
+<li><p>Determine whether birds never found during radio telemetry were
+indeed never detected on camera</p></li>
+<li><p>Check the reliability of the telemetry data on any given date.
+That is, if birds that were detected on camera during telemetry
+observations but were not included in telemetry data during that time,
+then those data are suspect.</p></li>
+</ul>
+<p>Get camera data and filter to relevant datasets</p>
+<pre class="r"><code>#Sightings of marked birds with transmitters
+transmitter_sightings &lt;- camera_data %&gt;%
+  rename(frequency = trans_freq, date = date_video) %&gt;%
+  filter(!is.na(frequency)) %&gt;%
+  mutate(date = lubridate::ymd(date)) %&gt;%
+  mutate(sighting_start = lubridate::ymd_hms(paste(date, sighting_start))) %&gt;%
+  select(year, patch, date, exp_phase, sighting_start, bird_species, frequency)
 
-floral_array_species </code></pre>
-<pre><code>##    plant_species
-## 1    PAV-ROJ-AMA
-## 2           PALU
-## 3      BOCA-ROJA
-## 4           RABO
-## 5         SASPLE
-## 6           HETO
-## 7           HAPA
-## 8       TUBO-AMA
-## 9           AMAP
-## 10         GOLFO
-## 11      PAV-ROSA
-## 12          COWO
-## 13          CEPO
-## 14       COSTBAR
-## 15    RABO, PALU</code></pre>
-<pre class="r"><code>floral_array_species_supp &lt;- floral_array_species %&gt;%
-  left_join(plant_info) %&gt;%
-  filter(!is.na(plant_family)) %&gt;%
-  arrange(plant_family, plant_scientific_name) %&gt;%
-  filter(plant_species != &quot;HETO&quot;) #Remove HETO. Not really part of floral array/potted plants
+#Sights of marked birds with transmitters, but only when they appeared on camera *during telemetry observation on a given date*
+transmitter_sightings_during_during_telem &lt;- transmitter_sightings %&gt;%
+  left_join(effort_date) %&gt;%
+  filter((sighting_start &gt; telem_start) &amp; (sighting_start &lt; telem_end)) %&gt;%
+  group_by(year, patch, frequency, date) %&gt;%
+  summarise(num_sightings_video = n()) %&gt;%
+  ungroup()</code></pre>
+<p><strong>Identify birds never found in telemetry data OR camera
+data</strong></p>
+<pre class="r"><code>#These birds were never found during telemetry (i.e., aren&#39;t in telemetry data at all). Though note that they might be detected on camera!
+birds_never_found &lt;- birds_tagged %&gt;%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %&gt;%
+  filter(!(frequency %in% telem_data$frequency)) %&gt;%
+  mutate(outcome = &quot;never_found&quot;)
 
-#Where there any species recorded in setup data that didn&#39;t end up in usable data?
-check01 &lt;- floral_array_species_supp %&gt;%
-  filter(!(plant_species %in% data_experiment$plant_species))
+unique(birds_never_found$frequency) %&gt;% length</code></pre>
+<pre><code>## [1] 5</code></pre>
+<pre class="r"><code>#Were any birds that were completely missing from telemetry data then found on camera?
+birds_only_found_on_camera &lt;- transmitter_sightings %&gt;%
+  filter(frequency %in% birds_never_found$frequency)
 
-#Export
-write.csv(floral_array_species_supp, &quot;../../data/export/supp_tables/List_of_floral_array_species.csv&quot;, row.names = FALSE)</code></pre>
-</div>
-<div id="step-5-calculate-when-floral-arrays-were-established-i.e.-how-many-days-in-advance-of-experiment-start" class="section level2">
-<h2>Step 5: Calculate when floral arrays were established (i.e., how
-many days in advance of experiment start)</h2>
-<p>Here, I will define the experiment start date as the first capture
-day (or first video day if there was no capture).</p>
-<p>Plants were brought in ahead of this date, on the ‘setup’ day (or
-first setup day when there was more than one; the second setup day was
-for camera setup).</p>
-<p>I need to calculate the number of days between floral array setup and
-the experiment start date.</p>
-<pre class="r"><code>#Identify the start dates for each replicate. Start date is generally capture_1, expect in replicates without captures (2016 p204, p49). Note that experimental day numbering (&#39;exp_day&#39;) column in dataset starts *after* capture day, so I need to update that column to actually identify the start date
-start_dates &lt;- exp_info %&gt;%
-  select(year, patch, control_treatment, exp_phase, date, exp_day) %&gt;%
-  filter(exp_phase == &quot;capture_1&quot; | exp_phase == &quot;capture_2&quot; | exp_phase == &quot;pre&quot; | exp_phase == &quot;post&quot;) %&gt;%
-  mutate(date = lubridate::mdy(date)) %&gt;%
-  arrange(year, patch, date) %&gt;%
-  group_by(year, patch) %&gt;%
-  mutate(exp_day_renumber = 1:length(year)) %&gt;%
+unique(birds_only_found_on_camera$frequency) %&gt;% length</code></pre>
+<pre><code>## [1] 0</code></pre>
+<pre class="r"><code>#Nope, if they weren&#39;t found in telemetry data, they weren&#39;t found at all.</code></pre>
+<p><strong>Identify birds with data reliability issues (mismatch between
+telemetry and camera data)</strong></p>
+<pre class="r"><code>#Find birds/dates where bird was in patch according to camera, but not according to telemetry
+transmitter_birds_undetected_during_telem &lt;- birds_tagged_time_in_patch %&gt;%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %&gt;%
+  filter(!(frequency %in% birds_never_found$frequency)) %&gt;%
+  left_join(transmitter_sightings_during_during_telem) %&gt;%
+  filter(num_sightings_video &gt; 0 &amp; time_in_patch == 0) %&gt;%
+  mutate(bird_date_id = paste(frequency, date, sep = &quot;_&quot;))
+
+unique(transmitter_birds_undetected_during_telem$frequency) %&gt;% length</code></pre>
+<pre><code>## [1] 7</code></pre>
+<pre class="r"><code>#Remove the birds + dates where there is a mismatch between telemetry and camera data
+#Does the bird still have data pre and post? If not, &#39;absence&#39; during one of the periods (pre/post) could be artificial absence due to mismatch between telemetry and cameras, not a true absence. Will have to remove these birds.
+birds_with_data_reliability_issues &lt;- birds_tagged_time_in_patch %&gt;%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %&gt;%
+  filter(!(frequency %in% birds_never_found$frequency)) %&gt;%
+  filter(frequency %in% transmitter_birds_undetected_during_telem$frequency) %&gt;%
+  select(bird_species, bird_sex, frequency, exp_phase, time_in_patch) %&gt;%
+  group_by(bird_species, bird_sex, frequency, exp_phase) %&gt;%
+  summarise(time_in_patch = sum(time_in_patch)) %&gt;%
   ungroup() %&gt;%
-  filter(exp_day_renumber == 1) %&gt;%
-  select(-exp_phase, -starts_with(&quot;exp_day&quot;)) %&gt;%
-  rename(date_start = date)
+  pivot_wider(names_from = exp_phase, values_from = time_in_patch, values_fill = 0) %&gt;%
+  filter(pre == 0 | post == 0) %&gt;%
+  mutate(outcome = &quot;data_reliability_issues&quot;)
+
+unique(birds_with_data_reliability_issues$frequency) %&gt;% length</code></pre>
+<pre><code>## [1] 4</code></pre>
+<p>Seven birds were seen at cameras during telemetry observation period
+but NOT recorded in telemetry data. Overall, perhaps due to more limited
+ability to do telemetry in control patches, that ended up in us
+assigning fewer and/or less experienced observers to control sites (?).
+All but one of these birds were from controls.</p>
+<p>Four of these birds had so many mismatches that the ended up with no
+usable data in one or more experimental period, and had to be
+removed.</p>
+<p><strong>Identify birds that were never detected in focal area (or
+were never detected during the ‘pre’ period)</strong></p>
+<pre class="r"><code>#Birds that were never detected in focal area (&quot;patch&quot;), excluding birds that were never detected at all and birds that lost transmitters
+birds_never_in_patch &lt;- birds_tagged_time_in_patch %&gt;%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %&gt;%
+  filter(!(frequency %in% birds_never_found$frequency)) %&gt;%
+  filter(!(frequency %in% birds_with_data_reliability_issues$frequency)) %&gt;%
+  group_by(frequency, bird_species, bird_sex) %&gt;%
+  summarise(time_in_patch = sum(time_in_patch)) %&gt;%
+  filter(time_in_patch == 0) %&gt;%
+  mutate(outcome = &quot;never_in_patch&quot;)
+
+unique(birds_never_in_patch$frequency) %&gt;% length()</code></pre>
+<pre><code>## [1] 17</code></pre>
+<pre class="r"><code>#Birds not present in pre
+birds_never_in_patch_during_pre &lt;- birds_tagged_time_in_patch %&gt;%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %&gt;%
+  filter(!(frequency %in% birds_never_found$frequency)) %&gt;%
+  filter(!(frequency %in% birds_with_data_reliability_issues$frequency)) %&gt;%
+  filter(!(frequency %in% birds_never_in_patch$frequency)) %&gt;%
+  group_by(frequency, bird_species, bird_sex, exp_phase) %&gt;%
+  summarise(time_in_patch = sum(time_in_patch)) %&gt;%
+  filter(time_in_patch == 0 &amp; exp_phase == &quot;pre&quot;) %&gt;%
+  mutate(outcome = &quot;never_in_patch_during_pre&quot;)
+
+unique(birds_never_in_patch_during_pre$frequency) %&gt;% length()</code></pre>
+<pre><code>## [1] 4</code></pre>
+<p><strong>Summarize radio tracking outcomes for results/Supp
+table</strong></p>
+<pre class="r"><code>birds_with_outcomes &lt;- birds_tagged %&gt;%
+  bind_rows(birds_with_lost_tags) %&gt;%
+  bind_rows(birds_never_found) %&gt;%
+  bind_rows(birds_with_data_reliability_issues) %&gt;%
+  bind_rows(birds_never_in_patch) %&gt;%
+  bind_rows(birds_never_in_patch_during_pre) %&gt;%
+  mutate(bird_sex = ifelse(bird_sex == &quot;UF&quot; | bird_sex == &quot;UM&quot;, &quot;U&quot;, bird_sex)) %&gt;% #unknown female and unknown male = unknown sex
+  distinct(outcome, bird_species, bird_sex, frequency)
+
+#Radio tracking outcomes, by species/sex
+outcomes_by_species_sex &lt;- birds_with_outcomes %&gt;%
+  group_by(outcome, bird_species, bird_sex) %&gt;%
+  summarise(num_birds = n())
+
+#Radio tracking outcomes, by species
+outcomes_by_species &lt;- birds_with_outcomes %&gt;%
+  group_by(outcome, bird_species) %&gt;%
+  summarise(num_birds = n())
+
+#Radio tracking outcomes, combined across species/sex
+outcomes &lt;- birds_with_outcomes %&gt;%
+  group_by(outcome) %&gt;%
+  summarise(num_birds = n())
+
+outcomes</code></pre>
+<pre><code>## # A tibble: 6 × 2
+##   outcome                   num_birds
+##   &lt;chr&gt;                         &lt;int&gt;
+## 1 data_reliability_issues           4
+## 2 lost_transmitter                  6
+## 3 never_found                       5
+## 4 never_in_patch                   17
+## 5 never_in_patch_during_pre         4
+## 6 tagged                           72</code></pre>
+</div>
+<div id="step-5-remove-problematic-birds-to-create-dataset-for-analysis" class="section level2">
+<h2>Step 5: Remove problematic birds to create dataset for analysis</h2>
+<pre class="r"><code>#Remove problem birds AND dates with mismatch between camera and telemetry data
+time_in_patch_for_analysis &lt;- birds_tagged_time_in_patch %&gt;%
+  filter(!(frequency %in% birds_with_lost_tags$frequency)) %&gt;%
+  filter(!(frequency %in% birds_never_found$frequency)) %&gt;%
+  filter(!(frequency %in% birds_with_data_reliability_issues$frequency)) %&gt;%
+  filter(!(frequency %in% birds_never_in_patch$frequency)) %&gt;%
+  filter(!(frequency %in% birds_never_in_patch_during_pre$frequency)) %&gt;%
+  mutate(bird_date_id = paste(frequency, date, sep = &quot;_&quot;)) %&gt;%
+  filter(!(bird_date_id %in% transmitter_birds_undetected_during_telem$bird_date_id))
   
-#Identify the setup dates
-setup_dates &lt;- exp_info %&gt;%
-  select(year, patch, control_treatment, exp_phase, date, exp_day) %&gt;%
-  filter(exp_phase == &quot;setup&quot; | exp_phase == &quot;setup_1&quot;) %&gt;%
-  mutate(date = lubridate::mdy(date)) %&gt;%
-  select(-exp_phase, -exp_day) %&gt;%
-  rename(date_setup = date)
+unique(time_in_patch_for_analysis$frequency) %&gt;% length #Should be 36 individuals</code></pre>
+<pre><code>## [1] 36</code></pre>
+<pre class="r"><code>#ALSO REMOVE THESE BIRD-DATE COMBINATIONS FROM THE ORIGINAL TELEMETRY DATA!
+telem_data03 &lt;- telem_data02 %&gt;%
+  mutate(bird_date_id = paste(frequency, date, sep = &quot;_&quot;)) %&gt;%
+  filter(bird_date_id %in% time_in_patch_for_analysis$bird_date_id) %&gt;%
+  select(-bird_date_id)
 
-#Calculate days between setup and capture
-establishment_days &lt;- start_dates %&gt;%
-  left_join(setup_dates) %&gt;%
-  mutate(days = date_start - date_setup) %&gt;%
-  mutate(days = ifelse(is.na(days), 0, days)) %&gt;%
-  mutate(days = as.numeric(days))
+telem_data_for_analysis &lt;- telem_data03</code></pre>
+<p><em>Note: if want to analyze telemetry data outside context of
+experiment (i.e., space-for-time-approach from dissertation), then don’t
+remove birds that were never in patch/never in patch during pre; those
+zeroes are useful data. Then calculate propotion as done below, but
+filter to ‘pre’ period only.</em></p>
+</div>
+<div id="step-6-summarize-data-to-prepost-across-dates-calculate-proportion-of-time-spent-in-patch" class="section level2">
+<h2>Step 6: Summarize data to pre/post (across dates) + calculate
+proportion of time spent in patch</h2>
+<pre class="r"><code>prop_time_for_analysis &lt;- time_in_patch_for_analysis %&gt;%
+  group_by(year, patch, control_treatment, frequency, bird_species, bird_sex, exp_phase) %&gt;%
+  summarise(obs_effort_minutes = sum(obs_effort_minutes),
+            time_in_patch_minutes = sum(time_in_patch)) %&gt;%
+  ungroup() %&gt;%
+  mutate(prop_time_in_patch = time_in_patch_minutes/obs_effort_minutes) %&gt;%
+  left_join(bird_names)
 
-#Summary stats on days between setup and capture
-establishment_days_sum &lt;- calculate_basic_summary_stats(data = establishment_days, variable = days)
-establishment_days_sum</code></pre>
+#THIS IS THE FILE TO EXPORT FOR ANALYSIS OF PROPORTION TIME IN PATCH (PRE/POST CHANGE)</code></pre>
+</div>
+<div id="step-7-summarize-more-info-about-effort-at-level-of-bird-for-methodsresults" class="section level2">
+<h2>Step 7: Summarize more info about effort at level of bird, for
+methods/results</h2>
+<pre class="r"><code>#Locations per bird
+locations_per_bird &lt;- telem_data_for_analysis %&gt;%
+  filter(!is.na(point_in_patch)) %&gt;% #Only sum the locations with complete GPS coords
+  filter(frequency %in% prop_time_for_analysis$frequency) %&gt;% #Filter to birds in final dataset
+  group_by(year, patch, control_treatment, frequency, bird_species, bird_sex) %&gt;%
+  summarise(num_locations = n()) %&gt;%
+  ungroup()
+
+locations_per_bird_sum &lt;- locations_per_bird %&gt;%
+  calculate_basic_summary_stats(variable = num_locations)
+
+locations_per_bird_sum</code></pre>
 <pre><code>## # A tibble: 1 × 6
 ##     min   max  mean    sd median     n
-##   &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
-## 1     0     8  3.72  1.78      4    32</code></pre>
+##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1     1   121  31.6  30.4   22.5    36</code></pre>
+<pre class="r"><code>#Dates per bird. Use dataset built on list of tagged birds to include dates even when bird was not detected (and therefore didn&#39;t show up in telem data)
+dates_per_bird &lt;- time_in_patch_for_analysis %&gt;%
+  group_by(year, patch, control_treatment, bird_species, bird_sex, frequency) %&gt;%
+  summarise(num_dates = n()) %&gt;%
+  ungroup()
+
+dates_per_bird_sum &lt;- dates_per_bird %&gt;%
+  calculate_basic_summary_stats(variable = num_dates)
+
+dates_per_bird_sum</code></pre>
+<pre><code>## # A tibble: 1 × 6
+##     min   max  mean    sd median     n
+##   &lt;int&gt; &lt;int&gt; &lt;dbl&gt; &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;
+## 1     3     7  5.42 0.967    5.5    36</code></pre>
+</div>
+<div id="step-8-calculate-more-summary-stats-for-methods" class="section level2">
+<h2>Step 8: Calculate more summary stats for methods</h2>
+<pre class="r"><code>#Total number of locations
+total_points &lt;- length(telem_data_for_analysis$row_id)
+total_points</code></pre>
+<pre><code>## [1] 2451</code></pre>
+<pre class="r"><code>#What percentage of bird locations do not have a departure time?
+points_time_sum &lt;- telem_data_for_analysis %&gt;%
+  group_by(time_leave_category) %&gt;%
+  summarise(num_points = n()) %&gt;%
+  ungroup()
+
+points_time_sum</code></pre>
+<pre><code>## # A tibble: 4 × 2
+##   time_leave_category  num_points
+##   &lt;chr&gt;                     &lt;int&gt;
+## 1 estimated_next_point       1387
+## 2 estimated_notes              44
+## 3 known                      1000
+## 4 stop_time                    20</code></pre>
+<pre class="r"><code>points_with_unknown_time_leave &lt;- points_time_sum %&gt;%
+  filter(time_leave_category != &quot;known&quot;) %&gt;%
+  summarise(num_points = sum(num_points)) %&gt;%
+  pull(num_points)
+
+points_with_unknown_time_leave</code></pre>
+<pre><code>## [1] 1451</code></pre>
+<pre class="r"><code>points_with_unknown_time_leave/total_points</code></pre>
+<pre><code>## [1] 0.5920033</code></pre>
+</div>
+<div id="step-9-calculate-mean-time-spent-at-location-for-analysis-of-activity-leveltorpor" class="section level2">
+<h2>Step 9: Calculate mean time spent at location (for analysis of
+activity level/torpor)</h2>
+<p><em>As of 9/1/22, do not have plans to analyze this, since we still
+would not be able to rule out nighttime torpor. But it’s here just in
+case.</em></p>
+<pre class="r"><code>time_at_location_sum &lt;- telem_data_for_analysis %&gt;%
+  filter(!is.na(frequency)) %&gt;%
+  group_by(year, patch, control_treatment, frequency, bird_species, bird_sex, exp_phase) %&gt;%
+  calculate_basic_summary_stats(variable = time_at_location) %&gt;%
+  rename(num_locations = n)
+
+#Need to look at birds with at least one location pre and post
+time_at_location_birds_complete &lt;- time_at_location_sum %&gt;%
+  distinct(year, patch, control_treatment, frequency, bird_species, bird_sex, exp_phase, num_locations) %&gt;%
+  pivot_wider(names_from = exp_phase, values_from = num_locations, values_fill = 0) %&gt;%
+  filter(pre &gt; 0 &amp; post &gt; 0)
+
+time_at_location_for_analysis &lt;- time_at_location_sum %&gt;%
+  filter(frequency %in% time_at_location_birds_complete$frequency)
+
+unique(time_at_location_for_analysis$frequency) %&gt;% length</code></pre>
+<pre><code>## [1] 32</code></pre>
+<pre class="r"><code>#More birds present in this dataset (N = 48), because they do not need to be in focal area or have complete GPS coords.
+
+#How close are mean and median time at location? If they are about the same, choice of which one to use does not matter too much.
+time_at_location_plot &lt;- time_at_location_for_analysis %&gt;%
+  select(year:exp_phase, mean, median) %&gt;%
+  pivot_longer(cols = c(&quot;mean&quot;, &quot;median&quot;), names_to = &quot;method&quot;, values_to = &quot;time_at_location&quot;) %&gt;%
+  ggplot(data = , aes(x = time_at_location, fill = method)) +
+  geom_density(alpha = 0.5) +
+  theme_bw(base_size = 18) +
+  theme(panel.grid.minor = element_blank(), panel.grid.major = element_blank()) +
+  scale_fill_grey(labels = c(&quot;Mean&quot;, &quot;Median&quot;)) +
+  labs(x = &quot;Minutes at location&quot;, y = &quot;Density&quot;, color = &quot;Method&quot;, fill = &quot;Method&quot;)
+
+time_at_location_plot</code></pre>
+<p><img src="data:image/png;base64,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" width="672" /></p>
+</div>
+<div id="step-10-summarize-information-about-birds-vertical-location-canopy-vs-understory" class="section level2">
+<h2>Step 10: Summarize information about bird’s vertical location
+(canopy vs understory)</h2>
+<p>One potential explanation for hummingbird persistence is that birds
+increasingly foraged in the canopy. To try and understand if this was
+occurred, we collected data on vertical location (‘bird_height’) in the
+last year of study (2018).</p>
+<pre class="r"><code>bird_heights &lt;- telem_data_for_analysis %&gt;%
+  filter(!is.na(bird_height) &amp; bird_height != &quot;&quot;)
+
+bird_heights_sum &lt;- bird_heights %&gt;%
+  group_by(bird_height) %&gt;%
+  summarise(num_obs = n()) %&gt;%
+  ungroup()
+
+num_bird_heights_known &lt;- bird_heights_sum %&gt;%
+  filter(bird_height != &quot;unknown&quot;) %&gt;%
+  summarise(num_obs = sum(num_obs)) %&gt;%
+  pull(num_obs)
+
+num_bird_heights_canopy &lt;- bird_heights_sum %&gt;%
+  filter(bird_height == &quot;canopy&quot;) %&gt;%
+  pull(num_obs)
+
+num_bird_heights_understory &lt;- bird_heights_sum %&gt;%
+  filter(bird_height == &quot;understory&quot;) %&gt;%
+  pull(num_obs)
+
+#What percentage of bird heights (where height was considered &quot;known&quot;) were in the canopy vs in the understory?
+num_bird_heights_canopy/num_bird_heights_known #percentage of bird locations in canopy</code></pre>
+<pre><code>## [1] 0.02405498</code></pre>
+<pre class="r"><code>num_bird_heights_understory/num_bird_heights_known #percentage of bird locations in canopy</code></pre>
+<pre><code>## [1] 0.975945</code></pre>
+<pre class="r"><code>#Information about instances where bird was in canopy. How many individuals and what were they doing? etc
+bird_heights_canopy &lt;- bird_heights %&gt;%
+  filter(bird_height == &quot;canopy&quot;)
+
+unique(bird_heights_canopy$band_number)</code></pre>
+<pre><code>## [1] &quot;SA4654&quot; &quot;SA4841&quot; &quot;SA4636&quot;</code></pre>
+<p><em>Because there were only 7 observations of birds in the canopy,
+formal analysis of these data was not possible.</em></p>
+</div>
+<div id="step-11-export-data" class="section level2">
+<h2>Step 11: Export data</h2>
+<pre class="r"><code>write.csv(prop_time_for_analysis, &quot;../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv&quot;, row.names = FALSE)
+write.csv(telem_data_for_analysis, &quot;../../data/export/intermediate/Telemetry_data_filtered_for_analysis.csv&quot;, row.names = FALSE)
+
+#Radio-tracking outcomes for Supp material
+write.csv(outcomes_by_species_sex, &quot;../../data/export/supp_tables/Telemetry_outcomes_by_species_and_sex.csv&quot;, row.names = FALSE)
+write.csv(outcomes_by_species, &quot;../../data/export/supp_tables/Telemetry_outcomes_by_species.csv&quot;, row.names = FALSE)
+write.csv(outcomes, &quot;../../data/export/supp_tables/Telemetry_outcomes.csv&quot;, row.names = FALSE)</code></pre>
 </div>
 
 

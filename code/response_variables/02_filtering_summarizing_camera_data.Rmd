@@ -53,6 +53,15 @@ camera_data <- read.csv("../../data/import/data/cameras/Camera_data_with_flower_
   mutate(across(c(video_start, video_end), ~lubridate::hm(.))) %>%
   mutate(across(c(sighting_start, sighting_end), ~lubridate::hms(.)))
 
+## Get scientific names for birds and plants (not just abbreviations). Will add after summarizing
+bird_names <- read.csv("../../data/import/data/Hummingbird_codes_species_list.csv") %>%
+  select(bird_species, bird_scientific_name)
+
+## Plant names
+plant_names <- read.csv("../../data/import/data/Plant_codes_species_list.csv") %>%
+  select(plant_species, plant_scientific_name) %>%
+  filter(!is.na(plant_species) & plant_species != "") #Get rid of blank rows
+
 ## Source helper functions
 source("../../code/helper_functions/Calculate_basic_summary_stats.R")
 source("../../code/helper_functions/Summarize_camera_data.R")
@@ -230,8 +239,8 @@ sighting_rates_greh_visa = calculate_sighting_rates(data = data_for_experiment, 
 #Combine various summaries
 sighting_rates <- sighting_rates_all_spp %>%
   bind_rows(sighting_rates_greh_visa) %>%
-  mutate(analysis = ifelse(plant_species == "HETO", "camera_HETO", "camera_non-HETO")) %>%
-  select(analysis, bird_group, everything())
+  select(bird_group, everything(), -sightings_time) %>%
+  left_join(plant_names)
 ```
 
 Calculate visitation rates for each patch-year (across camera IDs, dates) - color-marked birds only
@@ -244,24 +253,13 @@ marked_sighting_rates_all_spp = calculate_sighting_rates(data = data_for_experim
 
 marked_sighting_rates_greh_visa = marked_sighting_rates_all_spp %>%
   filter(bird_species == "GREH" | bird_species == "VISA") %>%
-  select(-bird_group) %>%
   mutate(bird_group = "greh_visa")
   
 marked_sighting_rates <- marked_sighting_rates_all_spp %>%
   bind_rows(marked_sighting_rates_greh_visa) %>%
-  mutate(analysis = ifelse(plant_species == "HETO", "camera_HETO", "camera_non-HETO")) %>%
-  select(analysis, bird_group, everything())
-
-#Remove birds not present during pre (at HETO and non-HETO separately)
-birds_not_present_during_pre <- marked_sighting_rates %>%
-  group_by(analysis, year, patch, exp_phase, color_id) %>%
-  summarise(sightings = sum(sightings, na.rm = TRUE)) %>%
-  filter(exp_phase == "pre" & sightings == 0) %>%
-  mutate(present_during_pre = "no")
-
-marked_sighting_rates <- marked_sighting_rates %>%
-  left_join(birds_not_present_during_pre) %>%
-  mutate(present_during_pre = ifelse(is.na(present_during_pre), "yes", present_during_pre))
+  select(bird_group, year, patch, control_treatment, color_id, bird_species, plant_species, exp_phase, hours, flowers, sightings, sightings_per_hour) %>%
+  left_join(bird_names) %>%
+  left_join(plant_names)
 ```
 
 Summarize effort for marked birds

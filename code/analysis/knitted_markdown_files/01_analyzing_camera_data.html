@@ -384,13 +384,14 @@ violet sabrewings).</p>
 <p><strong>Get data</strong></p>
 <pre class="r"><code>#Camera data, visits summarized across birds
 visit_data &lt;- read.csv(&quot;../../data/export/for_analysis/Camera_visitation_rates.csv&quot;) %&gt;%
+  mutate(analysis = ifelse(plant_species == &quot;HETO&quot;, &quot;camera_HETO&quot;, &quot;camera_non-HETO&quot;)) %&gt;%
   mutate(subanalysis = &quot;all_birds&quot;)
 
 #Camera data, visits by individual birds
 #Decided not to exclude birds that have no visits during the pre period (determined for HETO and non-HETO separately)
 visit_data_marked &lt;- read.csv(&quot;../../data/export/for_analysis/Camera_visitation_rates_marked_birds.csv&quot;) %&gt;%
-  mutate(subanalysis = &quot;marked_birds&quot;) %&gt;%
-  select(-present_during_pre)
+  mutate(analysis = ifelse(plant_species == &quot;HETO&quot;, &quot;camera_HETO&quot;, &quot;camera_non-HETO&quot;)) %&gt;%
+  mutate(subanalysis = &quot;marked_birds&quot;)
 
 #Resource data. Need to add quantitative treatment measure here (*Heliconia* calories removed/ha)
 heto_removed &lt;- read.csv(&quot;../../data/export/for_analysis/Site_and_replicate_characteristics.csv&quot;) %&gt;%
@@ -399,8 +400,8 @@ heto_removed &lt;- read.csv(&quot;../../data/export/for_analysis/Site_and_replic
 #Plant names
 plant_species_names &lt;- read.csv(&quot;../../data/import/data/Plant_codes_species_list.csv&quot;) %&gt;%
   select(plant_family, plant_scientific_name, plant_species)</code></pre>
-<p><strong>How many non-Heliconia species were had camera data pre and
-post? Did all species have sightings?</strong></p>
+<p><strong>How many non-Heliconia species had camera data pre and post?
+Did all species have sightings?</strong></p>
 <pre class="r"><code>#Calculate total number of species in data (and total # with sightings)
 nonheto_data &lt;- visit_data %&gt;%
   filter(analysis == &quot;camera_non-HETO&quot; &amp; subanalysis == &quot;all_birds&quot; &amp; bird_group == &quot;all_spp&quot;)

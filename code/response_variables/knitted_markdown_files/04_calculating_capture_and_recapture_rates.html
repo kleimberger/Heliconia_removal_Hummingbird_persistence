@@ -656,7 +656,8 @@ no_birds_in_pre_replicates</code></pre>
 
 capture_rates_birds_in_pre_only &lt;- capture_rates %&gt;%
   mutate(year_patch_bird_group = paste(year, patch, bird_group, sep = &quot;_&quot;)) %&gt;%
-  filter(!(year_patch_bird_group %in% no_birds_in_pre_replicates$year_patch_bird_group))</code></pre>
+  filter(!(year_patch_bird_group %in% no_birds_in_pre_replicates$year_patch_bird_group)) %&gt;%
+  select(-year_patch_bird_group)</code></pre>
 </div>
 <div id="step-6-summarize-recapture-data-for-analysis" class="section level2">
 <h2>Step 6: Summarize recapture data for analysis</h2>

@@ -31,6 +31,10 @@ library(ggplot2)
 ## Step 1: Import data
 ```{r step1}
 tubes <- read.csv("../../data/import/data/pollen_tubes/Pollen_tubes_2016-2018.csv")
+
+plant_names <- read.csv("../../data/import/data/Plant_codes_species_list.csv") %>%
+  select(plant_species, plant_scientific_name) %>%
+  filter(!is.na(plant_species) & plant_species != "") #Get rid of blank rows
 ```
 
 ## Step 2: Identify styles that should be included in analysis
@@ -92,7 +96,8 @@ tubes04 <- tubes03 %>%
   filter(!is.na(tube_presence))
 
 tubes_for_analysis <- tubes04 %>%
-  mutate(year_patch = paste(year, patch, sep = "_"))
+  mutate(year_patch = paste(year, patch, sep = "_")) %>%
+  select(-focal_nf)
 ```
 
 ## Step : Explore data, part I
@@ -135,14 +140,15 @@ replicate_style_plot
 ```{r step6}
 #Proportion of styles with at least one tube - metric used by Hadley et al. 2014, Woods et al. 2022, and I think Kormann et al. as well. Essentially the % of flowers that were pollinated
 proportion_pollinated_sum <- tubes_for_analysis %>%
-  group_by(plant_species, year, patch, control_treatment, exp_phase, focal_nf, tube_presence) %>%
+  group_by(plant_species, year, patch, control_treatment, exp_phase, tube_presence) %>%
   summarise(styles = n()) %>%
   ungroup() %>%
   pivot_wider(names_from = tube_presence, values_from = styles, values_fill = 0) %>%
   rename(styles_with_tubes = "1", styles_no_tubes = "0") %>%
   mutate(styles = styles_with_tubes + styles_no_tubes) %>%
   mutate(prop_with_tubes = styles_with_tubes/styles) %>%
-  filter(plant_species == "HAPA" | plant_species == "HETO" | plant_species == "PAV-ROJ-AMA" | plant_species == "RABO")
+  filter(plant_species == "HAPA" | plant_species == "HETO" | plant_species == "PAV-ROJ-AMA" | plant_species == "RABO") %>%
+  left_join(plant_names)
 
 #How many styles ended up in the final sample?
 styles_analyzed <- proportion_pollinated_sum %>%
