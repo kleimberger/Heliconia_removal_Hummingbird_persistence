@@ -47,6 +47,7 @@ set.seed(1)
 ```{r}
 #Telemetry data, all hummingbird species
 telem_data <- read.csv("../../data/export/for_analysis/Telemetry_proportion_time_in_patch.csv") %>%
+  filter(no_time_during_pre == 0) %>% #Remove birds that did not spend any time in patch (focal area) during 'pre' period
   mutate(bird_group = "all_spp")
 
 head(telem_data)

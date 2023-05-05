@@ -286,9 +286,9 @@ no_birds_in_pre_replicates
 
 #This is a consistent problem in p137 and p200 (across years)
 
-capture_rates_birds_in_pre_only <- capture_rates %>%
+capture_rates <- capture_rates %>%
   mutate(year_patch_bird_group = paste(year, patch, bird_group, sep = "_")) %>%
-  filter(!(year_patch_bird_group %in% no_birds_in_pre_replicates$year_patch_bird_group)) %>%
+  mutate(no_birds_in_pre = ifelse(year_patch_bird_group %in% no_birds_in_pre_replicates$year_patch_bird_group, 1, 0)) %>%
   select(-year_patch_bird_group)
 ```
 
@@ -379,7 +379,7 @@ recapture_rates <- capture_rates %>%
 ```{r step7}
 #CAPTURES
 #For main analysis
-write.csv(capture_rates_birds_in_pre_only, "../../data/export/for_analysis/Capture_rates.csv", row.names = FALSE)
+write.csv(capture_rates, "../../data/export/for_analysis/Capture_rates.csv", row.names = FALSE)
 
 #For Supp table
 write.csv(capture_summary_table, "../../data/export/supp_tables/extra/Captured_species_per_site_summary_table.csv", row.names = FALSE)

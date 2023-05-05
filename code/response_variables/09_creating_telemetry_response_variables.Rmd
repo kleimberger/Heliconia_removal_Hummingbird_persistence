@@ -246,7 +246,7 @@ time_in_patch_for_analysis <- birds_tagged_time_in_patch %>%
   filter(!(frequency %in% birds_never_found$frequency)) %>%
   filter(!(frequency %in% birds_with_data_reliability_issues$frequency)) %>%
   filter(!(frequency %in% birds_never_in_patch$frequency)) %>%
-  filter(!(frequency %in% birds_never_in_patch_during_pre$frequency)) %>%
+  mutate(no_time_during_pre = ifelse(frequency %in% birds_never_in_patch_during_pre$frequency, 1, 0)) %>%
   mutate(bird_date_id = paste(frequency, date, sep = "_")) %>%
   filter(!(bird_date_id %in% transmitter_birds_undetected_during_telem$bird_date_id))
   
@@ -266,7 +266,7 @@ telem_data_for_analysis <- telem_data03
 ## Step 6: Summarize data to pre/post (across dates) + calculate proportion of time spent in patch
 ```{r step6}
 prop_time_for_analysis <- time_in_patch_for_analysis %>%
-  group_by(year, patch, control_treatment, frequency, bird_species, bird_sex, exp_phase) %>%
+  group_by(year, patch, control_treatment, frequency, bird_species, bird_sex, no_time_during_pre, exp_phase) %>%
   summarise(obs_effort_minutes = sum(obs_effort_minutes),
             time_in_patch_minutes = sum(time_in_patch)) %>%
   ungroup() %>%

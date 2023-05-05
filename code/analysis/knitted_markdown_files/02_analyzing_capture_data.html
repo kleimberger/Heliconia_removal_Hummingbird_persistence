@@ -371,6 +371,7 @@ recaptured ‘post’)</li>
 <p><strong>Data for analysis</strong></p>
 <pre class="r"><code>#Capture data. Number of birds captured per capture session, with capture effort
 capture_data &lt;- read.csv(&quot;../../data/export/for_analysis/Capture_rates.csv&quot;) %&gt;%
+  filter(no_birds_in_pre == 0) %&gt;% #Remove replicates in which no birds were captured during the &#39;pre&#39; period
   mutate(subanalysis = &quot;captures&quot;) %&gt;%
   select(-date)
 
@@ -382,16 +383,16 @@ head(capture_data)</code></pre>
 ## 4    all_spp 2016   130         treatment capture_2  66.00000         2
 ## 5    all_spp 2016   137         treatment capture_1  80.75000         5
 ## 6    all_spp 2016   137         treatment capture_2  77.20833         3
-##   capture_rate subanalysis
-## 1       0.1864    captures
-## 2       0.1396    captures
-## 3       0.0875    captures
-## 4       0.0303    captures
-## 5       0.0619    captures
-## 6       0.0389    captures</code></pre>
+##   capture_rate no_birds_in_pre subanalysis
+## 1       0.1864               0    captures
+## 2       0.1396               0    captures
+## 3       0.0875               0    captures
+## 4       0.0303               0    captures
+## 5       0.0619               0    captures
+## 6       0.0389               0    captures</code></pre>
 <pre class="r"><code>#Recapture data
 #1. Remove patches without data (no birds caught during pre)
-#2. Remove patch without constant capture effort pre &amp; post. So can avoid including covariates for effort
+#2. Remove patch without constant capture effort pre &amp; post (so can avoid including covariates for effort)
 recapture_data &lt;- read.csv(&quot;../../data/export/for_analysis/Recapture_rates.csv&quot;) %&gt;%
   mutate(subanalysis = &quot;recaptures&quot;) %&gt;%
   filter(!is.na(recap_rate)) %&gt;%  

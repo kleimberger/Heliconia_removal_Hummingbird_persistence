@@ -50,6 +50,7 @@ set.seed(1)
 ```{r}
 #Capture data. Number of birds captured per capture session, with capture effort
 capture_data <- read.csv("../../data/export/for_analysis/Capture_rates.csv") %>%
+  filter(no_birds_in_pre == 0) %>% #Remove replicates in which no birds were captured during the 'pre' period
   mutate(subanalysis = "captures") %>%
   select(-date)
 
@@ -57,7 +58,7 @@ head(capture_data)
 
 #Recapture data
 #1. Remove patches without data (no birds caught during pre)
-#2. Remove patch without constant capture effort pre & post. So can avoid including covariates for effort
+#2. Remove patch without constant capture effort pre & post (so can avoid including covariates for effort)
 recapture_data <- read.csv("../../data/export/for_analysis/Recapture_rates.csv") %>%
   mutate(subanalysis = "recaptures") %>%
   filter(!is.na(recap_rate)) %>%  
