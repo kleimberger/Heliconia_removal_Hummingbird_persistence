@@ -179,7 +179,7 @@ resource_data_sum_calories <- resource_data_to_summarize %>%
   summarise(num_calories = sum(calories_per_plant, na.rm = TRUE)) %>%
   ungroup()
 
-#At level of PLANTS, for Heliconia
+#At level of PLANTS, FLOWERS, and CALORIES for Heliconia
 heto_inflor_removed_remaining <- resource_data_to_summarize %>%
   filter(plant_species == "HETO" & count_estimate_high_low == "high") %>%
   group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %>%
@@ -278,6 +278,7 @@ percentage_heto_removed_sum
 
 ## Step 7: Calculate natural density of *Heliconia* in all sites
 ```{r step7}
+#Heliconia density
 #Summarize across removed and remaining, since I am interested all Heliconia plants (including those that were removed as part of treatment)
 heto_densities <- heto_inflor_removed_remaining %>%
   group_by(count_estimate_high_low, year, patch, control_treatment, heto_nonheto) %>%
@@ -453,11 +454,12 @@ percentage_calories_removed_tailored <- resource_data_sum_calories %>%
   summarise(num_calories = sum(num_calories)) %>%
   ungroup() %>%
   pivot_wider(names_from = removed_remaining, values_from = num_calories) %>%
-  filter(control_treatment == "treatment") %>%
-  mutate(percentage_removed = (removed/(removed + remaining)) * 100) %>%
+  rename(heto_calories_removed = removed, heto_nonheto_calories = remaining) %>%
+  mutate(percentage_removed = (heto_calories_removed/(heto_calories_removed + heto_nonheto_calories)) * 100) %>%
   mutate(across(c(percentage_removed), ~round(., digits = 1))) %>%
   filter(count_estimate_high_low == "high") %>% #i.e., assuming unknown count unit of inflorescence vs. flower
-  select(-count_estimate_high_low, -removed, -remaining)
+  select(estimate_name:control_treatment, heto_calories_removed, heto_nonheto_calories, percentage_removed, -count_estimate_high_low) %>%
+  arrange(control_treatment)
 
 #Summary stats
 percentage_calories_removed_tailored_sum <- percentage_calories_removed_tailored %>%
@@ -474,10 +476,34 @@ percentage_calories_removed_tailored_supp <- percentage_calories_removed_tailore
   arrange("base_estimate_all_spp")
 ```
 
-## Step 12: Explore data
+## Step 12: Calculate background resource availability (i.e., density of non-*Heliconia* resources for each hummingbird group)
+```{r step12}
+#These data are not actually used in this paper, but want to go ahead and make them available for another analysis
+nonheto_densities_tailored <- resource_data_sum_calories %>%
+  mutate(estimate_name = "base_estimate") %>%
+  mutate(bird_group = "all_spp") %>%
+  bind_rows(resource_data_sum_calories_subset) %>%
+  bind_rows(resource_data_sum_calories_weighted) %>%
+  group_by(estimate_name, count_estimate_high_low, bird_group, year, patch, control_treatment, heto_nonheto) %>%
+  summarise(num_calories = sum(num_calories)) %>%
+  ungroup() %>%
+  pivot_wider(names_from = heto_nonheto, values_from = num_calories) %>%
+  rename(nonheto_calories = nonheto) %>%
+  filter(count_estimate_high_low == "high") %>% #i.e., assuming unknown count unit of inflorescence vs. flower
+  left_join(focal_area_sizes) %>%
+  mutate(nonheto_calories_per_ha = nonheto_calories/area) %>%
+  select(-count_estimate_high_low, -heto_only, -area)
+
+#Add background resource availability to percentage calories removed dataset
+percentage_calories_removed_tailored <- percentage_calories_removed_tailored %>%
+  left_join(nonheto_densities_tailored) %>%
+  mutate(across(c(heto_calories_removed, heto_nonheto_calories, nonheto_calories, nonheto_calories_per_ha), ~round(., digits = 0)))
+```
+
+## Step 13: Explore data
 
 What plant species provided the most calories in each replicate?
-```{r step12, fig.width=6, fig.height=4}
+```{r step13, fig.width=6, fig.height=4}
 #Sizes for plot elements
 size = 12
 label_size = size
@@ -554,8 +580,8 @@ plant_occurrence_per_site <- resource_data_to_summarize %>%
 head(plant_occurrence_per_site)
 ```
 
-## Step 13: Export data
-```{r step13}
+## Step 14: Export data
+```{r step14}
 #Data used in further analysis (i.e., data that will go onto Dryad)
 
 #Combine data so that file can also be used in control vs. treatment comparison

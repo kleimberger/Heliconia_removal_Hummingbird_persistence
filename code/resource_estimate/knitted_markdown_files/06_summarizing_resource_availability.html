@@ -563,7 +563,7 @@ resource_data_sum_calories &lt;- resource_data_to_summarize %&gt;%
   summarise(num_calories = sum(calories_per_plant, na.rm = TRUE)) %&gt;%
   ungroup()
 
-#At level of PLANTS, for Heliconia
+#At level of PLANTS, FLOWERS, and CALORIES for Heliconia
 heto_inflor_removed_remaining &lt;- resource_data_to_summarize %&gt;%
   filter(plant_species == &quot;HETO&quot; &amp; count_estimate_high_low == &quot;high&quot;) %&gt;%
   group_by(count_estimate_high_low, year, patch, control_treatment, removed_remaining, heto_nonheto) %&gt;%
@@ -675,7 +675,8 @@ percentage_heto_removed_sum</code></pre>
 <div id="step-7-calculate-natural-density-of-heliconia-in-all-sites" class="section level2">
 <h2>Step 7: Calculate natural density of <em>Heliconia</em> in all
 sites</h2>
-<pre class="r"><code>#Summarize across removed and remaining, since I am interested all Heliconia plants (including those that were removed as part of treatment)
+<pre class="r"><code>#Heliconia density
+#Summarize across removed and remaining, since I am interested all Heliconia plants (including those that were removed as part of treatment)
 heto_densities &lt;- heto_inflor_removed_remaining %&gt;%
   group_by(count_estimate_high_low, year, patch, control_treatment, heto_nonheto) %&gt;%
   summarise(num_plants = sum(num_plants),
@@ -860,11 +861,12 @@ calculate percentage calories removed using the tailored estimates</h2>
   summarise(num_calories = sum(num_calories)) %&gt;%
   ungroup() %&gt;%
   pivot_wider(names_from = removed_remaining, values_from = num_calories) %&gt;%
-  filter(control_treatment == &quot;treatment&quot;) %&gt;%
-  mutate(percentage_removed = (removed/(removed + remaining)) * 100) %&gt;%
+  rename(heto_calories_removed = removed, heto_nonheto_calories = remaining) %&gt;%
+  mutate(percentage_removed = (heto_calories_removed/(heto_calories_removed + heto_nonheto_calories)) * 100) %&gt;%
   mutate(across(c(percentage_removed), ~round(., digits = 1))) %&gt;%
   filter(count_estimate_high_low == &quot;high&quot;) %&gt;% #i.e., assuming unknown count unit of inflorescence vs. flower
-  select(-count_estimate_high_low, -removed, -remaining)
+  select(estimate_name:control_treatment, heto_calories_removed, heto_nonheto_calories, percentage_removed, -count_estimate_high_low) %&gt;%
+  arrange(control_treatment)
 
 #Summary stats
 percentage_calories_removed_tailored_sum &lt;- percentage_calories_removed_tailored %&gt;%
@@ -888,8 +890,32 @@ percentage_calories_removed_tailored_supp &lt;- percentage_calories_removed_tail
   pivot_wider(names_from = c(estimate_name, bird_group), values_from = percentage_removed) %&gt;%
   arrange(&quot;base_estimate_all_spp&quot;)</code></pre>
 </div>
-<div id="step-12-explore-data" class="section level2">
-<h2>Step 12: Explore data</h2>
+<div id="step-12-calculate-background-resource-availability-i.e.-density-of-non-heliconia-resources-for-each-hummingbird-group" class="section level2">
+<h2>Step 12: Calculate background resource availability (i.e., density
+of non-<em>Heliconia</em> resources for each hummingbird group)</h2>
+<pre class="r"><code>#These data are not actually used in this paper, but want to go ahead and make them available for another analysis
+nonheto_densities_tailored &lt;- resource_data_sum_calories %&gt;%
+  mutate(estimate_name = &quot;base_estimate&quot;) %&gt;%
+  mutate(bird_group = &quot;all_spp&quot;) %&gt;%
+  bind_rows(resource_data_sum_calories_subset) %&gt;%
+  bind_rows(resource_data_sum_calories_weighted) %&gt;%
+  group_by(estimate_name, count_estimate_high_low, bird_group, year, patch, control_treatment, heto_nonheto) %&gt;%
+  summarise(num_calories = sum(num_calories)) %&gt;%
+  ungroup() %&gt;%
+  pivot_wider(names_from = heto_nonheto, values_from = num_calories) %&gt;%
+  rename(nonheto_calories = nonheto) %&gt;%
+  filter(count_estimate_high_low == &quot;high&quot;) %&gt;% #i.e., assuming unknown count unit of inflorescence vs. flower
+  left_join(focal_area_sizes) %&gt;%
+  mutate(nonheto_calories_per_ha = nonheto_calories/area) %&gt;%
+  select(-count_estimate_high_low, -heto_only, -area)
+
+#Add background resource availability to percentage calories removed dataset
+percentage_calories_removed_tailored &lt;- percentage_calories_removed_tailored %&gt;%
+  left_join(nonheto_densities_tailored) %&gt;%
+  mutate(across(c(heto_calories_removed, heto_nonheto_calories, nonheto_calories, nonheto_calories_per_ha), ~round(., digits = 0)))</code></pre>
+</div>
+<div id="step-13-explore-data" class="section level2">
+<h2>Step 13: Explore data</h2>
 <p>What plant species provided the most calories in each replicate?</p>
 <pre class="r"><code>#Sizes for plot elements
 size = 12
@@ -986,8 +1012,8 @@ head(plant_occurrence_per_site)</code></pre>
 ## 5 RUBIACEAE     Palicourea padifolia   RUBY                 11
 ## 6 GESNERIACEAE  Columnea raymondii     BOCA-ROJA            10</code></pre>
 </div>
-<div id="step-13-export-data" class="section level2">
-<h2>Step 13: Export data</h2>
+<div id="step-14-export-data" class="section level2">
+<h2>Step 14: Export data</h2>
 <pre class="r"><code>#Data used in further analysis (i.e., data that will go onto Dryad)
 
 #Combine data so that file can also be used in control vs. treatment comparison
