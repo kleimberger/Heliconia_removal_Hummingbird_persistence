@@ -861,11 +861,11 @@ calculate percentage calories removed using the tailored estimates</h2>
   summarise(num_calories = sum(num_calories)) %&gt;%
   ungroup() %&gt;%
   pivot_wider(names_from = removed_remaining, values_from = num_calories) %&gt;%
-  rename(heto_calories_removed = removed, heto_nonheto_calories = remaining) %&gt;%
-  mutate(percentage_removed = (heto_calories_removed/(heto_calories_removed + heto_nonheto_calories)) * 100) %&gt;%
+  rename(heto_calories_removed = removed, heto_nonheto_calories_remaining = remaining) %&gt;%
+  mutate(percentage_removed = (heto_calories_removed/(heto_calories_removed + heto_nonheto_calories_remaining)) * 100) %&gt;%
   mutate(across(c(percentage_removed), ~round(., digits = 1))) %&gt;%
   filter(count_estimate_high_low == &quot;high&quot;) %&gt;% #i.e., assuming unknown count unit of inflorescence vs. flower
-  select(estimate_name:control_treatment, heto_calories_removed, heto_nonheto_calories, percentage_removed, -count_estimate_high_low) %&gt;%
+  select(estimate_name:control_treatment, heto_calories_removed, heto_nonheto_calories_remaining, percentage_removed, -count_estimate_high_low) %&gt;%
   arrange(control_treatment)
 
 #Summary stats
@@ -912,7 +912,7 @@ nonheto_densities_tailored &lt;- resource_data_sum_calories %&gt;%
 #Add background resource availability to percentage calories removed dataset
 percentage_calories_removed_tailored &lt;- percentage_calories_removed_tailored %&gt;%
   left_join(nonheto_densities_tailored) %&gt;%
-  mutate(across(c(heto_calories_removed, heto_nonheto_calories, nonheto_calories, nonheto_calories_per_ha), ~round(., digits = 0)))</code></pre>
+  mutate(across(c(heto_calories_removed, heto_nonheto_calories_remaining, nonheto_calories, nonheto_calories_per_ha), ~round(., digits = 0)))</code></pre>
 </div>
 <div id="step-13-explore-data" class="section level2">
 <h2>Step 13: Explore data</h2>
