@@ -26,55 +26,33 @@ weights <- read.csv("../../data/export/for_analysis/Weights.csv")
 percentage_calories_removed_tailored <- read.csv("../../data/export/for_analysis/Percentage_calories_removed.csv")
 source("../../code/helper_functions/Make_barplot.R")
 
-#Recommended figure widths from journal (pixels @ 300 dpi)
-column1x <- 945 #single-column
-column1.5x <- 1476 #1.5 columns
-column2x <- 1961 #double column
+#Recommended figure widths from journal (in mm)
+column1x <- 80 #single-column
+column2x <- 166 #double column
 
 #Sizes for plot elements
-size = 6.5
-label_size = size
+size = 12
+label_size = size * 0.75
 title_size = size * 1.15
 shape_size = 1
 line_width = 0.25
+axis_size = 10
 
 path_name <- c("../../results/analysis/figures")
 ```
 
-## Step 2: Make barplots of relative sighting rates (weights)
-```{r}
-data_for_barplots <- weights %>%
-  mutate(plant_scientific_name = ifelse(plant_scientific_name == "Drymonia sp.", "Drymonia", plant_scientific_name)) %>% 
-  mutate(plant_scientific_name = ifelse(plant_scientific_name == "Renealmia sp.", "Renealmia", plant_scientific_name)) %>% 
-  mutate(heto_color = ifelse(plant_species == "HETO", "yes", "no"))
-
-#All species 
-weights_barplot_all_spp <- data_for_barplots %>%
-  filter(bird_group == "all_spp") %>% 
-  make_barplot(xvar = "plant_scientific_name", yvar = "weight", xlabel = "Plant species", ylabel = "Relative visitation rate (weight)", highlight_column = "heto_color", titlelabel = "All hummingbird species", flip_axes = TRUE, text_size = size)
-
-weights_barplot_all_spp
-
-#GREH/VISA
-weights_barplot_gv <- data_for_barplots %>%
-  filter(bird_group == "greh_visa") %>% 
-  make_barplot(xvar = "plant_scientific_name", yvar = "weight", xlabel = "Plant species", ylabel = "Relative visitation rate (weight)", highlight_column = "heto_color", titlelabel = "", flip_axes = TRUE, text_size = size) +
-  labs(title = expression(italic(Heliconia)~"specialists"))
-
-weights_barplot_gv
-```
-
-## Step 3: Make boxplots of %  calories removed
+## Step 2: Make boxplots of %  calories removed
 ```{r}
 plot_theme = 
   theme_bw(base_size = size) +
   theme(panel.grid.major = element_blank(),
         panel.grid.minor = element_blank(),
+        axis.text.x = element_text(size = axis_size), #Need axis text to be small enough that labels do not overlap
         axis.line.x = element_line(colour = "black", size = line_width, linetype = "solid"),
         axis.line.y = element_line(colour = "black", size = line_width, linetype = "solid"),
-        legend.position = "none",
         strip.background = element_blank(),
-        strip.text.x = element_text(size = size))
+        strip.text.x = element_text(size = size),
+        legend.position = "none")
 
 data_for_boxplots <- percentage_calories_removed_tailored %>%
   filter(estimate_name == "low_estimate" | estimate_name == "high_estimate") %>%
@@ -95,12 +73,39 @@ percentage_calories_removed_boxplots <-  data_for_boxplots %>%
 percentage_calories_removed_boxplots
 ```
 
-## Step 4: Combine weights and % calories removed boxplots into one multi-panel figure.
+## Step 3: Make barplots of relative sighting rates (weights)
 ```{r}
-#Vertical
-weights_and_percent_multiplot <- ggarrange(weights_barplot_all_spp, weights_barplot_gv, percentage_calories_removed_boxplots, ncol = 1, nrow = 3, heights = c(1, 1, 0.75), labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "plain"))
+data_for_barplots <- weights %>%
+  mutate(plant_scientific_name = ifelse(plant_scientific_name == "Drymonia sp.", "Drymonia", plant_scientific_name)) %>% 
+  mutate(plant_scientific_name = ifelse(plant_scientific_name == "Renealmia sp.", "Renealmia", plant_scientific_name)) %>% 
+  mutate(heto_color = ifelse(plant_species == "HETO", "yes", "no"))
+```
 
-ggview::ggview(weights_and_percent_multiplot, width = column1.5x*0.66, height = column1.5x*1.33, units = "px")
+```{r}
+#All species 
+weights_barplot_all_spp <- data_for_barplots %>%
+  filter(bird_group == "all_spp") %>% 
+  make_barplot(xvar = "plant_scientific_name", yvar = "weight", xlabel = "Plant species", ylabel = "Relative visitation rate", highlight_column = "heto_color", titlelabel = "All hummingbird species", flip_axes = FALSE, text_size = size)
 
-ggsave(file.path(path_name, "Fig3_Weights_Percentage_calories.png"), weights_and_percent_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*1.33, units = "px", bg = "white", device = "png")
+weights_barplot_all_spp
+
+#GREH/VISA
+weights_barplot_gv <- data_for_barplots %>%
+  filter(bird_group == "greh_visa") %>% 
+  make_barplot(xvar = "plant_scientific_name", yvar = "weight", xlabel = "Plant species", ylabel = "Relative visitation rate", highlight_column = "heto_color", titlelabel = "Heliconia specialists", flip_axes = FALSE, text_size = size)
+
+weights_barplot_gv
+```
+
+## Step 4: Combine weights and % calories removed boxplots into one multi-panel figure
+
+```{r}
+#Add spacing around boxplots
+boxplots_for_multiplot <- ggarrange(NULL, percentage_calories_removed_boxplots, NULL, ncol = 3, nrow = 1, widths = c(0.10, 1, 0.10))
+
+weights_and_percent_multiplot <- ggarrange(weights_barplot_all_spp, weights_barplot_gv, boxplots_for_multiplot, ncol = 1, nrow = 3, heights = c(1, 1, 1), labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "bold"))
+
+ggview::ggview(weights_and_percent_multiplot, width = column2x, height = column2x*1.5, units = "mm")
+
+ggsave(file.path(path_name, "Fig3_Weights_Percentage_calories.png"), weights_and_percent_multiplot, width = column2x, height = column2x*1.5, units = "mm", bg = "white", dpi = 600)
 ```
