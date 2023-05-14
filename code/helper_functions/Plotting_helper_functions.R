@@ -51,6 +51,8 @@ make_interaction_plot <- function(emmeans_df, yvar, ymin, ymax, ybreak, yaccurac
             legend.direction = "horizontal",
             legend.text = element_text(size = text_size),
             legend.title = element_text(size = text_size),
+            axis.text.x = element_text(size = text_size * 0.9),
+            axis.text.y = element_text(size = text_size * 0.9),
             panel.grid.major = element_blank(), panel.grid.minor = element_blank()) +
       scale_y_continuous(limits = c(ymin, ymax), breaks = seq(from = ymin, to = ymax, by = ybreak), labels = scales::number_format(accuracy = yaccuracy)) +
       scale_color_manual(values = colors, labels = group_labels) +
@@ -114,6 +116,8 @@ make_control_vs_treatment_plot <- function(emmeans_df, yvar, ymin, ymax, ybreak,
           legend.direction = "horizontal",
           legend.text = element_text(size = text_size),
           legend.title = element_text(size = text_size),
+          axis.text.x = element_text(size = text_size * 0.9),
+          axis.text.y = element_text(size = text_size * 0.9),
           panel.grid.major = element_blank(),
           panel.grid.minor = element_blank()) +
     labs(x = "", y = ylabel, colour = legend_label, shape = legend_label)
@@ -149,6 +153,8 @@ make_contrast_plot <- function(contrasts_df, xvar, xlabel = "", text_size, point
       scale_shape_manual(values = c(16, 17), labels = legend_text_labels, limits = c("all_spp", "greh_visa")) +
       theme(panel.grid.major = element_blank(),
             panel.grid.minor = element_blank(),
+            axis.text.x = element_text(size = text_size * 0.9),
+            axis.text.y = element_text(size = text_size * 0.9),
             legend.position = "bottom",
             legend.justification = "center",
             legend.text = element_text(size = text_size),
@@ -172,6 +178,8 @@ make_contrast_plot <- function(contrasts_df, xvar, xlabel = "", text_size, point
       scale_shape_manual(values = c(16)) +
       theme(panel.grid.major = element_blank(),
             panel.grid.minor = element_blank(),
+            axis.text.x = element_text(size = text_size * 0.9),
+            axis.text.y = element_text(size = text_size * 0.9),
             legend.position = "bottom",
             legend.justification = "center",
             legend.text = element_text(size = text_size),
@@ -195,6 +203,8 @@ make_contrast_plot <- function(contrasts_df, xvar, xlabel = "", text_size, point
       labs(x = xlabel, y = "Experimental effect") +
       theme(panel.grid.major = element_blank(),
             panel.grid.minor = element_blank(),
+            axis.text.x = element_text(size = text_size * 0.9),
+            axis.text.y = element_text(size = text_size * 0.9),
             legend.position = "none")
 
     return(plot)

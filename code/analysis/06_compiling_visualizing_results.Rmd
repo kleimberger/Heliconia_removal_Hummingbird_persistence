@@ -315,13 +315,12 @@ There are two ways that I like to visualize the interaction term of interest
 
 **Prepare to export plots with proper sizing**
 ```{r}
-#Recommended figure widths from journal (pixels @ 300 dpi)
-column1x <- 945 #single-column
-column1.5x <- 1476 #1.5 columns
-column2x <- 1961 #double column
+#Recommended figure widths from journal (in mm)
+column1x <- 80 #single-column
+column2x <- 166 #double column
 
 #Sizes for plot elements
-size = 6.5
+size = 8
 label_size = size
 title_size = size * 1.15
 shape_size = 1
@@ -418,7 +417,7 @@ nonheto_contrast_plot <-  contrasts_of_contrasts_df %>%
   make_contrast_plot(contrasts_df = ., xvar = "plant_scientific_name", xlabel = "Plant species", text_size = size, point_size = shape_size, line_size = line_width) +
     scale_y_continuous(limits = c(0, 3), breaks = c(0, 0.5, 1, 2, 3)) +
     coord_cartesian(ylim = c(0, 3), xlim = c(1, 9), clip = "off") +
-    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, face = "italic"))
+    theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1, face = "italic", size = size)) #text size slightly larger than other axis text
    
 nonheto_contrast_plot
 
@@ -439,48 +438,48 @@ hapa_pollination_contrast_plot <- contrasts_of_contrasts_df %>%
 
 hapa_pollination_contrast_plot
 
-#RECAPTURES
-recaps_contrast_plot <- contrasts_of_contrasts_df %>%
-  filter(analysis == "captures" & subanalysis == "recaptures") %>%
-  make_contrast_plot(contrasts_df = ., xvar = "bird_group", xlabel = "Bird group", text_size = size, point_size = shape_size, line_size = line_width) +
-    scale_x_discrete(labels = c("All species", expression(italic(Heliconia)~"specialists"))) +
-    labs(title = "Recapture probability\n(% of birds recaptured)") +
-    theme(plot.title = element_text(hjust = 0.5, size = size)) #center title
-
-recaps_contrast_plot
-
 #FLOWER VISITATION: HETO, MARKED BIRDS ONLY
 heto_visits_marked_contrast_plot <- contrasts_of_contrasts_df %>%
   filter(analysis == "camera_HETO" & subanalysis == "marked_birds") %>%
   make_contrast_plot(contrasts_df = ., xvar = "bird_group", xlabel = "Bird group", text_size = size, point_size = shape_size, line_size = line_width) +
   scale_x_discrete(labels = c("All species", expression(italic(Heliconia)~"specialists"))) +
-  #labs(title = "Flower visitation from marked birds: focal"~italic(Heliconia))
   labs(title = "focal"~italic(Heliconia)) +
   theme(plot.title = element_text(hjust = 0.5, size = size)) + #center title
   scale_y_continuous(limits = c(0, 2), breaks = c(0, 0.5, 1, 2))
 
 heto_visits_marked_contrast_plot
 
-#FLOWER VISITATION: NON-HETO, MARKED BIRDS ONLY
+#FLOWER VISITATION: NON-HETO, MARKED BIRDS ONLY (N = 17 plant species)
 nonheto_visits_marked_contrast_plot <- contrasts_of_contrasts_df %>%
   filter(analysis == "camera_non-HETO" & subanalysis == "marked_birds") %>%
   make_contrast_plot(contrasts_df = ., xvar = "bird_group", xlabel = "Bird group", text_size = size, point_size = shape_size, line_size = line_width) +
   scale_x_discrete(labels = c("All species", expression(italic(Heliconia)~"specialists"))) +
-  #labs(title = "Flower visitation from marked birds: non-"*italic(Heliconia)~"species ("*italic(N)~"= 17)")
   labs(title = "non-"*italic(Heliconia)~"analyzed together") +
   theme(plot.title = element_text(hjust = 0.5, size = size)) + #center title
   scale_y_continuous(limits = c(0, 2), breaks = c(0, 0.5, 1, 2))
 
 nonheto_visits_marked_contrast_plot
 
+#RECAPTURES
+recaps_contrast_plot <- contrasts_of_contrasts_df %>%
+  filter(analysis == "captures" & subanalysis == "recaptures") %>%
+  make_contrast_plot(contrasts_df = ., xvar = "bird_group", xlabel = "Bird group", text_size = size, point_size = shape_size, line_size = line_width) +
+    scale_x_discrete(labels = c("All species", expression(italic(Heliconia)~"specialists"))) +
+    labs(title = "Recapture probability") +
+    #labs(title = "Recapture probability\n(% of birds recaptured)") +
+    theme(plot.title = element_text(hjust = 0.5, size = title_size)) #center title
+
+recaps_contrast_plot
+
 #BODY MASS
 body_mass_contrast_plot <- contrasts_of_contrasts_df %>%
   filter(analysis == "body_mass") %>%
   make_contrast_plot(contrasts_df = ., xvar = "bird_group", xlabel = "Bird group", text_size = size, point_size = shape_size, line_size = line_width) +
-    scale_y_continuous(limits = c(-0.10, 0.10)) +
+    scale_y_continuous(limits = c(-0.1, 0.1), breaks = c(-0.1, 0, 0.1)) +
     scale_x_discrete(labels = c("All species", expression(italic(Heliconia)~"specialists"))) +
-    labs(title = "Body mass\n(relative to structural size)") +
-    theme(plot.title = element_text(hjust = 0.5, size = size)) #center title
+    labs(title = "Body mass") +
+    #labs(title = "Body mass\n(relative to structural size)") +
+    theme(plot.title = element_text(hjust = 0.5, size = title_size)) #center title
 
 body_mass_contrast_plot
 ```
@@ -488,7 +487,7 @@ body_mass_contrast_plot
 **Organize figures into panel plots for publication**
 
 Figure 4: Captures and Telemetry
-```{r, fig.width = column1.5x/300, fig.height = (column1.5x/300)*0.75}
+```{r, fig.width = column2x/300, fig.height = (column2x/300)*0.75}
 #CAPTURES
 capture_interaction_plots <- interaction_plots %>%
   filter(analysis == "captures") %>%
@@ -509,7 +508,7 @@ telemetry_plots <- list(telemetry_interaction_plots$interaction_plot[[1]], telem
 
 telemetry_multiplot <- ggarrange(plotlist = telemetry_plots, nrow = 1, ncol = 3, legend = "none", align = "hv",
                                  labels = c("(d)", "(e)", "(f)"), font.label = list(size = label_size, face = "plain"), label.x = c(0.17, 0.17, 0.18), label.y = 0.96) %>%
-                       annotate_figure(top = text_grob("Hummingbird space use", size = title_size, face = "plain",  hjust = 0, x = 0))
+                       annotate_figure(top = text_grob("Hummingbird space use", size = title_size, face = "plain", hjust = 0, x = 0))
 
 #CAPTURES + TELEMETRY
 #First, get legend for interaction plots; will handle it separately because contrast plot doesn't have legend (which makes alignment go wonky)
@@ -517,8 +516,10 @@ interaction_plot_legend <- get_legend(capture_interaction_plots$interaction_plot
 legend_arranged <- ggarrange(interaction_plot_legend, NULL, nrow = 1, ncol = 2, widths = c(1, 0.5)) #This makes the legend centered under the interaction plots instead of under all plots
 
 captures_telemetry_multiplot <- ggarrange(captures_multiplot, NULL, telemetry_multiplot, NULL, legend_arranged, nrow = 5, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05))
-ggview::ggview(captures_telemetry_multiplot, width = column1.5x, height = column1.5x*0.75, units = "px")
-ggsave(file.path(path_name, "Fig4_Captures_and_Telemetry.png"), captures_telemetry_multiplot, dpi = 300, width = column1.5x, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
+
+ggview::ggview(captures_telemetry_multiplot, width = column2x, height = column2x*0.75, units = "mm")
+
+ggsave(file.path(path_name, "Fig4_Captures_and_Telemetry.png"), captures_telemetry_multiplot, width = column2x, height = column2x*0.75, units = "mm", bg = "white", dpi = 600)
 ```
 
 Figure 5: Flower visitation
@@ -552,8 +553,10 @@ nonheto_contrast_multiplot <- ggarrange(nonheto_contrast_plot, labels = c("(g)")
 
 #FLOWER VISITATION: HETO, NON-HETO TOGETHER, + NON-HETO SEPARATELY
 flower_visits_multiplot <- ggarrange(heto_visits_multiplot, NULL, nonheto_visits_multiplot, NULL, legend_arranged, NULL, nonheto_contrast_multiplot, nrow = 7, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05, 0.05, 1.15))
-ggview::ggview(flower_visits_multiplot, width = column1.5x, height = column1.5x*1.15, units = "px")
-ggsave(file.path(path_name, "Fig5_Camera_visitation.png"), flower_visits_multiplot, dpi = 300, width = column1.5x, height = column1.5x*1.08, units = "px", bg = "white", device = "tiff")
+
+ggview::ggview(flower_visits_multiplot, width = column2x, height = column2x*1.15, units = "mm")
+
+ggsave(file.path(path_name, "Fig5_Flower_visitation.png"), flower_visits_multiplot, width = column2x, height = column2x*1.15, units = "mm", bg = "white", dpi = 600)
 ```
 
 Figure 6: Pollination success
@@ -582,23 +585,20 @@ hapa_pollination_multiplot <- ggarrange(plotlist = hapa_pollination_plots, nrow 
 #legend_arranged <- ggarrange(interaction_plot_legend, NULL, nrow = 1, ncol = 2, widths = c(1, 0.75)) #This makes the legend centered under the interaction plots instead of under all plots. However, depending on export size, the first part gets cut off.
 
 pollination_multiplot <- ggarrange(heto_pollination_multiplot, NULL, hapa_pollination_multiplot, NULL, interaction_plot_legend, nrow = 5, ncol = 1, heights = c(1, 0.05, 1, 0.05, 0.05))
-ggview::ggview(pollination_multiplot,  width =  column1.5x*0.66, height = column1.5x*0.75, units = "px")
-ggsave(file.path(path_name, "Fig6_Pollination.png"), pollination_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
+
+ggview::ggview(pollination_multiplot, width = column2x*0.66, height = column2x*0.75, units = "mm")
+
+ggsave(file.path(path_name, "Fig6_Pollination.png"), pollination_multiplot, width = column2x*0.66, height = column2x*0.75, units = "mm", bg = "white", dpi = 300)
 ```
 
 Figure 7: Additional response variables (recaptures, visitation from individual marked birds, relative body mass)
 ```{r}
-#Upper panel
-recaps_body_mass_multiplot <- ggarrange(recaps_contrast_plot, body_mass_contrast_plot, nrow = 1, ncol = 2, align = "hv", labels = c("(a)", "(b)"), font.label = list(size = label_size, face = "plain"), label.x = 0.21, label.y = 0.85)
+additional_vars_multiplot <- ggarrange(heto_visits_marked_contrast_plot, nonheto_visits_marked_contrast_plot, NULL, NULL, recaps_contrast_plot, body_mass_contrast_plot, NULL, NULL, nrow = 4, ncol = 2, align = "hv", labels = c("(a)", "(b)", "", "", "(c)", "(d)"), font.label = list(size = label_size, face = "plain"), label.x = 0.18, label.y = 0.89, heights = c(1, 0.05, 1, 0.05)) %>%
+   annotate_figure(top = text_grob("Flower visitation from color-marked birds", size = title_size, face = "plain"))
 
-#Lower panel
-marked_birds_multiplot <-  ggarrange(heto_visits_marked_contrast_plot, nonheto_visits_marked_contrast_plot, nrow = 1, ncol = 2, align = "hv", labels = c("(c)", "(d)"), font.label = list(size = label_size, face = "plain"), label.x = 0.17, label.y = 0.88) %>%
-    annotate_figure(top = text_grob("Flower visitation from marked birds", size = title_size, face = "plain"))
+ggview::ggview(additional_vars_multiplot, width =  column2x*0.66, height = column2x*0.75, units = "mm")
 
-#Combine
-additional_vars_multiplot <- ggarrange(recaps_body_mass_multiplot, NULL, marked_birds_multiplot, nrow = 3, ncol = 1, heights = c(1, 0.05, 1), font.label = list(size = label_size, face = "plain"))
-ggview::ggview(additional_vars_multiplot, width =  column1.5x*0.66, height = column1.5x*0.75, units = "px")
-ggsave(file.path(path_name, "Fig7_Additional_response_variables.png"), additional_vars_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*0.75, units = "px", bg = "white", device = "tiff")
+ggsave(file.path(path_name, "Fig7_Additional_response_variables.png"), additional_vars_multiplot, width = column2x*0.66, height = column2x*0.75, units = "mm", bg = "white", dpi = 600)
 ```
 
 Figure S3: Interaction plots for additional response variables
@@ -619,8 +619,10 @@ additional_vars_supp_plots <- append(control_vs_treatment_plots$control_vs_treat
 additional_vars_interaction_multiplot <- ggarrange(plotlist = additional_vars_supp_plots, nrow = 4, ncol = 2, common.legend = TRUE, legend = "bottom", align = "hv", labels = c("(a)", "(b)", "(c)", "(d)", "(e)", "(f)", "(g)", "(h)"), font.label = list(size = label_size, face = "plain"), label.x = c(rep(0.18, 5), 0.19, 0.18, 0.18), label.y = 0.96)
 
 additional_vars_interaction_multiplot
-ggview::ggview(additional_vars_interaction_multiplot, width =  column1.5x*0.66, height = column1.5x*1.33, units = "px")
-ggsave(file.path(path_name, "FigS3_Additional_response_variables_interactions.png"), additional_vars_interaction_multiplot, dpi = 300, width = column1.5x*0.66, height = column1.5x*1.33, units = "px", bg = "white", device = "tiff")
+
+ggview::ggview(additional_vars_interaction_multiplot, width =  column2x*0.66, height = column2x*1.33, units = "mm")
+
+ggsave(file.path(path_name, "FigS3_Additional_response_variables_interactions.png"), additional_vars_interaction_multiplot, width = column2x*0.66, height = column2x*1.33, units = "mm", bg = "white", dpi = 600)
 ```
 
 ## Step 6: Export results 
