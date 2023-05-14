@@ -32,7 +32,7 @@ column2x <- 166 #double column
 
 #Sizes for plot elements
 size = 12
-label_size = size * 0.75
+label_size = size
 title_size = size * 1.15
 shape_size = 1
 line_width = 0.25
@@ -103,7 +103,7 @@ weights_barplot_gv
 #Add spacing around boxplots
 boxplots_for_multiplot <- ggarrange(NULL, percentage_calories_removed_boxplots, NULL, ncol = 3, nrow = 1, widths = c(0.10, 1, 0.10))
 
-weights_and_percent_multiplot <- ggarrange(weights_barplot_all_spp, weights_barplot_gv, boxplots_for_multiplot, ncol = 1, nrow = 3, heights = c(1, 1, 1), labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "bold"))
+weights_and_percent_multiplot <- ggarrange(weights_barplot_all_spp, weights_barplot_gv, boxplots_for_multiplot, ncol = 1, nrow = 3, heights = c(1, 1, 1), labels = c("(a)", "(b)", "(c)"), font.label = list(size = label_size, face = "plain"))
 
 ggview::ggview(weights_and_percent_multiplot, width = column2x, height = column2x*1.5, units = "mm")
 

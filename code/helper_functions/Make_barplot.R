@@ -18,7 +18,7 @@ make_barplot <- function(data, xvar, yvar, xlabel, ylabel, highlight_column, tit
     
     plot <- plot +
       theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1, size = text_size * 0.75, face = "italic")) +
-      theme(plot.margin = margin(5.5, 5.5, 5.5, 18.5, "pt")) #top, right, bottom, and left margins
+      theme(plot.margin = margin(5.5, 5.5, 5.5, 22.5, "pt")) #top, right, bottom, and left margins
   }
   
   if(flip_axes == "TRUE"){
