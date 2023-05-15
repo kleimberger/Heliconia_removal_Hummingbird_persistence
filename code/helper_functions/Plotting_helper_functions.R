@@ -10,7 +10,7 @@ make_interaction_plot <- function(emmeans_df, yvar, ymin, ymax, ybreak, yaccurac
   shapes <- c(16, 17) #circle, triangle (filled)
 
   #Label for y-axis
-  if(yvar == "sightings"){ylabel <- c("Visits per hour")}
+  if(yvar == "sightings"){ylabel <- c("Visits per day")} #Visits per hour is actual response variable, but estimated marginal means calculated for 12-hr day
   if(yvar == "num_birds"){ylabel <-  c("Number of birds captured")}
   if(yvar == "prop_time_in_patch"){ylabel <- c("Time spent in focal area (%)")}
   if(yvar == "prop_with_tubes"){ylabel <- c("Flowers pollinated (%)")}
